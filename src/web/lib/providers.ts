@@ -2,7 +2,7 @@
  * 供应商/模型选择工具（从旧 core/provider-utils.ts 迁移）
  * 仅依赖 studio store，供面板组件与批量生成使用。
  */
-import { state } from '@/stores/studio';
+import { state, setState } from '@/stores/studio';
 import { putProviders } from '@/api/providers';
 import { showToast } from '@/stores/toast';
 import type { ApiProvider, ChatModelMeta } from '@/types';
@@ -73,7 +73,12 @@ export async function saveChatModelMeta(
   const merged: ChatModelMeta = { ...(idx >= 0 ? list[idx] : { model }), ...patch, model };
   if (idx >= 0) list[idx] = merged;
   else list.push(merged);
-  p.chat_models_meta = list;
+  // Solid store 禁止对 find() 元素直接赋值新属性——set trap 静默丢弃,
+  // PUT 发出去的 body 始终没有 meta（9-08 上线起保存从未生效,实证见
+  // providers-meta-save.test）。必须走 setState 函数式替换整条记录。
+  setState('apiProviders', (prev) => prev.map(
+    (x) => (x.id === providerId ? { ...x, chat_models_meta: list } : x),
+  ));
   try {
     await putProviders(state.apiProviders);
   } catch (err) {

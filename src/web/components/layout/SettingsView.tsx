@@ -15,7 +15,7 @@ import { A } from '@solidjs/router';
 import { FiArrowLeft } from 'solid-icons/fi';
 import { getProviders, putProviders } from '@/api/providers';
 import { showToast } from '@/stores/toast';
-import { studioActions } from '@/stores/studio';
+import { state, studioActions } from '@/stores/studio';
 import {
   CLI_PROTOCOLS, newProvider,
   type EditableProvider, type ModelKind, type SettingsApi,
@@ -98,9 +98,12 @@ export default function SettingsView() {
         chat_models: (p.chat_models || []).map((s) => s.trim()).filter(Boolean),
         image_models: (p.image_models || []).map((s) => s.trim()).filter(Boolean),
         video_models: (p.video_models || []).map((s) => s.trim()).filter(Boolean),
-        // 模型编辑面板配置透传（2026-09-12 修复：白名单曾把 chat_models_meta
-        // 洗掉——设置页一保存就抹掉胶囊侧写的 1M 窗口/思考档）
-        chat_models_meta: p.chat_models_meta || [],
+        // 模型编辑面板配置：胶囊侧随时写 studio store，设置页本地快照可能
+        // 陈旧——若按快照透传，设置页一保存就会把胶囊写的 1M 窗口/思考档
+        // 洗回空（2026-09-12 二次反馈实证）。设置页不编辑 meta，保存时以
+        // store 为权威源，快照仅作 store 缺项兜底。
+        chat_models_meta: state.apiProviders.find((sp) => sp.id === p.id)?.chat_models_meta
+          ?? p.chat_models_meta ?? [],
       };
       return i === sel() && overrides ? { ...base, ...overrides } : base;
     });
