@@ -103,12 +103,15 @@ describe('agent.ts 关键端点拼装', () => {
     expect(await getSkills()).toEqual([]);
   });
 
-  it('getContextUsage：model 编码进查询串；无 model 不带查询串', async () => {
+  it('getContextUsage：model/provider 编码进查询串；无参不带查询串', async () => {
     fetchMock.mockResolvedValue(res({ chars: 1 }));
+    await getContextUsage('模型 A', 'prov-1');
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/agent/context-usage?model=%E6%A8%A1%E5%9E%8B%20A&provider=prov-1');
     await getContextUsage('模型 A');
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/agent/context-usage?model=%E6%A8%A1%E5%9E%8B%20A');
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/agent/context-usage?model=%E6%A8%A1%E5%9E%8B%20A');
     await getContextUsage();
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/agent/context-usage');
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/agent/context-usage');
   });
 
   it('运行时设置：GET/PUT /api/settings/runtime', async () => {

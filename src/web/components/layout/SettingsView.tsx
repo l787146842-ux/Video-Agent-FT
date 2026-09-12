@@ -98,6 +98,9 @@ export default function SettingsView() {
         chat_models: (p.chat_models || []).map((s) => s.trim()).filter(Boolean),
         image_models: (p.image_models || []).map((s) => s.trim()).filter(Boolean),
         video_models: (p.video_models || []).map((s) => s.trim()).filter(Boolean),
+        // 模型编辑面板配置透传（2026-09-12 修复：白名单曾把 chat_models_meta
+        // 洗掉——设置页一保存就抹掉胶囊侧写的 1M 窗口/思考档）
+        chat_models_meta: p.chat_models_meta || [],
       };
       return i === sel() && overrides ? { ...base, ...overrides } : base;
     });

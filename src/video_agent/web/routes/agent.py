@@ -365,14 +365,15 @@ async def register_task_guidance(task_id: str, item: GuidanceItem):
 
 
 @router.get("/agent/context-usage", response_model=ContextUsageResponse)
-async def get_context_usage(model: str = ""):
+async def get_context_usage(model: str = "", provider: str = ""):
     """估算当前会话将发送给 LLM 的上下文用量（Studio 状态上下文 + 聊天记录）。
 
     前端在发送按钮旁展示「已用多少K上下文」小圆圈：
     - chars: 上下文字符总数
     - est_tokens: 估算 token 数（与 token_budget 截断同口径：中文约1.5字/token）
-    - window_tokens: 当前模型上下文窗口（供前端算圆环填充比）
-    - cache_*: P2-1 KV-cache 遥测——供应商前缀缓存命中汇聚（滚动窗口口径）
+    - window_tokens: 当前模型上下文窗口（供前端算圆环填充比）——
+      按 provider+model 精确查 chat_models_meta（模型编辑面板 1M 挡生效处）
+    - cache_*: P2-1 KV-cache 遥测——供应商前缀缓存命中汇聚（无样本时全 0）
     """
     svc = StateManager.get_instance()
     # 后台任务专属实例写盘后，全局单例内存可能陈旧（反馈：用量一直 0）；
@@ -413,7 +414,7 @@ async def get_context_usage(model: str = ""):
         "est_tokens": est_tokens,
         "state_chars": len(state_json),
         "history_chars": len(history_json),
-        "window_tokens": context_window_for_model(model) if model else 0,
+        "window_tokens": context_window_for_model(model, provider_id=provider) if model else 0,
         "cache_hit_rate": cache_stats["hit_rate"],
         "cache_sample_count": cache_stats["samples"],
         "cache_prompt_tokens": cache_stats["prompt_tokens"],

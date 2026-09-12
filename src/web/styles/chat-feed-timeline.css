@@ -8,7 +8,9 @@
   .tl-arrow { margin-left: auto; color: var(--text-dim); transition: transform 0.2s; }
   .tl-panel.expanded .tl-arrow { transform: rotate(180deg); }
   .tl-panel-body { display: none; padding: 4px 10px 8px; border-top: 1px solid var(--border-color); }
-  .tl-panel.expanded .tl-panel-body { display: block; }
+  /* 展开高度上限（2026-09-12 用户反馈：思考/时间线不要全量展开）——
+     约占会话窗口一半，超出面板内滚动（滚轮/滑块均可） */
+  .tl-panel.expanded .tl-panel-body { display: block; max-height: 45vh; overflow-y: auto; }
   .tl-icon-thinking { color: var(--color-warning-strong); flex-shrink: 0; }
   .tl-icon-done { color: var(--color-success); flex-shrink: 0; }
   .tl-reasoning { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }

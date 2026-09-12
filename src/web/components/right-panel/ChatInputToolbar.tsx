@@ -39,7 +39,7 @@ export function ChatInputToolbar(props: {
   /** 上下文用量（发送按钮旁小圆圈，悬停显示已用多少K） */
   const [usage, setUsage] = createSignal<ContextUsage | null>(null);
   function refreshUsage() {
-    void getContextUsage(agentModel()).then(setUsage).catch(() => { /* 后端未就绪静默 */ });
+    void getContextUsage(agentModel(), agentProvider()).then(setUsage).catch(() => { /* 后端未就绪静默 */ });
   }
   onMount(refreshUsage);
   // 消息数量变化（发送/回复完成）后刷新用量

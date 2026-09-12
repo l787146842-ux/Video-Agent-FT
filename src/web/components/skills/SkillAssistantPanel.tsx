@@ -38,7 +38,7 @@ export function SkillAssistantPanel() {
 
   // 上下文用量：首轮 + 每轮回复后 + 切模型后刷新
   function refreshUsage() {
-    void getContextUsage(agentModel()).then(setUsage).catch(() => { /* 后端未就绪静默 */ });
+    void getContextUsage(agentModel(), agentProvider()).then(setUsage).catch(() => { /* 后端未就绪静默 */ });
   }
   createEffect(() => { void assistantMessages().length; refreshUsage(); });
   createEffect(() => { void agentModel(); refreshUsage(); });

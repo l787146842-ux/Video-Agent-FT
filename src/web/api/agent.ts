@@ -41,9 +41,10 @@ export type ContextBreakdown = ContextBreakdownModel;
 /** 上下文用量估算（发送按钮旁小圆圈悬停展示「已用多少K上下文」）：生成物别名 */
 export type ContextUsage = ContextUsageResponse;
 
-export function getContextUsage(model?: string): Promise<ContextUsage> {
+export function getContextUsage(model?: string, providerId?: string): Promise<ContextUsage> {
   const qs = model ? `?model=${encodeURIComponent(model)}` : '';
-  return apiFetch<ContextUsage>(`/api/agent/context-usage${qs}`);
+  const prov = providerId ? `${qs ? '&' : '?'}provider=${encodeURIComponent(providerId)}` : '';
+  return apiFetch<ContextUsage>(`/api/agent/context-usage${qs}${prov}`);
 }
 
 export function getRuntimeSettings(): Promise<RuntimeSettings> {
