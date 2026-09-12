@@ -36,6 +36,21 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-12 · 3333 项目事故批：结构纯净闸退役 + 工具说明 dsh 化 + 静默降级清偿
+- **触发（3333 项目 proj-1789193562 实证）**：提示词编写轮 9 次 `storyboard_add_draft` 全部 ok=True 但落库 `prompt` 恒空——`strip_structure_prompt`（2026-08-06 ec7a617 引入，防提示词闸被内联绕过 + 固定五步时代的"步骤3只建骨架"假设）无阶段感知静默剥离内联 prompt，且调用点自始丢弃返回值、承诺的"回喂说明"从未发生；模型全程不知情并宣称「9 个提示词已全部写入」。同源死代码孪生 `skill_runtime/guard.py`（零消费者）。
+- **用户裁决**：①剥离闸删除——数据绝不静默丢，要么拒收+回喂要么保留；②工具说明全量对齐 dsh 风格：只写正面契约（是什么/何时用/参数怎么传/返回什么），禁令句、流程纪律、恐吓性负面清单一律清除（承接方 = system 段 SUBAGENT_POLICY、Skill planner 散文、结构性保证）；③"3~5 分批"保留（上下文消耗与整批写几乎相同，真实理由是流式响应与中断安全，非上下文）；④子代理不委派 = 接受模型方差（dsh 无提醒机制），对齐后不加机制；⑤create_group/patch_draft 双路 = 增改分工（CRUD 常态），删闸后等价，无需归一。
+- **改动**：`fc_gates.strip_structure_prompt` + 调用点 + 测试删除；`skill_runtime/guard.py` 整文件删除（strip_draft_prompt/strip_structure_actions/validate_prompt_hard 均死代码）+ prompt_builder 无用 import；15 个工具 description 重写（run_subagent 删「不要用于」吓退句、read_skill 删阶段→工具映射表（Skill planner 段已自带）、workflow_pause/image_generate/generate_video 等删禁令与流程句，保留"收尾批可合并"等事实）；`storyboard_create_group` 未命中 [元素名] 令牌补回喂（detail→模型 + warnings→用户可见）；`storyboard_media_to_chat` 非法 media_type 由静默归空改显式拒收。守护测试随钉更新：test_prompt_relocation_batch3 / test_industry_baseline_fixes / test_progressive_disclosure_relocation 钉子改指新正面事实句；test_capability_word_alignment 退役（对照段唯一展示层副本删除，registry 侧 PIPELINE_CAPABILITY_TOOLS 由 scan_skills 消费不受影响）。
+- **上下文面板口径修复（同批前端）**：圆环/标题/各行分母统一为"单次真实请求规模 = messages 总量 + system（含 Skill）+ tools"（旧口径分母只算 messages，各行加和 130.3%，3333 实测）；「状态」遗留行退役（G3 后状态注入走轮首 source=state 事件计入消息，state_tail 恒 0）。
+- **保留待裁决**：`structure_integrity_gate`（建组必须带标题 + 分镜 sceneRefs 非空且覆盖标题点名元素）——拒收型有回喂、编码真实产品依赖（跨镜一致性），建议保留，用户未否决。
+- **验证**：受影响单测 181 条全绿；`acceptance.py` 全量通过；UI 变更待用户目测确认（宪法 §3.1）。
+
+### 2026-09-12 · 事故修复：模型编辑面板 1M 挡保存从未生效（三轮闭环）
+- **现象**：胶囊编辑面板选 1M 上下文不生效，重开仍显示 200K，用量圆环恒 /200K。
+- **第一轮（`603c2e2`）**：context-usage 端点补 provider 查询参数（此前 window_tokens 永远查不到 chat_models_meta）；设置页 saveAll 白名单补 chat_models_meta 透传；saveChatModelMeta 失败静默改 toast；后端 providers 保存加 meta 条数日志锚点（`07ad2ea`）。缓解但未中靶。
+- **第二轮**：后端日志锚点实证 PUT body 恒全 0；设置页本地快照与胶囊侧 studio store 双通道割裂——设置页 saveAll 按陈旧快照组装保存体会把 meta 洗回空。修复：saveAll 组装 chat_models_meta 以 studio store 为权威源，快照仅作兜底。
+- **真凶（vitest 复现实证,`providers-meta-save.test.ts`）**：saveChatModelMeta 用 `p.chat_models_meta = list` 对 **Solid store 元素直接赋值新属性——set trap 静默丢弃**，PUT 发出的 body 从来没有 meta；自 9-08 面板批上线起保存链从未生效（后端测试 monkeypatch 绕过前端、前端无该链测试,双向盲区；日志 `[0×12]` 与 UI 乐观勾选假象叠加误导向设置页）。**修复**：改 `setState('apiProviders', 函数式 map 替换整条记录)`。辅助取证：curl 模拟前端 PUT → meta 正常落盘、context-usage 返回 window_tokens=1000000,后端全链路排除。
+- **验证**：providers-meta-save.test 3 passed（PUT 携带 meta / stringify 不丢 / patch 合并不整体覆盖）；tsc/eslint 0 error；`acceptance.py --quick` 全绿（EXIT=0）。前端已重新构建,待用户强刷浏览器重选 1M 并目测圆环（宪法 §3.1）。
+
 ### 2026-09-12 · 指令体量治理批（规则按所有权归一，对齐 dsh；起因 = 1111 会话边界轮规则仲裁税 + run_subagent 零调用）
 - **触发与依据**：1111 会话（proj-1789128804-70253439）实测边界轮 20–53s 的"规则仲裁税"（模型手工对账多份规则源）与委派/批次双规打架；dsh-latest 源码对照（第一方身份一句、规则按所有权分布在工具描述、无消息字数上限、Skill 摘要 500 字符截断）。计划书经用户逐条裁决（计划书文件执行后删除，本条为唯一留痕）。
 - **用户裁决**：纪律2"只在暂停点停/中途一律不停"删除；"≤120字问句"双写清理由 message 实况取代；纪律6"系统附挂继续选项"随退役机制删除；protocol 暂停段/生图渠道段/能力词对照/画布规则/编号语义/开场盘点/拆解建组条款全部迁出；"3~5个"唯一家 = 纪律；回复输出纪律压缩三行（大搬）；委派仲裁句归 subagent 单一家；摘要截断 500 字符；压缩模板留一份；优先级链只在《执行铁律》文档出现（模型可见层不携带）；protocol L32 拆解建组条款直接删除；Skill 文件零改动（冻结清单 #16 重申）。

@@ -65,40 +65,44 @@ export function ChatInputToolbar(props: {
   const usageLabel = () => {
     const u = usage();
     if (!u) return '…';
-    return formatTokens(u.est_tokens);
+    return formatTokens(totalTokens());
   };
-  /** 圆环填充比 = 已用 / 窗口；未传模型时回退 0（纯数字展示） */
+  /** 面板/圆环统一口径 = 单次真实请求规模：messages 总量 + system（含 Skill）+ tools
+   * （breakdown.total 只统计 messages 数组；系统提示词与工具 schema 不在其中，
+   *  旧口径拿它当分母导致各行加和 >100%，3333 项目实测 130.3%） */
+  const bd = () => usage()?.breakdown ?? null;
+  const winTokens = () => usage()?.window_tokens || bd()?.budget || 0;
+  const totalTokens = () => {
+    const b = bd();
+    if (!b) return usage()?.est_tokens ?? 0;
+    return b.system + b.tools + b.total;
+  };
   const ratio = () => {
-    const u = usage();
-    if (!u || !u.window_tokens) return 0;
-    return Math.min(1, u.est_tokens / u.window_tokens);
+    const w = winTokens();
+    if (!w || !usage()) return 0;
+    return Math.min(1, totalTokens() / w);
   };
+  const pctOfWindow = () => ratio() * 100;
   const ringClass = () => {
     const r = ratio();
     return r >= 0.85 ? 'hot' : r >= 0.6 ? 'warn' : 'ok';
   };
   // 第 5 批：悬停面板数据（参考 外部标杆 式上下文容量卡）
-  const bd = () => usage()?.breakdown ?? null;
-  const winTokens = () => usage()?.window_tokens || bd()?.budget || 0;
-  const totalTokens = () => bd()?.total ?? usage()?.est_tokens ?? 0;
-  const pctOfWindow = () => {
-    const w = winTokens();
-    return w ? Math.min(100, (totalTokens() / w) * 100) : 0;
-  };
   const cacheHitLabel = () =>
     `${(((usage()?.cache_hit_rate) ?? 0) * 100).toFixed(1)}%`;
   const panelRows = () => {
     const b = bd();
     if (!b) return [];
-    const total = b.total || 1;
+    const total = totalTokens() || 1;
     const mk = (label: string, val: number, muted = false) => ({
       label, pct: (Math.max(0, val) / total) * 100, muted,
     });
     return [
       mk(t('rp.ctx.msgs'), b.history),
       mk(t('rp.ctx.system'), b.system - b.skill),
-      mk(t('rp.ctx.state'), b.state),
       mk(t('rp.ctx.skill'), b.skill),
+      // 「状态」遗留行退役（3333 批）：G3 后状态注入走轮首 source=state
+      // 事件、计入消息，state_tail 恒 0，该行永远显示 0.0% 无信息量
       mk(t('rp.ctx.other'), b.tools, true),
     ];
   };

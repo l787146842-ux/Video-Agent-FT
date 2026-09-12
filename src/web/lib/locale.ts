@@ -85,7 +85,6 @@ const zhCN = {
   'rp.ctx.title': '上下文使用量',
   'rp.ctx.msgs': '消息',
   'rp.ctx.system': '系统提示词',
-  'rp.ctx.state': '状态',
   'rp.ctx.skill': '技能',
   'rp.ctx.other': '其他',
   'rp.ctx.cacheHit': '平均缓存命中率',
