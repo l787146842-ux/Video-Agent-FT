@@ -398,6 +398,20 @@ class Settings:
     mcp_max_active_tools: int = field(default_factory=lambda: _env_int("MCP_MAX_ACTIVE_TOOLS", 8))
     mcp_result_max_chars: int = field(default_factory=lambda: _env_int("MCP_RESULT_MAX_CHARS", 4000))
 
+    # 联网搜索（web_search，2026-09-12 立项，对齐 dsh web-search-deepseek）：
+    # DeepSeek Anthropic 兼容 Messages API 原生 web_search server tool。
+    # 搜索端点与 chat-completions 端点不同源（dsh 同款决策），独立 env；
+    # key 复用 DEEPSEEK_API_KEY 亦可（WEB_SEARCH_API_KEY 缺省回落它）。
+    # 未配 key = 工具注册但拒执行（诚实报缺失，不静默）。
+    web_search_api_key: str = field(default_factory=lambda: os.getenv(
+        "WEB_SEARCH_API_KEY", os.getenv("DEEPSEEK_API_KEY", "")))
+    web_search_base_url: str = field(default_factory=lambda: os.getenv(
+        "WEB_SEARCH_BASE_URL", "https://api.deepseek.com/anthropic/v1"))
+    web_search_model: str = field(default_factory=lambda: os.getenv("WEB_SEARCH_MODEL", "deepseek-v4-flash"))
+    web_search_max_tokens: int = field(default_factory=lambda: _env_int("WEB_SEARCH_MAX_TOKENS", 4096))
+    web_search_max_uses: int = field(default_factory=lambda: _env_int("WEB_SEARCH_MAX_USES", 5))
+    web_search_timeout_s: int = field(default_factory=lambda: _env_int("WEB_SEARCH_TIMEOUT_S", 60))
+
     # 缓存命中遥测落盘开关：record_cache_usage 除内存滚动窗口外，追加写
     # cache_metrics.jsonl（路径归 utils/paths）供离线分析前缀缓存命中率。
     # 与 log_file_enabled 同守卫（测试/验收进程置 false，防多进程争用同一文件）
