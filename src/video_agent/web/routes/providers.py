@@ -175,6 +175,11 @@ async def save_providers(request: Request):
         saved.append(clean)
 
     save_api_providers(saved)
+    # 模型编辑面板排障锚点：每次落盘都记录 chat_models_meta 条数
+    # （2026-09-12 反馈：1M 挡选了不生效——日志直接区分"没发保存"与"发了被洗"）
+    logger.info(
+        "[Providers] 已保存 {} 个供应商（chat_models_meta 条数: {}）",
+        len(saved), [len(p.get("chat_models_meta") or []) for p in saved])
     return {"providers": [public_provider(p) for p in saved]}
 
 
