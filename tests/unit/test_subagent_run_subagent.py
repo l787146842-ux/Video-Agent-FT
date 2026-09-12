@@ -353,13 +353,16 @@ def test_build_subagent_task_generic_no_kind_block():
 
 
 def test_subagent_policy_is_generic_without_business_terms():
-    """委派策略段通用、无业务专名（不写「拆结构/写提示词」这类），可覆盖新场景。"""
+    """委派策略段通用、无业务专名（不写「拆结构/写提示词」这类），可覆盖新场景。
+    2026-09-12 治理批：策略段含与主对话批次节奏的仲裁句（防「委派 vs 亲手
+    分批」打架回潮）。"""
     from src.video_agent.core.subagent import subagent_policy
 
     policy = subagent_policy()
     assert policy and "run_subagent" in policy
     for narrow in ("拆成关键元素与分镜", "逐条撰写媒体提示词", "media_prompt_write"):
         assert narrow not in policy
+    assert "批次节奏" in policy, "委派与主对话批次节奏的仲裁句丢失"
 
 
 def test_subagent_section_injected_only_for_top_level():
