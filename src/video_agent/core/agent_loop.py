@@ -541,10 +541,15 @@ async def run_agent_loop(
                     break
                 # 6 提前终止：模型明确 stop 且已产出可见文本 → 收尾，
                 # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）。
-                # 2026-09-10 阶段规则去代码化批：全拒收轮 / 产出类被拒混合轮的
-                # 「拒因必须被下一轮消费」豁免与续跑预算整体退役——步数不限、
-                # 不留续跑预算；工具拒因已在 messages 回喂，模型凭其自决收尾。
-                if finish_reason in ("stop", "end_turn") and visible:
+                # 2026-09-10 阶段规则去代码化批：零工具纯口头「已完成」轮不再被驳回
+                # 续跑（完成盖章/未盖章续跑预算退役），模型自决收尾即收尾——本判定保留。
+                # 2026-09-11 批②C 收窄（对齐 dsh「回合去留看 tool-call」）：仅当**本步
+                # 确有工具失败/被闸拒收**（had_tool_failure）时不走本 break——具体拒因须
+                # 被下一轮消费（v6 §2/断言#1），否则就是 6666「一失败就静默死」根因；
+                # 无失败的纯 stop+正文轮仍照常提前收尾（不影响 test_zero_action_stop 语义）。
+                had_tool_failure = bool((fc_extra or {}).get("had_tool_failure"))
+                if (finish_reason in ("stop", "end_turn") and visible
+                        and not had_tool_failure):
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break

@@ -22,6 +22,7 @@ from src.video_agent.config import settings
 # prompt_gates 保留顶层导入（段内条件判定已收归 planner 单一事实源，
 # 本文件不再直接消费它）；gates_inputs 原料判定家族已随 C1b 裁决退役删除。
 from src.video_agent.core import prompt_gates  # noqa: F401
+from src.video_agent.core import subagent as subagent_mod
 from src.video_agent.utils import live_metrics
 from src.video_agent.core.token_budget import estimate_tokens
 from src.video_agent.skill_runtime import guard as skill_guard
@@ -629,6 +630,21 @@ def _sec_selected_skill(pb: "PromptBuilder", context: "PlannerContext") -> str:
     return pb._selected_block
 
 
+def _sec_subagent(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """子代理委派策略段（A2/A3，对齐 dsh `tool:subagent`）。
+
+    条件注入（空串即跳过，保「prompt 说的 = 工具集真有的」）：仅当
+    开关开、顶级轮（非子级白名单模式、subagent_depth=0）时 run_subagent
+    对模型可见，才注入委派策略；子级看不到委派工具→不注入（防递归语义）。
+    内容恒定（不嵌目标/不随轮变）→ 属稳定前缀，对 KV-cache 友好。
+    委派策略与业务无关（通用段），新增子代理场景（如画布）无需改本段。"""
+    if not getattr(settings, "subagent_enabled", False):
+        return ""
+    if getattr(context, "subagent_whitelist", None) or getattr(context, "subagent_depth", 0):
+        return ""
+    return subagent_mod.subagent_policy()
+
+
 def _validate_prompt_sections(
     specs: Tuple[PromptSectionSpec, ...],
 ) -> Tuple[PromptSectionSpec, ...]:
@@ -663,6 +679,8 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     # 以 history 尾部消息（user 通道）每步注入，system 成跨步稳定前缀。
     # 微调任务纪律段（批 S2）：仅 scope 任务注入，内容恒定（跨步稳定前缀）
     PromptSectionSpec("adjust_discipline", 80, _sec_adjust_discipline),
+    # 子代理委派策略段（批③A）：仅顶级轮且开关开时注入，内容恒定（稳定前缀）
+    PromptSectionSpec("subagent", 90, _sec_subagent),
     PromptSectionSpec("selected_skill", 100, _sec_selected_skill),
 ))
 
@@ -682,6 +700,8 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "selected_skill": None,
     # 微调纪律段只计 total（字段格式锁死，不新增遥测分项）
     "adjust_discipline": None,
+    # 子代理委派段只计 total（字段格式锁死，不新增遥测分项）
+    "subagent": None,
 }
 # 批次E：渠道机制退役后的恒 0 兼容字段 channels 已清偿
 # （原唯一消费方 check_prompt_budget.py 已随 C1a 裁决退役）。

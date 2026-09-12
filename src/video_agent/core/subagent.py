@@ -9,12 +9,14 @@
 本模块刻意**不 import planner / agent_loop**（避免 core 内模块环）：只放常量与
 纯函数；真正的子级装配在 `planner._launch_subagent`（planner 侧合法持有循环件）。
 
-子级固定范围声明与类型花名册文案外置 `prompts/planner/subagent.md`
-（Rule 6：prose 不进代码）。类型（kind）形态对齐 qoder 具名子代理清单：
-每个类型 = 一份工具白名单 + 一段职责块（目标/验收/先取读哪一章）。
+2026-09-11 批③A（对齐 dsh 通用形态）：具名类型（storyboard_split /
+media_prompt_write）退役 → **单一通用子代理**。dsh 只有一个通用 subagent（按
+工具面白名单限权，不预设任务种类），委派策略改由主对话的 `subagent` system 段
+（见 prompts/planner/subagent.md :: SUBAGENT_POLICY）承载，与业务无关，画布等新
+场景无需再加类型。子级仍保留两条与类型无关的硬约束：不含花钱生成、不含
+run_subagent（结构防递归）。
 """
-from dataclasses import dataclass
-from typing import FrozenSet, Mapping
+from typing import FrozenSet
 import hashlib
 
 from src.video_agent.utils.prompts import load_prompt_section
@@ -23,82 +25,38 @@ from src.video_agent.utils.prompts import load_prompt_section
 # 同 workflow_pause 一类控制流伪工具；不受 check_fc_tool_name_literals 约束）。
 SUBAGENT_TOOL_NAME = "run_subagent"
 
-# 子级工具白名单唯一源 = 下方 SUBAGENT_KINDS（按类型分派），不另列全集。
-# **故意不含花钱生成**（image_generate/generate_video）——生成留主线程受确认闸管；
-# **不含 run_subagent**——天然防递归（子级看不到也无法调用）。
-
 # 子级委派深度上限（B1：只允许一层）。
 SUBAGENT_MAX_DEPTH = 1
 
-# 缺省类型（兼容旧只传 task 的调用与存量会话）
+# 缺省类型名（历史兼容占位；通用形态下只有一个类型）。
 SUBAGENT_KIND_GENERAL = "general"
 
-
-def _whitelist(*names: str) -> FrozenSet[str]:
-    """构造类型白名单（显式声明的工具；单一事实源）。"""
-    return frozenset(names)
-
-
-@dataclass(frozen=True)
-class SubagentKind:
-    """一个具名子代理类型：工具白名单 + 职责块分节键（qoder 花名册形态）。"""
-
-    name: str
-    whitelist: FrozenSet[str]
-    section: str
+# 子级工具白名单唯一源（通用）：子代理能落账/取读的普通工具面。
+# **故意不含花钱生成**（image_generate/generate_video）——生成留主线程受确认闸管；
+# **不含 run_subagent**——天然防递归（子级看不到也无法调用）；
+# **不含 workflow_pause**——子级不向用户发起确认（审批=never）。
+SUBAGENT_TOOL_WHITELIST: FrozenSet[str] = frozenset({
+    "storyboard_create_group", "storyboard_add_draft", "storyboard_patch_draft",
+    "read_state_group", "read_draft", "read_skill", "read_uploaded_doc",
+    "read_project_doc", "view_storyboard_media", "document_write",
+})
 
 
-# 类型白名单（先窄：3 个类型）：一律**不含花钱生成**（image_generate/generate_video）
-# 与 **不含 run_subagent**（结构防递归）；子级只能经建组/改卡/写档类工具落账。
-SUBAGENT_KINDS: Mapping[str, SubagentKind] = {
-    "storyboard_split": SubagentKind(
-        "storyboard_split",
-        _whitelist(
-            "storyboard_create_group", "storyboard_add_draft", "storyboard_patch_draft",
-            "read_state_group", "read_skill", "read_uploaded_doc", "read_project_doc",
-            "document_write",
-        ),
-        "KIND_STORYBOARD_SPLIT",
-    ),
-    "media_prompt_write": SubagentKind(
-        "media_prompt_write",
-        _whitelist(
-            "storyboard_patch_draft", "read_state_group", "read_draft", "read_skill",
-            "read_project_doc", "view_storyboard_media", "document_write",
-        ),
-        "KIND_MEDIA_PROMPT_WRITE",
-    ),
-    SUBAGENT_KIND_GENERAL: SubagentKind(
-        SUBAGENT_KIND_GENERAL,
-        _whitelist(
-            "storyboard_create_group", "storyboard_add_draft", "storyboard_patch_draft",
-            "read_state_group", "read_skill", "read_uploaded_doc", "document_write",
-        ),
-        "KIND_GENERAL",
-    ),
-}
+def resolve_subagent_kind(kind: str = ""):
+    """兼容旧调用签名：通用形态下恒返回单一类型 "general"（忽略传入 kind）。
 
-# 向后兼容旧名（B1 口径与存量测试）：等价于缺省类型白名单，不另列工具清单。
-SUBAGENT_TOOL_WHITELIST: FrozenSet[str] = SUBAGENT_KINDS[
-    SUBAGENT_KIND_GENERAL].whitelist
+    委派本身已经过同一闸机链，类型只是能力面预设——不再有分类型白名单。"""
+    return SUBAGENT_KIND_GENERAL
 
 
-def resolve_subagent_kind(kind: str) -> SubagentKind:
-    """按名取类型；未知名/空值回落缺省类型（不拒委派：类型只是能力面预设，
-    委派本身已经过同一闸机链，不因拼写差异丢掉整轮工作）。"""
-    key = str(kind or "").strip().lower()
-    return SUBAGENT_KINDS.get(key) or SUBAGENT_KINDS[SUBAGENT_KIND_GENERAL]
+def whitelist_for_kind(kind: str = "") -> FrozenSet[str]:
+    """子级工具白名单（唯一，不含 run_subagent / 花钱生成 / workflow_pause）。"""
+    return SUBAGENT_TOOL_WHITELIST
 
 
-def whitelist_for_kind(kind: str) -> FrozenSet[str]:
-    """类型对应的工具白名单（任何类型都不含 run_subagent 与花钱生成）。"""
-    return resolve_subagent_kind(kind).whitelist
-
-
-def subagent_kind_block(kind: str) -> str:
-    """类型职责块（目标/验收/取读要求，唯一源 = prompts/planner/subagent.md）。"""
-    return (load_prompt_section("planner/subagent.md", resolve_subagent_kind(kind).section)
-            or "").strip()
+def subagent_kind_block(kind: str = "") -> str:
+    """类型职责块（具名类型退役后恒空）：通用子代理不再有分类型 prose。"""
+    return ""
 
 
 class SubagentDepthError(Exception):
@@ -121,23 +79,25 @@ def subagent_delegation_context() -> str:
     return (load_prompt_section("planner/subagent.md", "DELEGATION_CONTEXT") or "").strip()
 
 
-def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL) -> str:
-    """子级任务文本 = 类型职责块 + 固定权限范围声明 + 待建清单 + 本次委派任务。
+def subagent_policy() -> str:
+    """主对话委派策略段（唯一源 = prompts/planner/subagent.md SUBAGENT_POLICY）。
 
-    职责块前置使子级一开始就知道"我是哪类子代理、验收标准是什么"，
-    不需回到主对话上下文去推（子级看不到主对话）。
+    由 prompt_builder._sec_subagent 条件注入（仅当 run_subagent 对模型可见）。"""
+    return (load_prompt_section("planner/subagent.md", "SUBAGENT_POLICY") or "").strip()
+
+
+def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL) -> str:
+    """子级任务文本 = 固定权限范围声明 + 待建清单（幂等锚）+ 本次委派任务。
+
+    通用形态：不再前置分类型职责块；子级该做什么全凭任务书说明（与 dsh 一致）。
     待建清单含幂等锚（task_id hash），重复委派同一任务时子级可跳过已做项。
     """
     clean = str(task or "").strip()
-    resolved = resolve_subagent_kind(kind)
-    kind_block = subagent_kind_block(resolved.name)
     ctx = subagent_delegation_context()
     header = ""
-    if kind_block:
-        header += f"【子代理类型：{resolved.name}】\n{kind_block}\n\n"
     if ctx:
         header += f"{ctx}\n\n"
     # 幂等锚：任务内容 hash 作为唯一标识，同 ID 工作已做完则跳过
     task_id = hashlib.sha256(clean.encode("utf-8")).hexdigest()[:16]
-    header += f"===== 待建清单（task_id: {task_id}）=====\n按验收标准一次性完成以下所有工作项。幂等锚：同一 task_id 的工作项如果已存在于工作台，直接跳过。\n\n"
+    header += f"===== 待建清单（task_id: {task_id}）=====\n按任务书目标一次性完成以下所有工作项。幂等锚：同一 task_id 的工作项如果已存在于工作台，直接跳过。\n\n"
     return f"{header}===== 本次委派任务 =====\n{clean}"

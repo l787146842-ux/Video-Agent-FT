@@ -66,13 +66,20 @@ def main() -> int:
     if not rows:
         return 1
 
+    # 批④B-1：主会话口径与子代理/摘要分开算（对齐 dsh 按会话）；无 thread_kind
+    # 的历史行归为 main。headline 与稳态总口径只统计主会话，子代理/摘要单列参考。
+    def _kind(r):
+        return r.get("thread_kind") or "main"
+    main_rows = [r for r in rows if _kind(r) == "main"]
+    sub_rows = [r for r in rows if _kind(r) != "main"]
+
     by_project = defaultdict(list)
-    for r in rows:
+    for r in main_rows:
         by_project[r["project_id"]].append(r)
 
-    overall, _ = _weighted_hit(rows)
-    print(f"=== 前缀缓存命中率报告（{CACHE_METRICS_FILE.name}，{len(rows)} 样本）===")
-    print(f"全量命中率：{overall:.1f}%\n")
+    overall, _ = _weighted_hit(main_rows)
+    print(f"=== 前缀缓存命中率报告（{CACHE_METRICS_FILE.name}，主会话 {len(main_rows)} 样本 / 全部 {len(rows)}）===")
+    print(f"主会话全量命中率（不含子代理/摘要）：{overall:.1f}%\n")
 
     steady_all = []
     for pid, rs in by_project.items():
@@ -104,8 +111,17 @@ def main() -> int:
         print()
 
     s_rate, s_n = _weighted_hit(steady_all)
-    print(f"稳态总口径（剔除每项目首调与 <{WARMUP_PROMPT_TOKENS} tokens 预热）："
+    print(f"主会话稳态总口径（剔除每项目首调与 <{WARMUP_PROMPT_TOKENS} tokens 预热）："
           f"{s_rate:.1f}%（{s_n} 样本）  验收线 ≥95%")
+    # 非主会话流别单列（仅供参照，不混入上方主会话口径）
+    if sub_rows:
+        by_stream = defaultdict(list)
+        for r in sub_rows:
+            by_stream[_kind(r)].append(r)
+        print()
+        for k, rs in sorted(by_stream.items()):
+            r_rate, r_n = _weighted_hit(rs)
+            print(f"[{k}] 非主会话流别 {r_n} 样本  全量 {r_rate:.1f}%（不计入主会话口径）")
     return 0
 
 

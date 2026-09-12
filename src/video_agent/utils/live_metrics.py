@@ -132,13 +132,17 @@ _CACHE_SAMPLES: Dict[str, Deque[Tuple[int, int]]] = {}
 def record_cache_usage(
     project_id: str, prompt_tokens: int, cached_tokens: int,
     breakdown: Optional[Dict[str, Any]] = None,
+    conversation_id: str = "", thread_kind: str = "",
 ) -> None:
     """记录一次 LLM 调用的 prompt/缓存命中 token（滚动窗口）。
 
     breakdown（v4-3）：随样本快照的上下文分配账（70K 构成可离线核查），
     仅进 jsonl 落盘，不参与内存命中率汇聚。
-    端点未返回 usage（prompt_tokens=0）不入样：命中率汇聚不被无数据调用稀释；
-    异常静默，遥测不阻断主流程。
+    thread_kind（批④B-1，对齐 dsh 按会话分开算）：会话流别
+    （main/subagent/summary，空=main 向后兼容）。**只有 main 流计入内存滚动
+    窗口**（前端「平均命中率」只算主会话、不被子代理/摘要冷启动稀释）；
+    全部流别仍随 conversation_id/thread_kind 落 jsonl，供离线按会话分别核查。
+    端点未返回 usage（prompt_tokens=0）不入样；异常静默，遥测不阻断主流程。
     """
     if not project_id:
         return
@@ -147,10 +151,13 @@ def record_cache_usage(
         cached_tokens = max(0, int(cached_tokens or 0))
         if prompt_tokens <= 0:
             return
-        dq = _CACHE_SAMPLES.setdefault(project_id, deque(maxlen=_CACHE_WINDOW))
-        dq.append((prompt_tokens, cached_tokens))
+        # 只有主会话流计入滚动窗口（子代理/摘要各自冷启动不稀释前端读数）
+        if thread_kind in ("", "main"):
+            dq = _CACHE_SAMPLES.setdefault(project_id, deque(maxlen=_CACHE_WINDOW))
+            dq.append((prompt_tokens, cached_tokens))
         _persist_cache_sample(project_id, prompt_tokens, cached_tokens,
-                              breakdown=breakdown)
+                              breakdown=breakdown, conversation_id=conversation_id,
+                              thread_kind=thread_kind)
     except Exception as _e:
         logger.debug("[live_metrics] 缓存遥测忽略异常: {}", _e)
 
@@ -178,6 +185,7 @@ def _roll_cache_metrics_if_needed(incoming_bytes: int) -> None:
 def _persist_cache_sample(
     project_id: str, prompt_tokens: int, cached_tokens: int,
     breakdown: Optional[Dict[str, Any]] = None,
+    conversation_id: str = "", thread_kind: str = "",
 ) -> None:
     """追加一条缓存命中样本到 cache_metrics.jsonl（路径归 utils/paths）。
 
@@ -198,6 +206,11 @@ def _persist_cache_sample(
             "prompt_tokens": prompt_tokens,
             "cached_tokens": cached_tokens,
         }
+        # 会话流别（批④B-1）：无值不写键（历史行格式不变、体积不增）
+        if conversation_id:
+            record["conversation_id"] = conversation_id
+        if thread_kind:
+            record["thread_kind"] = thread_kind
         if breakdown:
             record["breakdown"] = breakdown
         line = json.dumps(record, ensure_ascii=False)

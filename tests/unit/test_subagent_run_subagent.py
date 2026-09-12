@@ -3,10 +3,10 @@
 
 钉死：①深度单调/上限；②白名单不含花钱生成与 run_subagent（防递归）；
 ③任务注入固定范围声明；④_compute_excluded_tools 白名单裁剪；
-⑤fc_tool_runner 命中 run_subagent 经注入 launcher 拦截回摘要（含 task_kind 透传）、
+⑤fc_tool_runner 命中 run_subagent 经注入 launcher 拦截回摘要（通用形态、无类型）、
   未装配明确失败；⑥_launch_subagent 构建隔离子级（depth+1 / no_confirm / 白名单）
-  并回摘要（步数上限已退役，不传 max_steps）；⑦ D1 具名类型：每类白名单、职责块、
-  未知回落、花名册与类型集不漂移。
+  并回摘要；⑦ 2026-09-11 批③A：具名类型退役→通用单一子代理（统一白名单、
+  任务文本无类型块、委派策略段仅顶级轮条件注入，对齐 dsh tool:subagent）。
 
 不驱动真实模型循环（handle_message 全链路靠集成/其它套件覆盖），用 monkeypatch 断言装配契约。
 """
@@ -101,16 +101,15 @@ async def test_dispatch_intercepts_run_subagent():
     runner = FCToolRunner(tool_manager=object())  # invoke_tool 不应被调用
     seen = {}
 
-    async def launcher(task, kind=""):
-        seen["kind"] = kind
+    async def launcher(task):
+        seen["task"] = task
         return "子摘要:" + task
 
     runner.subagent_launcher = launcher
-    res = await runner._dispatch_tool(
-        "run_subagent", {"task": "T", "task_kind": "storyboard_split"})
+    res = await runner._dispatch_tool("run_subagent", {"task": "T"})
     assert res.success is True
     assert res.data["summary"] == "子摘要:T"
-    assert seen["kind"] == "storyboard_split", "类型须随 launcher 传到 planner 装配点"
+    assert seen["task"] == "T"
 
     # 未装配（子级内 / 关开关）→ 明确失败，不静默
     runner.subagent_launcher = None
@@ -316,71 +315,76 @@ async def test_launch_subagent_shares_parent_state_manager(svc, monkeypatch):
     assert seen["sm"] is svc, "子级必须复用父 StateManager（否则子写入不入主账本）"
 
 
-# ---------- D1 具名类型（qoder 花名册） ----------
+# ---------- 批③A 通用单一子代理（具名类型退役） ----------
 
-def test_kinds_registry_invariants_hold_for_every_kind():
-    """任何类型都不破的不变式：不花钱生成、不递归、不拿确认工具。"""
-    from src.video_agent.core.subagent import SUBAGENT_KINDS
+def test_generic_whitelist_invariants():
+    """通用白名单不变式：不花钱生成、不递归、不拿确认工具；列项工具须真实在册。"""
+    from src.video_agent.core.subagent import SUBAGENT_TOOL_WHITELIST
+    from src.video_agent.tools.manager import ToolManager
 
-    assert set(SUBAGENT_KINDS) == {
-        "storyboard_split", "media_prompt_write", "general"}
-    for kind in SUBAGENT_KINDS.values():
-        wl = kind.whitelist
-        assert "run_subagent" not in wl, kind.name
-        assert "image_generate" not in wl and "generate_video" not in wl, kind.name
-        assert "workflow_pause" not in wl, kind.name  # 子级不发起确认
-        assert wl, kind.name
-        # 白名单里的工具必须真实存在（防错字造成子级拿不到的死项）
-        from src.video_agent.tools.manager import ToolManager
-        for tool_name in wl:
-            assert ToolManager.get_tool(tool_name) is not None, tool_name
+    wl = SUBAGENT_TOOL_WHITELIST
+    assert wl
+    assert "run_subagent" not in wl
+    assert "image_generate" not in wl and "generate_video" not in wl
+    assert "workflow_pause" not in wl
+    assert "storyboard_create_group" in wl and "storyboard_patch_draft" in wl
+    for tool_name in wl:
+        assert ToolManager.get_tool(tool_name) is not None, tool_name
 
 
-def test_resolve_kind_unknown_falls_back_to_general():
+def test_resolve_kind_is_generic_single_type():
+    """通用形态：任意传入 kind 都归一到 general，白名单恒等于全集白名单。"""
     from src.video_agent.core.subagent import (
-        SUBAGENT_KIND_GENERAL, resolve_subagent_kind, whitelist_for_kind)
+        SUBAGENT_KIND_GENERAL, SUBAGENT_TOOL_WHITELIST,
+        resolve_subagent_kind, whitelist_for_kind)
 
-    assert resolve_subagent_kind("拼写错的").name == SUBAGENT_KIND_GENERAL
-    assert resolve_subagent_kind("STORYBOARD_SPLIT").name == "storyboard_split"
-    assert whitelist_for_kind("") == whitelist_for_kind("general")
-
-
-def test_kind_blocks_are_distinct_and_present():
-    """职责块 prose 单家在 prompts/，三类各有内容（取不到 = 子级裸跑）。"""
-    from src.video_agent.core.subagent import (
-        SUBAGENT_KINDS, subagent_kind_block)
-
-    blocks = {name: subagent_kind_block(name) for name in SUBAGENT_KINDS}
-    assert all(blocks.values()), blocks
-    assert "read_skill" in blocks["storyboard_split"]
-    assert "只建结构骨架" in blocks["storyboard_split"]
-    assert "view_storyboard_media" in blocks["media_prompt_write"]
-    assert len({blocks[k] for k in blocks}) == len(SUBAGENT_KINDS)
+    assert resolve_subagent_kind("storyboard_split") == SUBAGENT_KIND_GENERAL
+    assert resolve_subagent_kind("") == SUBAGENT_KIND_GENERAL
+    assert whitelist_for_kind("media_prompt_write") == SUBAGENT_TOOL_WHITELIST
 
 
-def test_build_subagent_task_prepends_kind_block():
-    msg = build_subagent_task("把分镜 S1-S12 提示词写完", "media_prompt_write")
-    assert "【子代理类型：media_prompt_write】" in msg
-    assert "提示词写法" in msg                # 类型职责块
-    assert "被委派的子代理" in msg            # 固定权限范围声明仍在
-    assert msg.rstrip().endswith("把分镜 S1-S12 提示词写完")
+def test_build_subagent_task_generic_no_kind_block():
+    """任务文本只含固定权限范围声明 + 任务书，不再前置【子代理类型】块。"""
+    msg = build_subagent_task("把这段工作做完")
+    assert "被委派的子代理" in msg
+    assert "不要原地重试" in msg
+    assert "【子代理类型" not in msg
+    assert msg.rstrip().endswith("把这段工作做完")
 
 
-def test_roster_and_kind_set_do_not_drift():
-    """工具描述里的花名册（prompts）必须与代码类型集同名单。"""
-    from src.video_agent.core.subagent import SUBAGENT_KINDS
-    from src.video_agent.tools.document_tools import RunSubagentTool
-    from src.video_agent.utils.prompts import load_prompt_section
+def test_subagent_policy_is_generic_without_business_terms():
+    """委派策略段通用、无业务专名（不写「拆结构/写提示词」这类），可覆盖新场景。"""
+    from src.video_agent.core.subagent import subagent_policy
 
-    roster = load_prompt_section("planner/subagent.md", "KIND_ROSTER")
-    assert roster
-    for name in SUBAGENT_KINDS:
-        assert name in roster, name
-        assert name in RunSubagentTool.description
+    policy = subagent_policy()
+    assert policy and "run_subagent" in policy
+    for narrow in ("拆成关键元素与分镜", "逐条撰写媒体提示词", "media_prompt_write"):
+        assert narrow not in policy
 
 
-async def test_launch_subagent_uses_kind_whitelist(svc, monkeypatch):
-    """按类型裁剪子级工具面：写提示词型拿不到建组工具。"""
+def test_subagent_section_injected_only_for_top_level():
+    """A3 条件注入：顶级轮且开关开→注入委派段；子级白名单模式/关开关→不注入。"""
+    from src.video_agent.core import prompt_builder as pb
+    from src.video_agent.config import settings
+
+    old = getattr(settings, "subagent_enabled", False)
+    try:
+        object.__setattr__(settings, "subagent_enabled", True)
+        top = pb._sec_subagent(None, PlannerContext(use_studio_context=True))
+        assert top and "run_subagent" in top
+        # 子级（白名单模式）不注入委派策略（子级无 run_subagent，防递归）
+        child = pb._sec_subagent(
+            None, PlannerContext(subagent_whitelist=frozenset({"read_skill"})))
+        assert child == ""
+        # 开关关 → 不注入
+        object.__setattr__(settings, "subagent_enabled", False)
+        assert pb._sec_subagent(None, PlannerContext(use_studio_context=True)) == ""
+    finally:
+        object.__setattr__(settings, "subagent_enabled", old)
+
+
+async def test_launch_subagent_uses_generic_whitelist(svc, monkeypatch):
+    """子级拿通用白名单（含建组与写提示词），任务文本无类型块。"""
     seen = {}
 
     class _FakeResp:
@@ -394,10 +398,7 @@ async def test_launch_subagent_uses_kind_whitelist(svc, monkeypatch):
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
     parent = Planner(state_manager=svc, llm_adapter=None)
     await parent._launch_subagent("为已建好的卡写提示词",
-                                  PlannerContext(subagent_depth=0),
-                                  "media_prompt_write")
-    wl = seen["ctx"].subagent_whitelist
-    assert "storyboard_patch_draft" in wl
-    assert "storyboard_create_group" not in wl
-    assert "view_storyboard_media" in wl
-    assert "【子代理类型：media_prompt_write】" in seen["msg"]
+                                  PlannerContext(subagent_depth=0))
+    from src.video_agent.core.subagent import SUBAGENT_TOOL_WHITELIST
+    assert seen["ctx"].subagent_whitelist == SUBAGENT_TOOL_WHITELIST
+    assert "【子代理类型" not in seen["msg"]

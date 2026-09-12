@@ -191,6 +191,10 @@ class ToolManager:
                     }
                 }
             })
+        # B1（批④缓存对齐 dsh orderTools）：工具清单按名称 code-unit 字典序定序。
+        # 注册插入顺序随启停/加载次序漂动会改变 tools 段字节 → 击穿前缀 KV-cache；
+        # 定序后只要成员集合不变，tools 数组跨轮/跨机器字节稳定。
+        schemas.sort(key=lambda s: str((s.get("function") or {}).get("name") or ""))
         cls._schema_cache = schemas
         return schemas
 

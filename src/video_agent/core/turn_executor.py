@@ -452,11 +452,16 @@ class TurnExecutor:
         # v4-3：随样本快照 breakdown 分配账（70K 构成随 cache_metrics 落盘）
         _proj_id = getattr(getattr(self.planner, "state_manager", None),
                            "active_project_id", "") or ""
+        # 批④B-1：标会话流别——子代理 depth≥1 走 "subagent"（不计入主会话
+        # 滚动命中率窗口），顶级走 "main"；携 conversation_id 供离线按会话分算。
+        _cache_cid = str(getattr(self._context, "session_conversation_id", "") or "")
+        _cache_kind = "subagent" if getattr(self._context, "subagent_depth", 0) else "main"
         record_cache_usage(
             _proj_id,
             getattr(response, "prompt_tokens", 0),
             getattr(response, "cached_tokens", 0),
             breakdown=get_budget_breakdown(_proj_id),
+            conversation_id=_cache_cid, thread_kind=_cache_kind,
         )
         # 会话事件流镜像（v4 主刀批 E1，细案 §五）：每步 assistant 响应落流
         # （含 tool_calls/reasoning/usage）；reasoning 附着与 agent_loop 同闸门
@@ -536,6 +541,11 @@ class TurnExecutor:
         # 全拒收轮（发起过但 fc_applied=0）不能落进纯文本轮收尾——
         # 拒因回喂已在 messages 里，循环必须再走一轮让模型看到指引。
         _extra["had_fc_calls"] = bool(getattr(response, "tool_calls", None))
+        # C2（批②中断对齐 dsh）：本轮是否有工具调用失败/被闸拒收（ok=False）。
+        # agent_loop 据此拒绝「本步刚失败就被模型 stop+正文一句带走」的 fc_done 提前
+        # 收尾，让具体拒因回喂被下一轮消费（对齐 v6 §2/断言#1）；零工具纯文本轮不受影响。
+        _extra["had_tool_failure"] = any(
+            not tr.get("ok", True) for tr in (tool_results or []))
         # C2：本轮 tool_calls 原样上抛（agent_loop 轮末组 assistant.tool_calls
         # 消息，与 _pending_feedback_msgs 的 tool 消息按 id 配对）
         _extra["_fc_tool_calls"] = [

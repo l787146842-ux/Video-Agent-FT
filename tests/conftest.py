@@ -85,6 +85,20 @@ def _state_backend_baseline():
 
 
 @pytest.fixture(autouse=True)
+def _trace_context_isolation():
+    """逐测试隔离 tracer 的 contextvar 追踪绑定。
+
+    部分用例直连 `AgentTracer()` 并 start_trace 但不 finish（如遥测类），会把带
+    live current 的追踪态留在模块级 contextvar；同 worker 多文件共享上下文时会
+    漂入下一条用例（D2 父帧链后尤其敏感）。此处入前置 None、出后还原，恢复隔离。"""
+    from src.video_agent.core import tracer as _tr
+
+    token = _tr._trace_ctx_var.set(None)
+    yield
+    _tr._trace_ctx_var.reset(token)
+
+
+@pytest.fixture(autouse=True)
 def _state_singleton_isolation(tmp_path):
     """任务 #18 / P10：StateManager 全局单例逐测试隔离到临时工作区。
 

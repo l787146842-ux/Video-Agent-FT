@@ -35,6 +35,7 @@ from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, render_prompt
 from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.core.agent_loop import run_agent_loop
+from src.video_agent.core.tracer import AgentTracer
 # 子代理可选模档：读模型分层策略表（core→core 无环；空/未配 = 跟随主模型）
 from src.video_agent.core import model_policy
 from src.video_agent.core.fc_tool_runner import (
@@ -364,7 +365,7 @@ class Planner:
             conv = conversation_ops.create_scoped_conversation(
                 self.state_manager,
                 {"kind": "subagent", "parent_conversation": parent_cid,
-                 "subagent_kind": resolved_kind.name,
+                 "subagent_kind": resolved_kind,
                  "label": (task or "")[:24]},
                 title="子代理")
             child_cid = str((conv or {}).get("id") or "")
@@ -406,7 +407,7 @@ class Planner:
             stop_scope=getattr(parent_ctx, "stop_scope", "chat") or "chat",
             subagent_depth=child_depth,
             subagent_no_confirm=True,
-            subagent_whitelist=resolved_kind.whitelist,
+            subagent_whitelist=subagent_mod.whitelist_for_kind(resolved_kind),
         )
         child = Planner(
             state_manager=self.state_manager,
@@ -418,8 +419,8 @@ class Planner:
             chat_model=child_model,
             chat_adapter_factory=self._chat_adapter_factory,
         )
-        # 构建子级任务文本（含待建清单 + 幂等锚）
-        base_task = subagent_mod.build_subagent_task(task, resolved_kind.name)
+        # 构建子级任务文本（通用形态：固定权限范围声明 + 幂等锚 + 任务书）
+        base_task = subagent_mod.build_subagent_task(task)
         # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）
         parent_skill = str(getattr(parent_ctx, "skill_name", "") or "").strip()
         if parent_skill and self._skill_docs is not None:
@@ -434,7 +435,11 @@ class Planner:
                         base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
             except Exception as _e:
                 logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
-        resp = await child.handle_message(base_task, child_ctx)
+        # 子在同一 asyncio task/同一 context 内联跑：包一层追踪隔离带（D1），
+        # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
+        # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。
+        with AgentTracer.get_instance().child_trace_scope():
+            resp = await child.handle_message(base_task, child_ctx)
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:

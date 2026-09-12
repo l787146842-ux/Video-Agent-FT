@@ -441,7 +441,10 @@ def compose_failure_feedback(
     掐掉主模型盲重试空转。
     """
     kind = str(error_code or "") or classify_tool_failure(error_text)
-    raw = str(error_text or "未知错误")[:120]
+    # C1（批②中断对齐 dsh「失败永不空且可行动」）：生产端未带原因时，
+    # 不得只回“未知错误”（死胡同），改回工具名+可执行下一步（纯事实，不推断）。
+    raw = str(error_text or
+              f"工具 {name} 未返回具体失败原因，请核对入参后重试（必要时先读当前状态确认）")[:120]
     if fail_count >= 2:
         hint = FAILURE_HINT_REPEAT
     elif kind == "validation":

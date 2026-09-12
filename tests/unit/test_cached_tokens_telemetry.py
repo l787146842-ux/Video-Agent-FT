@@ -168,6 +168,27 @@ def test_cache_stats_skips_no_usage_and_empty_project():
     live_metrics.reset_cache_stats()
 
 
+def test_cache_stats_main_only_excludes_subagent_and_summary():
+    """批④B-1：只有主会话流计入滚动命中率窗口；子代理/摘要不稀释前端读数。"""
+    live_metrics.reset_cache_stats()
+    live_metrics.record_cache_usage("proj-z", 1000, 800, thread_kind="main")
+    live_metrics.record_cache_usage(
+        "proj-z", 1000, 0, conversation_id="conv-sub", thread_kind="subagent")
+    live_metrics.record_cache_usage("proj-z", 1000, 0, thread_kind="summary")
+    stats = live_metrics.get_cache_stats("proj-z")
+    assert stats["samples"] == 1, "子代理/摘要不应进主会话滚动窗口"
+    assert stats["hit_rate"] == 0.8
+    live_metrics.reset_cache_stats()
+
+
+def test_cache_stats_default_thread_kind_counts_as_main():
+    """向后兼容：不传 thread_kind（旧调用）按 main 计入。"""
+    live_metrics.reset_cache_stats()
+    live_metrics.record_cache_usage("proj-w", 500, 250)
+    assert live_metrics.get_cache_stats("proj-w")["samples"] == 1
+    live_metrics.reset_cache_stats()
+
+
 def test_cache_window_rolls_at_20():
     """v4-3：窗口=20（展示口径「近 20 样本滚动」），新样本挤掉最旧。"""
     live_metrics.reset_cache_stats()

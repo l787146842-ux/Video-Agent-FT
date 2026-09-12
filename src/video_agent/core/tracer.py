@@ -13,6 +13,7 @@ import hashlib
 import time
 import uuid
 from collections import deque
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 import json
@@ -65,6 +66,11 @@ class _TraceContextState:
 
     asyncio 任务创建时自动拷贝上下文，后台 worker 与新会话各写各的。
     """
+    # 父帧链（D2 对象化落盘）：仅当 start_trace 时上下文里有一个**仍在活的
+    # 父 trace**（即本次是真嵌套：子代理与父同 asyncio task 内联跑）才挂上，
+    # 供 finish_trace 回退到父帧。顶层顺序轮次父态 current 已 None ⇒ 不挂，
+    # 行为与旧「finish 置 current=None」完全一致。
+    parent: Optional["_TraceContextState"] = None
     current: Optional["TraceRecord"] = None  # 本上下文当前 trace
     step_start: float = 0.0  # 当前 step 计时起点
     # 当前 step 期间收集的操作/闸机/仲裁/reasoning 明细（end_step 归档）
@@ -134,6 +140,9 @@ class TraceRecord:
     user_message_preview: str = ""  # 前 80 字符
     user_id: str = ""  # 多用户归属（基础，完整鉴权另行立项）
     llm_calls: int = 0  # 本 trace 含模型调用次数（成本看板口径用）
+    # 血缘（D3）：子代理 trace 记父 trace_id，两条流各自独立落盘但可双向导航，
+    # 治「委派轮主 trace 断链」后仍能按 parent_trace_id 找回父轮（空=顶层轮）。
+    parent_trace_id: str = ""
     # 失败现场摘要（仅失败轮非空）：异常上抛路径的 partial trace 归档，
     # 重试带上下文续跑（web/chat_retry_context）据此还原「在何处失败」
     error: str = ""
@@ -175,6 +184,9 @@ class TraceRecord:
             "llm_calls": self.llm_calls,
             "steps": steps,
         }
+        # 血缘：非子代理不写键（历史格式不变，体积不增）
+        if self.parent_trace_id:
+            d["parent_trace_id"] = self.parent_trace_id
         # 失败现场：无错误不写键（历史成功 trace 格式不变，体积不增）
         if self.error:
             d["error"] = self.error
@@ -236,8 +248,26 @@ class AgentTracer:
 
     @classmethod
     def reset(cls) -> None:
-        """测试用：重置单例"""
+        """测试用：重置单例（并清空当前上下文的追踪态）。
+
+        父帧链/对象化落盘（D2）后，残留的追踪态会随 contextvar 漂到下条用例
+        （同 worker 多文件共享上下文），造成跨用例污染。reset 同步清空
+        追踪绑定，恢复逐用例隔离（与旧「finish 置 current=None」等效隔离）。"""
         cls._instance = None
+        _trace_ctx_var.set(None)
+
+    @contextmanager
+    def child_trace_scope(self):
+        """子代理隔离带（D1 兜底）：进入时快照当前追踪绑定、退出时无条件还原。
+
+        正常路径下子的 finish_trace 已沿父帧链回退（D2）；本带专为「子崩溃在
+        finish 之前」兼底——若不还原，本任务绑定会留在子的已空态，父 finish 又丢记。
+        仅围绕子代理 await 点使用，与 D2 幂等（回退后再还原同一父态为空操作）。"""
+        saved = _trace_ctx_var.get()
+        try:
+            yield
+        finally:
+            _trace_ctx_var.set(saved)
 
     def start_trace(self, user_message: str = "", user_id: str = "") -> str:
         """开始一次新追踪，返回 trace_id（绑定到调用方所在上下文）。
@@ -248,6 +278,10 @@ class AgentTracer:
         """
         inherited = _trace_ctx_var.get()
         ctx = _TraceContextState()
+        # 真嵌套判定：inherited 持有一个仍在跑的 trace（父此刻挂起等待子代理）
+        # ⇒ 记父帧供 finish 回退 + 记父 trace_id 供血缘；否则（顶层/兄弟任务）不挂。
+        if inherited is not None and inherited.current is not None:
+            ctx.parent = inherited
         if inherited is not None and inherited.pre_actions:
             # 轮前机械动作收养（向导机械写文档等）：完成态/运行态同一条目
             ctx.pre_actions = list(inherited.pre_actions)
@@ -264,6 +298,9 @@ class AgentTracer:
             user_message_preview=user_message[:80],
             user_id=user_id or "",
         )
+        if ctx.parent is not None and ctx.parent.current is not None:
+            # D3 血缘：子的 trace 记住是谁委派了它
+            ctx.current.parent_trace_id = ctx.parent.current.trace_id
         ctx.step_start = time.monotonic()
         # 当前 step 期间收集的操作明细与 reasoning（end_step 时归档）
         ctx.pending_actions = []
@@ -619,6 +656,13 @@ class AgentTracer:
         record = ctx.current.to_dict()
         self._traces.append(ctx.current)
         ctx.current = None
+        # D2 对象化落盘：完成判定认「本帧自己」，落盘后自动回退到仍在活的父帧
+        # ——子代理与父同 asyncio task 内联跑，子的 finish 若不回退，会把本任务
+        # 的绑定留在「子的已空态」上，父 finish_trace 见 current is None 直接返回
+        # 空 → 主轮 trace 永不落盘（委派轮审计断链根因）。父 current 已空（顶层/兄弟）
+        # 时不回退，等价旧行为。
+        if ctx.parent is not None and ctx.parent.current is not None:
+            _trace_ctx_var.set(ctx.parent)
         self._persist_record(record)
         return record
 

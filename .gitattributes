@@ -1,0 +1,56 @@
+# 统一换行符，消除 Windows(core.autocrlf=true) 下 LF↔CRLF 造成的"伪 diff"。
+# 原则：仓库内一律存 LF；文本文件签出也用 LF，避免工作树在 CRLF/LF 间反复横跳。
+# 需要一次性把历史文件归一：在干净工作树上执行 `git add --renormalize .` 并单独成一次提交。
+
+# 默认：由 Git 按内容判定是否文本；文本一律规范成 LF
+* text=auto eol=lf
+
+# 明确为文本的源文件（保险起见再显式声明）
+*.py    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.jsx   text eol=lf
+*.css   text eol=lf
+*.scss  text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.jsonc text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.ini   text eol=lf
+*.cfg   text eol=lf
+*.txt   text eol=lf
+*.sh    text eol=lf
+
+# Windows 批处理/PowerShell：保留 CRLF（.bat 用 LF 在部分 Windows 上会异常）
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# 二进制：绝不改换行
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.icns  binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.mp3   binary
+*.mp4   binary
+*.webm  binary
+*.mov   binary
+*.zip   binary
+*.gz    binary
+*.sqlite3 binary
+*.db    binary

@@ -101,10 +101,9 @@ def _tool_call_names(messages) -> list:
 async def test_delegation_runs_child_in_isolated_context_and_returns_summary(svc):
     """父发 run_subagent → 子真建组落账 → 只回摘要；子的中间步不出现在父上下文。"""
     adapter = _ScriptedAdapter([
-        # 1) 父：委派（带类型）
+        # 1) 父：委派（通用子代理，无类型）
         {"tool": "run_subagent", "args": {
-            "task": "按已确认规格拆解关键元素：程心、阶梯计划",
-            "task_kind": "storyboard_split"}},
+            "task": "按已确认规格拆解关键元素：程心、阶梯计划"}},
         # 2) 子：真调建组工具（经同一闸机链、写同一工作台）
         {"tool": "storyboard_create_group", "args": {
             "group_type": "keyElement", "title": "程心",

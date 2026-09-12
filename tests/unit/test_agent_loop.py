@@ -206,10 +206,15 @@ async def test_pure_text_round_still_terminal_after_fix(svc, executor):
 
 
 # ---------- 混合轮提前终止语义（续轮预算已随阶段规则去代码化批退役） ----------
+# 注（2026-09-11 批②C）：agent_loop 的 fc_done 提前收尾新增「本步有工具失败
+# （had_tool_failure）则不收尾」限定。以下两例的 fake extra 均未置该键，
+# 故仍按提前终止语义收尾（断言不变）；真「失败+同轮 stop」路径由
+# tests/integration/test_fc_done_gated_on_failure.py 钉死续跑。
 
 async def test_mixed_round_stop_with_text_terminates(svc, executor):
     """产出类被拒的续轮预算已退役（2026-09-10）：finish=stop + 可见正文
-    即按既有提前终止语义收尾，拒因已在 messages 回喂，模型凭其自决。"""
+    即按既有提前终止语义收尾，拒因已在 messages 回喂，模型凭其自决。
+    本例 fake extra 未带 had_tool_failure，故不受 2026-09-11 收窄影响。"""
     llm, calls = make_fc_llm([
         ("已读取规范，现在写入规格。", "stop", 1, 0.0, {"had_fc_calls": True}),
         ("不该到达", "stop", 0),

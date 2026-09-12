@@ -778,7 +778,8 @@ async def _summarize_span(
         record_cache_usage(
             str(getattr(svc, "active_project_id", "") or ""),
             int(getattr(resp, "prompt_tokens", 0) or 0),
-            int(getattr(resp, "cached_tokens", 0) or 0))
+            int(getattr(resp, "cached_tokens", 0) or 0),
+            conversation_id=conversation_id, thread_kind="summary")
     except Exception:
         pass
     if str(getattr(resp, "finish_reason", "") or "") == "length":
