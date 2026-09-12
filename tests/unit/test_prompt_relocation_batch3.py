@@ -60,14 +60,15 @@ def test_b3_prompt_builder_no_inline_instructions():
 def test_b3_pause_discipline_single_home():
     """暂停纪律唯一家 = workflow_pause 工具描述（P1 规则单家；
     2026-09-12 指令体量治理批：原 skill_runtime 纪律2/4 停机判定与收尾批
-    合并条款迁入工具描述，protocol 暂停段同步删除）。
-    （原批 A1 的唯一停机判定式已随纪律2 退役删除。）"""
+    合并条款迁入工具描述，protocol 暂停段同步删除。
+    （同日 3333 事故批：description 改 dsh 式正面契约——回应三态条款
+    随说明层减负退役，三态消费语义归平台 reducer 行为，不再模型可见。）"""
     from src.video_agent.tools.document_tools import WorkflowPauseTool
 
     wd = WorkflowPauseTool().description or ""
     assert "真正的停 = 调用本工具" in wd, "假停无效条款（工具描述）丢失"
-    assert "收尾批可合并" in wd, "收尾批合并条款（工具描述）丢失"
-    assert "用户回应三态" in wd or "回应三态" in wd, "回应三态条款（工具描述）丢失"
+    assert "先收尾后暂停" in wd, "收尾批合并条款（工具描述）丢失"
+    assert "本轮立即结束" in wd, "问即停结束本轮条款（工具描述）丢失"
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
     assert "何时停（唯一判定）" not in sd, "停机判定式已在纪律2 退役，不得回潮"
     ir = load_prompt("planner/protocol.md")

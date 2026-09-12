@@ -105,15 +105,9 @@ class WorkflowPauseInput(BaseModel):
     options: List[Dict[str, str]] = Field(
         default_factory=list,
         description="引导选项（前端渲染为选择卡片，用户选择后作为回复发送），暂停时原则上必须提供："
-        "每项 {label: 选项名, description: 一句话说明, group: 所属问题/维度标题（可选）}。"
-        "选项以你提供的为准（系统不代派「继续」类选项，确认/继续类与调整类都由你按需给全）。"
-        "label 必须是一个具体的可选值（如「硬科幻」「16:9」「3-5分钟」），"
-        "严禁把维度名/问题名当选项 label（如 label=「题材类型」是错的——那是 group）；"
-        "一个维度有几个候选值就发几项，候选项之间不要用「|」拼在一个选项里。"
-        "label 也必须如实描述用户确认后立即执行的下一步动作（如关键元素拆分确认后是「编写关键元素提示词」，"
-        "不是「生成概念图」），严禁超前承诺。"
-        "多个维度一次性收集时（如成片规格：时长/画幅/风格/声音），每项带上 group 字段，"
-        "前端会渲染为分页向导卡片，用户逐页选完后一次性发送全部选择，避免逐题多轮往返",
+        "每项 {label: 具体可选值（如「硬科幻」「16:9」）, description: 一句话说明, "
+        "group: 所属维度标题（可选）}。多维度一次收集时每项带 group，"
+        "前端渲染为分页向导卡片，用户逐页选完后一次性发回全部选择。",
     )
 
 
@@ -223,9 +217,9 @@ class ReadUploadedDocTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需读取用户上传的素材文档（故事/剧本等）全文。"
-        "上传文档正文不会自动注入上下文，清单里只有名称/字数/预览，"
-        "需要全文时必须按 name 调用本工具，请勿声称看不到文档或要求用户重新粘贴。"
+        "读取用户上传的素材文档（故事/剧本等）全文。"
+        "上传文档正文不自动注入上下文，清单里只有名称/字数/预览，"
+        "需要全文时按 name 调用本工具；超长文档传 start 分段续读。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -308,20 +302,10 @@ class ReadSkillTool(BaseTool):
     parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "Skill 正文/章节/附属资源的按需续读工具。选中 Skill 已注入 <planner> 段全文"
-        "与章节目录，其余章节按需传 section 经本工具读取；按字符偏移读传 start。"
-        "未选中的 Skill 执行前先调用本工具读取全文，勿凭 Skill 目录摘要自行推测流程。"
-        "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。\n"
-        "Skill 文档章节标签是阶段标记，非工具名，对应真实动作（照此调用 Tool）：\n"
-        "- script_analyze（剧本/素材分析）：read_uploaded_doc 读取上传文档，分析结论经 "
-        "script_analysis_report 落账，正文中作浓缩交代（要点以所用 Skill 分析章节要求为准），不复述报告全文\n"
-        "- storyboard_key_elements / storyboard_shots / storyboard_audio（关键元素/分镜/音频结构搭建）："
-        "storyboard_create_group 建组 + storyboard_add_draft 加草稿卡 + storyboard_patch_draft 补字段\n"
-        "- write_media_prompt（媒体提示词编写）：提示词由你撰写，经 storyboard_patch_draft 写入草稿字段，"
-        "生成时自动作为 image_generate / generate_video 的入参\n"
-        "- audio_generate（音频生成）：由系统音频生成通道按故事板 audio_layers 配置产出，"
-        "无对应 Tool，需要时向用户说明即可\n"
-        "- video_assembler（时间线组装）：剪辑组装与导出在工作台完成，无对应 Tool，引导用户操作"
+        "Skill 正文/章节/附属资源按需读取。"
+        "选中 Skill 已注入流程段全文与章节目录，其余章节传 section 读取，"
+        "超长章节传 start 续读；未选中的 Skill 经本工具读全文；"
+        "目录包附属资料（主文标注「按需加载」处）传 resource（如 references/…）读取。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -480,10 +464,9 @@ class GetSkillAssetTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "取 Skill 目录包 assets/ 下素材资源的描述符（路径/名/大小/类型，只读）："
-        "图/文档/音/视频素材按引用消费——拿到描述符后把其中 path 传给生成类工具"
-        "（image_generate/generate_video 等）作参考素材；二进制内容不进对话上下文，"
-        "不要尝试读取素材正文。文本参考资料仍经 read_skill(resource=…) 读取。"
+        "取 Skill 目录包 assets/ 下素材资源的描述符（路径/名/大小/类型）："
+        "把其中 path 传给生成类工具（image_generate/generate_video 等）作参考素材；"
+        "二进制内容不进对话上下文，文本参考资料经 read_skill(resource=…) 读取。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -534,9 +517,9 @@ class ReadProjectDocTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需读取项目规格文档（document_write 产出，如 Final_Video_Spec.md）全文。"
-        "工作台状态 JSON 的 documents 节只有清单（名称/摘要），"
-        "开工前必须先读规格文档并遵守其中约束。"
+        "读取项目规格文档（document_write 产出，如 制片规格.md）全文。"
+        "工作台状态 JSON 的 documents 节只有清单（名称/摘要），全文经本工具读取；"
+        "超长文档传 start 分段续读。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -592,12 +575,12 @@ class ImageGenerateTool(BaseTool):
     detail_tier = "expand"  # 产出类
     provider_kind = "image"  # I-3 裁决 2026-09-03：provider 注入声明轴（single/batch 形态在 apply_provider_defaults 内消化）
     description = (
-        "生图统一工具（危险操作）。mode='batch'（默认）：工作台批量出图，面向故事板草稿，"
-        "仅当用户明确要求'生成/出图/执行'时才可调用，执行前会弹确认卡，"
-        "系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入；"
-        "mode='single'：对话内单张应急出图，按 prompt 直接生成单张图片并返回图片地址，每轮最多一次（系统工具层强制）。"
-        "生成渠道优先级：用户当前消息显式指定 > 草稿自身参数 > 全局设置默认渠道；"
-        "草稿未配置时系统自动填充，无需自行臆造供应商或模型名（规格文档与 Skill 不承载渠道参数）。"
+        "生图统一工具。mode='batch'（默认）：面向故事板草稿批量出图，"
+        "target 传 all_keyElements / all_shots / 具体 draft_id，"
+        "系统自动把草稿 sceneRefs 引用的元素概念图注入为参考图；"
+        "mode='single'：按 prompt 生成单张图片并返回图片地址，每轮限一次。"
+        "生成渠道优先级：用户当前消息显式指定 > 草稿自身参数 > 全局设置默认渠道，"
+        "系统自动注入，规格文档与 Skill 不承载渠道参数。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -852,14 +835,10 @@ class WorkflowPauseTool(BaseTool):
     risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
     detail_tier = "expand"  # 关键交互：暂停请求展开可见输入
     description = (
-        "暂停工作流并请求用户确认——真正的停 = 调用本工具（只在正文里写「请确认」不算暂停）。"
-        "调用时机：到达所用 Skill 声明的暂停点；或 Skill 正文要求向用户问询/确认的事项（如信息缺失问询）；"
-        "或平台硬闸要求确认时。收尾批可合并：本阶段落账/写档类收尾工具（如 script_analysis_report、"
-        "document_write）可与本工具同批连续提交（先收尾后暂停），不必为暂停单独再跑一轮；"
-        "本工具成功发行后本轮立即结束，同批排在其后的工具调用不会被执行，不要在暂停后再补发任何工具调用。"
-        "用户回应三态：点选选项=接受；拒绝/取消暂停卡=方案作废（按用户新消息处置）；"
-        "直接输入新指令=取代暂停（新指令优先）。"
-        "message 只是补充说明（卡片问句由系统按阶段自动生成，阶段成果由系统挂事件卡展示）。"
+        "暂停工作流并请求用户确认——真正的停 = 调用本工具（只在正文里写「请确认」不算暂停），"
+        "成功发行后本轮立即结束。用于所用 Skill 声明的暂停点，或需向用户问询/确认时。"
+        "同阶段收尾类工具（落账/写档）可与之同批提交（先收尾后暂停），无需为暂停单独跑一轮。"
+        "message 是给用户的补充说明（卡片问句由系统按阶段自动生成，阶段成果由系统挂事件卡展示）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -890,10 +869,13 @@ class RunSubagentTool(BaseTool):
     # 2026-09-11 批③A：具名类型退役 → 通用单一子代理（按工具面白名单限权）。
     # 委派策略的完整表述在主对话 `subagent` system 段（prompts/planner/subagent.md
     # :: SUBAGENT_POLICY），工具描述只留一句核心契约，不再内嵌花名册。
+    # 2026-09-12 用户裁决（对齐外部标杆）：description 只写正面契约，
+    # 删「不要用于确认类/花钱生成」禁令句——子级白名单无确认工具、无生成工具，
+    # 结构上已锁死；说明层禁令经 3333 项目实证会吓退模型不敢委派。
     description = (
-        "把一段自包含、可独立完成的批量工作委派给子代理：它在自己的上下文里连续执行到完成，"
-        "不占用本对话上下文，只回一段摘要（不含中间步骤）。给它一个完整、独立的任务说明"
-        "——子代理看不到本对话。**不要用于**：需要逐条与用户确认的分步推进，或花钱生成（生图/生视频）。"
+        "把一段自包含、可独立完成的批量工作委派给子代理：它在自己的上下文里"
+        "连续执行到完成，不占用本对话的上下文，只回结果摘要、不回中间步骤。"
+        "给它一份完整、独立的任务说明——它看不到本对话。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

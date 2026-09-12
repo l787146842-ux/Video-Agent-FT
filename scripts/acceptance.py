@@ -74,6 +74,8 @@ GATES: List[Tuple[str, List[str]]] = [
 # ===== Phase 2: SUITES — 测试四件套（生成覆盖率产物供 RATCHETS 消费） =====
 SUITES: List[Tuple[str, List[str]]] = [
     # --cov 产出 coverage.xml，供 RATCHETS 阶段 cov_ratchet 消费（本轮新鲜产物）
+    # （tmp 根已由 pytest.ini addopts --basetemp 收口到 .pytest_tmp，
+    #  绕开系统 Temp 的坏 reparse point 污染——2026-09-12 3333 批）
     ("pytest", [sys.executable, "-m", "pytest", "tests/", "-n", "8", "-q", "--tb=line",
                 "--cov=src/video_agent/core", "--cov-report=xml"]),
     # vitest 产出 coverage/coverage-summary.json，供 RATCHETS 阶段 fe_cov_ratchet 消费

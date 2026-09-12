@@ -156,21 +156,6 @@ def _pctx(state=None, injected_skill="任意 Skill", override=False):
         injected_skill=injected_skill, gate_override=override)
 
 
-def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
-    """FC 轨：首次搭建批次剥离内联详细提示词（P0-2）"""
-    args = {"group_type": "keyElement", "title": "Element_测试",
-            "draft": {"label": "概念图", "prompt": "x" * 100}}
-    assert fc_gates.strip_structure_prompt(
-        _pctx(), "storyboard_create_group", args) is True
-    assert args["draft"]["prompt"] == ""
-    assert fc_gates.strip_structure_prompt(
-        _pctx(injected_skill=""),
-        "storyboard_create_group", {"draft": {"prompt": "x" * 100}}) is False
-    assert fc_gates.strip_structure_prompt(
-        _pctx(), "storyboard_create_group",
-        {"draft": {"prompt": "x" * 100}}) is True
-
-
 def test_fc_pending_window_passes_bad_prompt(monkeypatch):
     """字数地板退役（2026-09-10 阶段规则去代码化批，计划 B5）：待确认窗口内
     过短提示词不再被拒收（拒收与否只由闸机结构项决定，本项已无硬错误）。"""

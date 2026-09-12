@@ -41,20 +41,22 @@ def test_per_tool_instructions_not_duplicated(protocol_text: str):
 
 
 def test_tool_descriptions_carry_usage():
-    """层 10 承载完整用法：每个 read_* 工具描述自带渐进式披露语义"""
+    """层 10 承载完整用法：每个 read_* 工具描述自带渐进式披露语义
+    （2026-09-12 3333 事故批：description 改 dsh 式正面契约，
+    禁令句（如「重新粘贴」）退役，正面事实句为钉）。"""
     draft_desc = StoryboardReadDraftTool().description
     assert "目录信息" in draft_desc and "全文" in draft_desc
     assert "draft_type" in draft_desc  # 迁移补强的参数建议
 
     skill_desc = ReadSkillTool().description
-    assert "Skill 目录" in skill_desc and "全文" in skill_desc
+    assert "章节目录" in skill_desc and "全文" in skill_desc
 
     doc_desc = ReadProjectDocTool().description
     assert "清单" in doc_desc and "规格文档" in doc_desc
 
     up_desc = ReadUploadedDocTool().description
-    assert "不会自动注入" in up_desc
-    assert "重新粘贴" in up_desc  # 迁移补强的禁止项
+    assert "不自动注入" in up_desc
+    assert "name" in up_desc  # 按名调用的参数用法正面承载
 
 
 def test_non_tool_clauses_kept(protocol_text: str):

@@ -103,8 +103,7 @@ class CanvasListTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "列出所有画布（ID、标题、节点数）。操作任何画布前，"
-        "先用本工具确认目标画布 ID，再调用对应操作工具。"
+        "列出所有画布（ID、标题、节点数），用于确认目标画布 ID。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -198,8 +197,7 @@ class CanvasUpdateNodeTool(BaseTool):
     risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（画布节点可删除/撤销）
     detail_tier = "expand"  # 产出类
     description = (
-        "修改画布中指定节点的属性（标题/坐标/提示词/图片/文本内容）；"
-        "画布操作结果以工具返回值为准，完成后向用户简述操作结果。"
+        "修改画布中指定节点的属性（标题/坐标/提示词/图片/文本内容）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

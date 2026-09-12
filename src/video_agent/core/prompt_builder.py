@@ -25,7 +25,6 @@ from src.video_agent.core import prompt_gates  # noqa: F401
 from src.video_agent.core import subagent as subagent_mod
 from src.video_agent.utils import live_metrics
 from src.video_agent.core.token_budget import estimate_tokens
-from src.video_agent.skill_runtime import guard as skill_guard
 # v3 声明读取经模块属性访问（测试 patch registry.<fn> 即生效）
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS

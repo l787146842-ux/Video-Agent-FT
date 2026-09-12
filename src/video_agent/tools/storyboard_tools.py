@@ -149,17 +149,22 @@ class StoryboardCreateGroupTool(BaseTool):
         _title = ops.normalize_group_title(_raw_title)
         new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": params.desc, "drafts": []}
 
+        # 分镜通道的未匹配元素令牌（非分镜恒空）
+        unmatched_tokens: List[str] = []
         if cat_key == CAT_SHOTS:
             new_group["roughDesc"] = params.rough_desc or params.desc
             new_group["duration"] = params.duration or "5s"
             new_group["shotType"] = params.shot_type
             # 批 6 · A3：分镜描述里的 [元素名] 令牌自动解析为元素引用
-            # （显式传 scene_refs 则以显式为准；匹配不到的令牌丢弃不拒收）
+            # （显式传 scene_refs 则以显式为准；匹配不到的令牌丢弃不拒收，
+            # 但必须回喂告知——3333 批裁决：静默丢弃=模型以为挂上了引用）
             if params.scene_refs:
                 new_group["sceneRefs"] = params.scene_refs
             else:
                 tokens = ops.parse_element_tokens(f"{params.desc or ''}\n{params.rough_desc or ''}")
-                new_group["sceneRefs"] = ops.match_element_titles(svc.state_dict, tokens)
+                matched_titles, unmatched_tokens = ops.match_element_titles_report(
+                    svc.state_dict, tokens)
+                new_group["sceneRefs"] = matched_titles
 
         async with svc.lock:
             svc.state_dict.setdefault(cat_key, []).append(new_group)
@@ -169,7 +174,15 @@ class StoryboardCreateGroupTool(BaseTool):
                 ops.append_draft(new_group, draft_payload)
 
             svc.save()
-        return ToolResult(success=True, data={"group_id": new_id})
+        result_data: Dict[str, Any] = {"group_id": new_id}
+        if unmatched_tokens:
+            _miss = "、".join(unmatched_tokens[:5]) + ("…" if len(unmatched_tokens) > 5 else "")
+            result_data["detail"] = (
+                f"已建组，但描述中的 [元素名] 令牌未匹配到关键元素组（已丢弃、未挂引用）：{_miss}。"
+                "元素名须与关键元素组标题一致（read_state_group 可查），必要时显式传 scene_refs。")
+            result_data["warnings"] = [
+                f"分镜「{_title[:12]}」的元素令牌未匹配：{_miss}（引用缺失，跨镜一致性可能断链）"]
+        return ToolResult(success=True, data=result_data)
 
 
 class StoryboardPatchDraftTool(BaseTool):
@@ -358,8 +371,16 @@ class StoryboardMediaToChatTool(BaseTool):
     async def aexecute(self, params: MediaToChatInput) -> ToolResult:
         svc = StateManager.get_instance()
         media_type = params.media_type.lower().strip()
+        # 非法值显式拒收（3333 批裁决：静默归空=过滤失效，插入范围比模型
+        # 请求的宽且 success 无说明）；合法值 = image | video | audio | 空
         if media_type not in ("", "image", "video", "audio"):
-            media_type = ""
+            return ToolResult(
+                success=False,
+                error=(f"参数无效：media_type='{params.media_type}'（合法取值："
+                       "image | video | audio，留空=不过滤）。"
+                       "本次调用已拒收、未做任何改动，输入框保持原样。"),
+                error_code="validation", retryable=False,
+            )
         limit = params.limit or settings.max_chat_inserts
         limit = min(limit, settings.max_chat_inserts)
 
@@ -515,10 +536,9 @@ class ViewStoryboardMediaTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需把故事板草稿卡的图片加载进你的上下文（服务端转 base64 内联，你能直接看到画面）。"
-        "编写/修改某条提示词草案前，先调用本工具加载对应草稿的图片再动笔；"
-        "每轮只加载当前正在处理的那几张，不要一次拉全部（单次数量有上限，超限报错）。"
-        "draft_ids 支持真实 ID 与「组号-卡序号」编号（如 '1-2'）。"
+        "把故事板草稿卡的图片加载进你的上下文（服务端转 base64 内联，可直接看到画面）。"
+        "draft_ids 支持真实 ID 与「组号-卡序号」编号（如 '1-2'），"
+        "单次数量有上限，超限部分下轮再调。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

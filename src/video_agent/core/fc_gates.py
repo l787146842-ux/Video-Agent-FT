@@ -112,26 +112,6 @@ def resolve_current_refs(ctx: GateContext, name: str, args: Dict[str, Any]) -> N
                 args["target"] = ""
 
 
-def strip_structure_prompt(ctx: GateContext, name: str, args: Dict[str, Any]) -> bool:
-    """结构纯净闸（步骤3）：Skill 激活且 strict 时，create_group/add_draft 携带的
-    内联草稿带提示词时，剥离 prompt 字段
-    后放行建结构（不丢分组、不造成虚报），详细提示词留到用户确认后的步骤4。
-    返回 True = 发生了剥离（回喂时附说明）。"""
-    if not ctx.injected_skill or prompt_gates.gate_mode() != "strict":
-        return False
-    if name not in ("storyboard_create_group", "storyboard_add_draft"):
-        return False
-    draft = args.get("draft")
-    if not isinstance(draft, dict):
-        return False
-    prompt = str(draft.get("prompt") or "").strip()
-    if not prompt:
-        return False
-    draft["prompt"] = ""
-    logger.info(f"[FlowGate] 剥离 {name} 内联详细提示词（{len(prompt)} 字，结构阶段只建骨架）")
-    return True
-
-
 def unknown_tool_error(name: str, has_tool: Optional[Callable[[str], bool]] = None) -> Optional[str]:
     """未注册工具结构化拒因（v4-2 解析层归位，话术唯一事实源）：
     MCP 命名空间或按谓词判定已注册返回 None；未注册名返回纯事实 +

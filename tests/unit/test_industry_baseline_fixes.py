@@ -99,11 +99,13 @@ def test_protocol_no_anti_pause_sentence():
 
 
 def test_pause_label_protocol_scoped_to_confirmation():
-    """workflow_pause label 协议（v3）：必须如实描述用户确认后立即执行的下一步动作。"""
+    """workflow_pause label 协议（v3）：label 必须是具体可选值。
+    （2026-09-12 3333 事故批：description 改 dsh 式正面契约，
+    「严禁超前承诺」类禁令句退役，协议由「具体可选值 + 示例」正面承载。）"""
     from src.video_agent.tools.document_tools import WorkflowPauseInput
 
     desc = WorkflowPauseInput.model_fields["options"].description
-    assert "立即执行的下一步动作" in desc
+    assert "具体可选值" in desc
     assert "不得携带下一阶段启动措辞" not in desc
 
 

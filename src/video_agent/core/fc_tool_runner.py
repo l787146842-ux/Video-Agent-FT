@@ -364,11 +364,11 @@ class FCToolRunner:
         if _idem_cached is not None:
             c.result, c.gate_error = _idem_cached, None
             return c
-        # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
-        fc_gates.strip_structure_prompt(ctx, name, args)
         # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 工具风险 →
         # 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
-        # （C1b 裁决 2026-08-31：阶段前置闸退役）
+        # （C1b 裁决 2026-08-31：阶段前置闸退役；结构纯净闸退役 2026-09-12——
+        #  无阶段感知静默剥离 add_draft 内联 prompt 造成假成功空提示词卡，
+        #  用户裁决删除：3333 项目实证）
         chain = fc_gates.run_gate_chain(
             ctx, name, args, paused_this_batch=paused_this_batch)
         c.gate_error = chain.error

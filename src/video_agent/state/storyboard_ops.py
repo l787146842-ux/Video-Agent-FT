@@ -439,16 +439,20 @@ def parse_element_tokens(text: str) -> List[str]:
     return tokens
 
 
-def match_element_titles(state: Dict[str, Any], tokens: List[str]) -> List[str]:
-    """把 [元素名] 令牌匹配到既有关键元素组标题（精确→双向包含）。
+def match_element_titles_report(
+    state: Dict[str, Any], tokens: List[str],
+) -> Tuple[List[str], List[str]]:
+    """把 [元素名] 令牌匹配到既有关键元素组标题，返回 (匹配标题, 未匹配令牌)。
 
-    匹配不到的令牌静默丢弃（不拒收不锁死——令牌是引导不是闸）。"""
+    匹配规则：精确 → 双向包含。未匹配令牌由调用方决定处置（建组通道
+    丢弃不拒收——令牌是引导不是闸；但必须回喂告知模型，防「以为挂上了」）。"""
     titles = [
         str(g.get("title") or "").strip()
-        for g in (state.get(CAT_KEY_ELEMENTS) or []) if isinstance(g, dict)
+        for g in (state.get(CAT_KEY_ELEMENTS, []) or []) if isinstance(g, dict)
     ]
     titles = [t for t in titles if t]
-    out: List[str] = []
+    matched: List[str] = []
+    unmatched: List[str] = []
     for token in tokens or []:
         token = str(token or "").strip()
         if not token:
@@ -456,9 +460,20 @@ def match_element_titles(state: Dict[str, Any], tokens: List[str]) -> List[str]:
         hit = next((t for t in titles if t == token), None)
         if hit is None:
             hit = next((t for t in titles if token in t or t in token), None)
-        if hit and hit not in out:
-            out.append(hit)
-    return out
+        if hit:
+            if hit not in matched:
+                matched.append(hit)
+        else:
+            unmatched.append(token)
+    return matched, unmatched
+
+
+def match_element_titles(state: Dict[str, Any], tokens: List[str]) -> List[str]:
+    """把 [元素名] 令牌匹配到既有关键元素组标题（精确→双向包含）。
+
+    匹配不到的令牌静默丢弃（不拒收不锁死——令牌是引导不是闸）。"""
+    matched, _unmatched = match_element_titles_report(state, tokens)
+    return matched
 
 
 def coerce_draft_payload(data: Any) -> Tuple[Optional[Dict[str, Any]], str]:
