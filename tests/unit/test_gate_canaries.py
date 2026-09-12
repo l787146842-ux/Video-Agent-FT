@@ -814,6 +814,17 @@ def test_canary_consent_copy_pause_accept_promise_in_other_fails(tmp_path, monke
     assert gate.main() == 1
 
 
+def test_canary_consent_copy_promise_relapse_in_protocol_fails(tmp_path, monkeypatch):
+    """违规侧：protocol 回潮携带同意承诺（2026-09-12 治理批迁出端防复活）→ 1。"""
+    gate = _consent_copy_scaffold(tmp_path, monkeypatch)
+    rel = gate.COPY_FILES["protocol_md"]
+    p = tmp_path / rel
+    text = p.read_text(encoding="utf-8")
+    p.write_text(text + "\n用户接受暂停卡后重提即视为已确认（本轮内不再拦截）。\n",
+                 encoding="utf-8")
+    assert gate.main() == 1
+
+
 def test_canary_consent_copy_missing_file_fail_closed(tmp_path, monkeypatch):
     """fail-closed：任一告示牌文件缺失 → 1（不得静默跳过）。"""
     gate = _consent_copy_scaffold(tmp_path, monkeypatch)

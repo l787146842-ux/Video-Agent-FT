@@ -58,12 +58,20 @@ def test_b3_prompt_builder_no_inline_instructions():
 
 
 def test_b3_pause_discipline_single_home():
-    """暂停纪律唯一家 = skill_runtime.md（P1）；frontmatter 流程清单附注的
-    复述防复活由 check_legacy_orchestration 门禁承接（P2d）。
-    （批 A1 改写为唯一停机判定式，钉死新表述。）"""
+    """暂停纪律唯一家 = workflow_pause 工具描述（P1 规则单家；
+    2026-09-12 指令体量治理批：原 skill_runtime 纪律2/4 停机判定与收尾批
+    合并条款迁入工具描述，protocol 暂停段同步删除）。
+    （原批 A1 的唯一停机判定式已随纪律2 退役删除。）"""
+    from src.video_agent.tools.document_tools import WorkflowPauseTool
+
+    wd = WorkflowPauseTool().description or ""
+    assert "真正的停 = 调用本工具" in wd, "假停无效条款（工具描述）丢失"
+    assert "收尾批可合并" in wd, "收尾批合并条款（工具描述）丢失"
+    assert "用户回应三态" in wd or "回应三态" in wd, "回应三态条款（工具描述）丢失"
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
-    assert "何时停（唯一判定）" in sd, "停机判定式单家条款丢失"
-    assert "workflow_pause 真停并结束本轮" in sd, "暂停纪律单家条款丢失"
+    assert "何时停（唯一判定）" not in sd, "停机判定式已在纪律2 退役，不得回潮"
+    ir = load_prompt("planner/protocol.md")
+    assert "暂停请求用户确认" not in ir, "protocol 暂停段已迁出，不得回潮"
 
 
 def test_f1_guide_card_boundary_reference():
@@ -92,21 +100,23 @@ def test_finalization_to_document_clause():
 
 def test_f2_prompt_dual_source_merge():
     """F-2 双源合并快照锁（重组后单家 = protocol.md / skill_runtime.md）：
-    ① 防虚报表述源唯一 = skill_runtime《Skill 流程纪律》第 7 条（含状态对账细节），
-       protocol 只留一句引用式短述（批 A2 修正指针：原「第 9 条」为陈旧序号）；
-    ② 回复精简模型可见表述归 protocol 回复输出纪律条目 1，铁律模板只留头部指针
-       （批 A3：模板第 1 条与头部同义复述已删）；
-    ③ 优先级链三处措辞以 iron_rules_header 为唯一源对齐。"""
+    ① 防虚报表述源唯一 = skill_runtime《Skill 流程纪律》第 4 条（含状态对账细节；
+       2026-09-12 治理批纪律重编号：原第 7 条 → 第 4 条），
+       protocol 只留一句引用式短述；
+    ② 回复精简模型可见表述归 protocol 回复输出纪律（治理批压缩为三行契约，
+       全文归属锚点 = 草稿卡/事件卡），铁律模板只留头部指针；
+    ③ 优先级链三处措辞以 iron_rules_header 为唯一源对齐（治理批补充裁决：
+       优先级链只在铁律文档出现，模型可见层不携带）。"""
     from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY, _NEW_PRIORITY
 
     ir = load_prompt("planner/protocol.md")
-    assert "《Skill 流程纪律》第 7 条" in ir, "防虚报引用式短述丢失"
+    assert "《Skill 流程纪律》第 4 条" in ir, "防虚报引用式短述丢失"
     assert "动作通道唯一 = 工具调用，只在正文写不产生任何效果" not in ir, "防虚报双源回潮"
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
-    assert "状态对账" in sd, "防虚报表述源（第 7 条）丢失"
+    assert "状态对账" in sd, "防虚报表述源（第 4 条）丢失"
 
     od = load_prompt("planner/protocol.md")
-    assert "已写入" in od and "一句话摘要" in od, "回复纪律表述源丢失"
+    assert "归属草稿卡" in od and "事件卡" in od, "回复纪律表述源丢失"
     assert "见平台注入的《执行铁律》头部声明" in _IRON_RULES_DOC_BODY
     assert "回复纪律见平台协议" not in _IRON_RULES_DOC_BODY
     assert "逐卡罗列" not in _IRON_RULES_DOC_BODY, "铁律模板复述回复纪律回潮"

@@ -21,7 +21,6 @@ from src.video_agent.tools.base import (
     ToolResult,
 )
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
-from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import GenerationError
 from src.video_agent.core.provider_config import (
@@ -98,15 +97,16 @@ class GenerateImageInput(StrictToolInput):
 
 class WorkflowPauseInput(BaseModel):
     message: str = Field(
-        "", description="给用户的一句确认问句（建议≤120字）。"
+        "", description="给用户的补充说明（展示在正文；暂停卡上的问句由系统按阶段自动生成，无需撰写）。"
         "阶段成果（剧本分析要点等）由系统自动渲染进正文，"
-        "message 中不要复述成果内容，只问确认什么/下一步选择。"
+        "message 中不要复述成果内容，只写与本次确认相关的补充说明，保持简短。"
     )
 
     options: List[Dict[str, str]] = Field(
         default_factory=list,
         description="引导选项（前端渲染为选择卡片，用户选择后作为回复发送），暂停时原则上必须提供："
         "每项 {label: 选项名, description: 一句话说明, group: 所属问题/维度标题（可选）}。"
+        "选项以你提供的为准（系统不代派「继续」类选项，确认/继续类与调整类都由你按需给全）。"
         "label 必须是一个具体的可选值（如「硬科幻」「16:9」「3-5分钟」），"
         "严禁把维度名/问题名当选项 label（如 label=「题材类型」是错的——那是 group）；"
         "一个维度有几个候选值就发几项，候选项之间不要用「|」拼在一个选项里。"
@@ -311,7 +311,17 @@ class ReadSkillTool(BaseTool):
         "Skill 正文/章节/附属资源的按需续读工具。选中 Skill 已注入 <planner> 段全文"
         "与章节目录，其余章节按需传 section 经本工具读取；按字符偏移读传 start。"
         "未选中的 Skill 执行前先调用本工具读取全文，勿凭 Skill 目录摘要自行推测流程。"
-        "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。"
+        "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。\n"
+        "Skill 文档章节标签是阶段标记，非工具名，对应真实动作（照此调用 Tool）：\n"
+        "- script_analyze（剧本/素材分析）：read_uploaded_doc 读取上传文档，分析结论经 "
+        "script_analysis_report 落账，正文中作浓缩交代（要点以所用 Skill 分析章节要求为准），不复述报告全文\n"
+        "- storyboard_key_elements / storyboard_shots / storyboard_audio（关键元素/分镜/音频结构搭建）："
+        "storyboard_create_group 建组 + storyboard_add_draft 加草稿卡 + storyboard_patch_draft 补字段\n"
+        "- write_media_prompt（媒体提示词编写）：提示词由你撰写，经 storyboard_patch_draft 写入草稿字段，"
+        "生成时自动作为 image_generate / generate_video 的入参\n"
+        "- audio_generate（音频生成）：由系统音频生成通道按故事板 audio_layers 配置产出，"
+        "无对应 Tool，需要时向用户说明即可\n"
+        "- video_assembler（时间线组装）：剪辑组装与导出在工作台完成，无对应 Tool，引导用户操作"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -586,6 +596,8 @@ class ImageGenerateTool(BaseTool):
         "仅当用户明确要求'生成/出图/执行'时才可调用，执行前会弹确认卡，"
         "系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入；"
         "mode='single'：对话内单张应急出图，按 prompt 直接生成单张图片并返回图片地址，每轮最多一次（系统工具层强制）。"
+        "生成渠道优先级：用户当前消息显式指定 > 草稿自身参数 > 全局设置默认渠道；"
+        "草稿未配置时系统自动填充，无需自行臆造供应商或模型名（规格文档与 Skill 不承载渠道参数）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -840,8 +852,14 @@ class WorkflowPauseTool(BaseTool):
     risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
     detail_tier = "expand"  # 关键交互：暂停请求展开可见输入
     description = (
-        "暂停工作流并请求用户确认。在所用 Skill 声明的强制暂停点调用，"
-        "请用户审阅当前阶段成果后继续。"
+        "暂停工作流并请求用户确认——真正的停 = 调用本工具（只在正文里写「请确认」不算暂停）。"
+        "调用时机：到达所用 Skill 声明的暂停点；或 Skill 正文要求向用户问询/确认的事项（如信息缺失问询）；"
+        "或平台硬闸要求确认时。收尾批可合并：本阶段落账/写档类收尾工具（如 script_analysis_report、"
+        "document_write）可与本工具同批连续提交（先收尾后暂停），不必为暂停单独再跑一轮；"
+        "本工具成功发行后本轮立即结束，同批排在其后的工具调用不会被执行，不要在暂停后再补发任何工具调用。"
+        "用户回应三态：点选选项=接受；拒绝/取消暂停卡=方案作废（按用户新消息处置）；"
+        "直接输入新指令=取代暂停（新指令优先）。"
+        "message 只是补充说明（卡片问句由系统按阶段自动生成，阶段成果由系统挂事件卡展示）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -862,12 +880,6 @@ class RunSubagentInput(BaseModel):
         "验收标准。子代理看不到本对话，也不会看到已确认的规格与 Skill 章节——"
         "需它遵守的规范要点写进本说明（并告知 Skill 名，它可自行 read_skill 取读）。",
     )
-    task_kind: str = Field(
-        default="general",
-        description="子代理类型（决定它被授予的工具面与职责规范）：storyboard_split=拆"
-        "关键元素/分镜建组；media_prompt_write=为已建好的卡逐条写媒体提示词；"
-        "general=兜底（读 + 结构写入 + 写档）。未指定或认不得时按 general。",
-    )
 
 
 class RunSubagentTool(BaseTool):
@@ -875,15 +887,13 @@ class RunSubagentTool(BaseTool):
     risk = "medium"  # 写工作台状态但可撤销（子级经故事板/文档工具落账）
     detail_tier = "expand"  # 关键控制流：展开可见委派任务与回摘要
     # 无 provider_kind / costly=False / parallel_safe=False（独占串行，屏障）。
-    # 类型清单（花名册）唯一源 = prompts/planner/subagent.md :: KIND_ROSTER
-    # （与 core/subagent.SUBAGENT_KINDS 同名单，漂移由单测钉死）。
+    # 2026-09-11 批③A：具名类型退役 → 通用单一子代理（按工具面白名单限权）。
+    # 委派策略的完整表述在主对话 `subagent` system 段（prompts/planner/subagent.md
+    # :: SUBAGENT_POLICY），工具描述只留一句核心契约，不再内嵌花名册。
     description = (
         "把一段自包含、可独立完成的批量工作委派给子代理：它在自己的上下文里连续执行到完成，"
-        "不占用本对话上下文，只回一段摘要（不含中间步骤）。**用于**：按已确认规格把剧本"
-        "拆解成关键元素与分镜、并逐条撰写提示词这类一次产出很多内容的批量工作。**给它"
-        "一个完整、独立的任务说明**——子代理看不到本对话。**不要用于**：需要逐条与用户确认"
-        "的分步推进，或花钱生成（生图/生视频）。\n" + load_prompt_section(
-            "planner/subagent.md", "KIND_ROSTER")
+        "不占用本对话上下文，只回一段摘要（不含中间步骤）。给它一个完整、独立的任务说明"
+        "——子代理看不到本对话。**不要用于**：需要逐条与用户确认的分步推进，或花钱生成（生图/生视频）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

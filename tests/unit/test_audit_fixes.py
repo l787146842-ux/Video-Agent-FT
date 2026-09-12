@@ -72,9 +72,9 @@ class TestStateRefreshPerStep:
         assert "STATE_AT_TAIL_MARKER" not in prompt
         tail = planner._prompt_builder.build_state_tail_message(ctx)
         assert tail.endswith("STATE_AT_TAIL_MARKER")
-        # 协议段仍在 system（稳定前缀；audit-0819b：锚点随文本块退役
-        # 改钉暂停协议表述，语义不变）
-        assert "workflow_pause" in prompt
+        # 协议段仍在 system（稳定前缀；audit-0819b 锚点随文本块退役，
+        # 2026-09-12 治理批暂停段迁出后改钉协议身份行，语义不变）
+        assert "动作通道唯一" in prompt
 
 
 # ---------- P0-2：响应模型字段 ----------

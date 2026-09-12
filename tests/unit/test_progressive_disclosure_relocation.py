@@ -58,12 +58,15 @@ def test_tool_descriptions_carry_usage():
 
 
 def test_non_tool_clauses_kept(protocol_text: str):
-    """非工具类条款保留在平台层（编号规则/拆解规则/真实性/Skill 归口）"""
+    """非工具类条款保留在平台层（真实性/Skill 归口）。
+    （2026-09-12 指令体量治理批：编号/current 语义与拆解建组条款迁出——
+    编号归 read_draft/view_storyboard_media 描述，current 语义归 storyboard
+    工具描述，拆解建组归 storyboard_create_group 描述 D-17 既有承载。）"""
     for kept in (
-        '"current"',
-        "组号-卡序号",
-        "storyboard_create_group",
         "完成声称必须真的调用了对应工具",
         "由所选 Skill 文档规定",
+        "渐进式披露总纲",
     ):
         assert kept in protocol_text, f"平台层条款丢失: {kept}"
+    for gone in ('"current"', "组号-卡序号", "storyboard_create_group"):
+        assert gone not in protocol_text, f"平台层残留工具用法分身: {gone}"

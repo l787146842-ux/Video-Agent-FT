@@ -29,6 +29,8 @@ class GenerateVideoTool(BaseTool):
     description = (
         "根据传入的首帧图片和提示词，生成高清视频并返回结果。"
         "危险/花钱操作，仅当用户明确要求生成视频时才可调用，执行前会弹确认卡。"
+        "生成渠道优先级：用户当前消息显式指定 > 目标草稿卡自身的视频配置 > 全局设置默认渠道；"
+        "系统自动注入供应商，无需自行臆造供应商或模型名（规格文档与 Skill 不承载渠道参数）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

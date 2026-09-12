@@ -40,9 +40,8 @@ class TestPromptLoader:
         assert "{{include:" not in text, "include 指令未被展开"
         # 内联段的关键标题应在结果里
         assert "回复输出纪律" in text
-        assert "画布操作能力" in text
-        assert "故事板媒体调用" in text
-        assert "重要规则" in text
+        assert "渐进式披露总纲" in text
+        assert "语言规则" in text
 
     def test_include_depth_limit_no_cycle_crash(self, tmp_path, monkeypatch):
         """include 递归深度受限，自引用不得死循环"""
@@ -67,11 +66,13 @@ class TestPromptLoader:
 class TestSingleProtocol:
     def test_protocol_is_slim_fc_only(self):
         """协议单轨（P2e）：唯一协议 = protocol.md 瘦身协议，
-        不含 studio-actions 动作清单。"""
+        不含 studio-actions 动作清单。
+        （2026-09-12 指令体量治理批：Tool 优先协议段删除——工具用法归各自
+        description；此处锚点换为身份行。）"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)
         text = builder.build_system_prompt(ctx)
-        assert "Tool 优先协议" in text
+        assert "动作通道唯一" in text
         assert "- add_group:" not in text, "FC 协议不应携带 studio-actions 动作清单"
         assert "可用 action:" not in text, "FC 协议不应携带文本轨动作定义段"
 

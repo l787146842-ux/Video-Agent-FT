@@ -51,8 +51,10 @@ CHECKS: List[Tuple[str, Optional[str], List[str], List[str], str]] = [
      ["接受暂停卡后重提", "已确认"], [],
      "gen_confirm refusal keeps pause-accept promise (charter allows)"),
     ("protocol_md", None,
-     ["暂停卡获用户接受后，本轮内重提的生成视为已确认", "本次放行"], [],
-     "protocol consent promise (batch 9/12 contract substring)"),
+     [],
+     ["接受暂停卡后重提", "重提即视为已确认", "本次放行"],
+     "protocol carries no consent promise (2026-09-12 governance batch moved "
+     "the promise to gates/exec-pref homes; P1 moved-out side must not relapse)"),
     ("exec_pref_md", "PREF_CONFIRM_BEFORE_GEN",
      ["不会重复拦截", "制片规格"], [],
      "exec-pref confirm hint in sync with charter incl. spec write"),

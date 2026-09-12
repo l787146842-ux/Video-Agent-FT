@@ -84,16 +84,18 @@ def test_skill_reminder_has_no_pause_pressure():
 
 
 def test_protocol_no_anti_pause_sentence():
-    """协议模板反暂停句已删；暂停通道协议（怎么暂停）保留。
-    P2e 单轨收敛：断言对象从已退役的 system.md 迁到唯一协议 protocol.md。"""
+    """协议模板反暂停句已删；暂停通道契约唯一家 = workflow_pause 工具描述
+    （2026-09-12 治理批：protocol 暂停段迁出，protocol 不得再携带暂停调用措辞）。"""
+    from src.video_agent.tools.document_tools import WorkflowPauseTool
     from src.video_agent.utils.paths import PROJECT_ROOT
 
     txt = (PROJECT_ROOT / "prompts" / "planner" / "protocol.md").read_text(encoding="utf-8")
     assert "不要在每个阶段完成后都暂停" not in txt
     assert "用户已给出明确指令时不要使用" not in txt
-    # 新基线（P2e 后）：暂停通道协议在 FC 协议中表述为
-    # 「暂停请求用户确认：调用 workflow_pause Tool」
-    assert "调用 workflow_pause Tool" in txt
+    assert "调用 workflow_pause Tool" not in txt, \
+        "暂停契约已迁出 protocol（2026-09-12 治理批），不得回潮"
+    # 新基线：暂停契约（怎么停/假停无效）在 workflow_pause 工具描述单家在场
+    assert "真正的停 = 调用本工具" in (WorkflowPauseTool().description or "")
 
 
 def test_pause_label_protocol_scoped_to_confirmation():

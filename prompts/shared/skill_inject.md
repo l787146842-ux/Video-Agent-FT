@@ -4,7 +4,7 @@
 #          build_skill_metadata_header）与 tools/document_tools.read_skill
 
 ## HEADER
-== Skill 目录（渐进式披露，总纲见《重要规则》：上下文只常驻各 Skill 的名称与摘要；选中 Skill 默认只注入其流程（planner）段全文与章节目录，其余章节正文与其余 Skill 全文经 read_skill 按需加载，不要凭目录摘要自行推测流程细节）==
+== Skill 目录（渐进式披露，总纲见 protocol《渐进式披露总纲》：上下文只常驻各 Skill 的名称与摘要；选中 Skill 默认只注入其流程（planner）段全文与章节目录，其余章节正文与其余 Skill 全文经 read_skill 按需加载，不要凭目录摘要自行推测流程细节）==
 
 ## SELECTED
 用户当前在前端选中了「{{skill_name}}」，其流程（planner）段全文与章节目录已注入（见文末选中段）；其余章节正文与其他 Skill 全文，需要时经 read_skill 读取。

@@ -100,8 +100,10 @@ def test_pause_sections_have_code_consumer():
 # ---------- 批 9/10 · 同意路径三处文案一致性 canary（V6 计划 §五-5） ----------
 
 def test_consent_path_copy_consistent_across_three_homes():
-    """同一确认路径在拒因（gates/messages.md）与协议（planner/protocol.md）
-    两处的描述必须同口径——都会提到「暂停卡接受后重提视为已确认」。
+    """同意路径文案一致性 canary（2026-09-12 治理批改版）：
+    承诺唯一家 = 闸机拒因（gates/messages.md）+ 执行偏好注入 +
+    设置页 hint；protocol 已迁出同意承诺（P1 迁出端不得复述/回潮，
+    机械面由 check_consent_copy 门禁的 protocol must-not 项承接）。
     设置页文案（TSX）无法跨语言断言，靠人工目测（宪法 §3.1）。"""
     messages = MESSAGES_MD.read_text(encoding="utf-8")
     protocol = (ROOT / "prompts" / "planner" / "protocol.md").read_text(encoding="utf-8")
@@ -109,9 +111,9 @@ def test_consent_path_copy_consistent_across_three_homes():
     for section_key in ("GENERATION_CONFIRM_BLOCKED", "TOOL_RISK_BLOCKED"):
         body = _extract_section(messages, section_key)
         assert "接受暂停卡后重提" in body, f"{section_key} 缺同意账本口径（重提放行）"
-    # 协议必须写明同一机制（暂停卡接受 → 本轮内重提不重复拦截）
-    assert "暂停卡获用户接受后，本轮内重提的生成视为已确认" in protocol, \
-        "protocol.md 生成确认句与闸机同意账本口径漂移"
+    # 协议已迁出同意承诺，不得回潮（承诺家 = 闸机拒因/执行偏好/设置页）
+    assert "接受暂停卡后重提" not in protocol, \
+        "protocol.md 同意承诺已迁出（2026-09-12 治理批），不得回潮"
 
 
 def _extract_section(text: str, key: str) -> str:

@@ -56,6 +56,7 @@ class ScriptAnalyzeTool(BaseTool):
         "再按所用 Skill 的 script_analyze 章节要求把完整分析写成 Markdown 报告"
         "（Skill 未声明分析路径时格式自定）。"
         "分析完成后必须调用本工具落账，否则平台不认为分析阶段已完成；"
+        "正文中只作浓缩交代（要点以所用 Skill 分析章节要求为准），不复述报告全文；"
         "重复调用以最后一次为准。"
     )
 
