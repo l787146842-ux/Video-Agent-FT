@@ -43,6 +43,11 @@ if TYPE_CHECKING:
 # 提醒清理草稿（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
 
+# Skill 清单单条摘要预算（字符；2026-09-12 用户裁决 500，对齐 dsh
+# catalogDescriptionMaxLength）。frontmatter description 仍以Skill 作者
+# 原文为唯一事实源（list_skills/工作台展示原文），仅目录段展示层截断
+_CATALOG_DESC_MAX_CHARS = 500
+
 # 状态降级引导语外置（P3 状态即数据）：状态 JSON 只留 degraded/compacted
 # 客观标志位，引导语按标志位从 shared/degradation.md 加载，随状态尾部
 # 消息独立成段注入（不进 system 段，保 KV-cache 前缀）
@@ -359,6 +364,11 @@ class PromptBuilder:
         for e in entries:
             name = e.name or e.slug or ""
             desc = str((e.manifest or {}).get("description") or "").strip() or "未提供摘要"
+            # 单条摘要预算（2026-09-12 用户裁决 500 字符，对齐 dsh
+            # catalogDescriptionMaxLength）：frontmatter description 长度
+            # 由 Skill 作者决定，展示层截断兜底，不回写 skill 文件（冻结）
+            if len(desc) > _CATALOG_DESC_MAX_CHARS:
+                desc = desc[:_CATALOG_DESC_MAX_CHARS] + "…"
             lines.append(f"- {name}：{desc}")
         if not lines:
             return ""
@@ -616,7 +626,7 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     if not context.use_studio_context:
         return ""
     # 会话级压缩 compaction 是创作设定的唯一软性保护，
-    # 见 planner/compaction.md；
+    # 压缩指令唯一家 = feedback.md::COMPACTION_INSTRUCTION（session_log.compact_pass）；
     # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
     # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
     return pb.build_global_settings_note()

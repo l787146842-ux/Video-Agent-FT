@@ -119,6 +119,32 @@ async def test_good_package_faces_intact(portal_env):
     assert r.success and "分析正文" in r.data["content"]
 
 
+def test_catalog_desc_truncated_at_500_chars(tmp_path, monkeypatch):
+    """单条摘要 500 字符展示层预算（2026-09-12 治理批，对齐 dsh
+    catalogDescriptionMaxLength）：超长摘要目录段截断加省略号，
+    list_skills 等其余消费面不截断（原文唯一事实源不变，skill 冻结）。"""
+    from src.video_agent.core.prompt_builder import _CATALOG_DESC_MAX_CHARS
+
+    long_desc = "超" * (_CATALOG_DESC_MAX_CHARS + 80)
+    doc = (f"---\nname: 长摘要包\ndescription: {long_desc}\n---\n# 长摘要包\n正文\n")
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    registry.reset_registry()
+    try:
+        sd.save_skill_doc("long-desc-pack", doc)
+        registry.sync_all(force=True)
+        block = _pb(_base_state()).build_skill_catalog(_ctx())
+        assert ("超" * _CATALOG_DESC_MAX_CHARS + "…") in block
+        assert ("超" * (_CATALOG_DESC_MAX_CHARS + 80)) not in block
+        # 原文唯一事实源不变：list_skills 仍返回全文摘要
+        import asyncio
+        res = asyncio.run(ListSkillsTool().aexecute(ListSkillsInput()))
+        assert long_desc in res.data["skills"][0]["description"]
+    finally:
+        registry.reset_registry()
+
+
 # ---------- ③ 注册后改坏 → refresh 摘除 → 立即盲 ----------
 
 

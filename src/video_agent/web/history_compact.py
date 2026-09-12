@@ -20,7 +20,6 @@ from src.video_agent.core.token_budget import (
     estimate_messages_tokens,
     estimate_tokens,
 )
-from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
 
@@ -237,9 +236,11 @@ async def _maybe_compact_history(
         summary = str(cached["text"])
     else:
         dialog = _sample_older_dialog(older)
-        tpl = load_prompt_section("planner/compaction.md", "TEMPLATE")
-        prompt = tpl.replace("{{dialog}}", dialog) if tpl else (
-            "请把以下对话压缩为不超过 300 字的摘要，保留决策与约束：\n" + dialog)
+        # 2026-09-12 治理批：compaction.md 模板已删除（压缩指令唯一家 =
+        # feedback.md::COMPACTION_INSTRUCTION，承载唯一活路径 session_log
+        # .compact_pass）；本模块主路径已退役（chat_service 批 C1 注记），
+        # 保留最小内联回落供 scope 域函数级测试。
+        prompt = "请把以下对话压缩为不超过 300 字的摘要，保留决策与约束：\n" + dialog
         try:
             resp = await adapter.chat(
                 [
