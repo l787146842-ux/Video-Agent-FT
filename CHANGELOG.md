@@ -36,6 +36,14 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-12 · 指令体量治理批（规则按所有权归一，对齐 dsh；起因 = 1111 会话边界轮规则仲裁税 + run_subagent 零调用）
+- **触发与依据**：1111 会话（proj-1789128804-70253439）实测边界轮 20–53s 的"规则仲裁税"（模型手工对账多份规则源）与委派/批次双规打架；dsh-latest 源码对照（第一方身份一句、规则按所有权分布在工具描述、无消息字数上限、Skill 摘要 500 字符截断）。计划书经用户逐条裁决（计划书文件执行后删除，本条为唯一留痕）。
+- **用户裁决**：纪律2"只在暂停点停/中途一律不停"删除；"≤120字问句"双写清理由 message 实况取代；纪律6"系统附挂继续选项"随退役机制删除；protocol 暂停段/生图渠道段/能力词对照/画布规则/编号语义/开场盘点/拆解建组条款全部迁出；"3~5个"唯一家 = 纪律；回复输出纪律压缩三行（大搬）；委派仲裁句归 subagent 单一家；摘要截断 500 字符；压缩模板留一份；优先级链只在《执行铁律》文档出现（模型可见层不携带）；protocol L32 拆解建组条款直接删除；Skill 文件零改动（冻结清单 #16 重申）。
+- **A 双写归一（`b998fff`）**：skill_runtime 纪律 10→7 条重编号（2/4/6 退役）；protocol.md 64→18 行；暂停契约（真停语义/调用时机/收尾批合并/同批冻结/回应三态/message 两通道实况）唯一家 = `workflow_pause` 工具描述；能力词对照迁 `read_skill` 描述；渠道优先级迁 `image_generate`/`generate_video` 描述；`consent_copy` 闸 protocol 项改迁出端防回潮。
+- **B 所有权搬家（`6cff41b`）**：委派 vs 主对话批次节奏仲裁句入 SUBAGENT_POLICY（禁用场景唯一家 = 工具描述）；画布操作规则迁 `canvas_*` 描述。
+- **C 摘要预算与压缩归一（`488a279`）**：Skill 清单单条摘要 500 字符展示层截断（原文唯一事实源不变）；压缩指令唯一家 = `feedback.md::COMPACTION_INSTRUCTION`（四段式交接语义并入），`compaction.md` 死模板删除。
+- **缓存注记**：protocol 位于 system 前缀头部，本批使其变短——旧会话前缀一次性失效属预期，新会话不受影响；稳态命中率考核以 `scripts/cache_hit_report.py` 为准。
+
 ### 2026-09-10 · 阶段规则去代码化与流程简化批（对标 flova：代码只做安全保护 + 数据一致性，不判流程完成）
 - **计划书**：`.qoder/specs/阶段去除与流程简化_task-d47.md`（用户审定，A–F 六组五批）。总原则：步数不限、不留续跑预算、不留假停检测、不留完成盖章；保留用户设计的机械停（`key_steps_confirm` 6 步 / `pause_all`）。
 - **A 核心循环 + bug**：`fc_tool_runner` 成功分支补 `call_id`（成功工具结果缺 id → 虚假「未执行」占位回喂）；`agent_loop` 删步数上限全链（`max_steps`/`current_max_steps()`/`MAX_STEPS_RANGE`/步数告警/「继续完成」按钮）与 `productive_reject`/`unstamped_stop` 续跑预算、全拒收轮续跑豁免（流程推进归模型自觉）；`config` 删 `max_steps`/`subagent_max_steps`/`completion_stamp_enabled`，保留 `llm_max_tokens`；`planner` 删 `completion_stamp_enabled` 引用与子级 `max_steps` 传参。
