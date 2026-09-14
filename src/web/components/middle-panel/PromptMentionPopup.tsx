@@ -25,6 +25,8 @@ export function PromptMentionPopup(props: {
   /** 键盘导航当前高亮项判定 */
   isActive: (item: MentionItem) => boolean;
   onPick: (item: MentionItem) => void;
+  /** 隐藏「参考栏素材」分区（分镜正文编辑器无参考栏概念） */
+  hideRefSection?: boolean;
 }) {
   /** @面板故事板分类当前页签 */
   const [cat, setCat] = createSignal<'keyElement' | 'shot' | 'audio'>('keyElement');
@@ -102,16 +104,18 @@ export function PromptMentionPopup(props: {
           <div class="mention-popup-status">该分类暂无故事板素材</div>
         </Show>
       </div>
-      {/* 下区：中间预览框参考栏素材 */}
-      <div class="mention-section-title">参考栏素材</div>
-      <div class="mention-section">
-        <For each={props.refItems()}>
-          {(item) => renderItem(item)}
-        </For>
-        <Show when={props.refItems().length === 0}>
-          <div class="mention-popup-status">参考栏暂无素材</div>
-        </Show>
-      </div>
+      {/* 下区：中间预览框参考栏素材（分镜正文编辑器隐藏） */}
+      <Show when={!props.hideRefSection}>
+        <div class="mention-section-title">参考栏素材</div>
+        <div class="mention-section">
+          <For each={props.refItems()}>
+            {(item) => renderItem(item)}
+          </For>
+          <Show when={props.refItems().length === 0}>
+            <div class="mention-popup-status">参考栏暂无素材</div>
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 }

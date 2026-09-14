@@ -37,6 +37,21 @@
   .sb-badge { font-size: var(--font-xs); padding: 2px 6px; background-color: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--accent-blue); border-radius: 4px; cursor: default; }
   .sb-badge-wrap { display: flex; align-items: center; gap: 5px; }
   .sb-badge-input { font-size: var(--font-xs); padding: 1px 4px; width: 64px; background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; color: var(--text-main); outline: none; }
+  /* 镜头设计详情（仅分镜卡）：折叠开关 + 全文（锚点卡/动作/台词，pre-wrap 保换行） */
+  .sb-design { display: flex; flex-direction: column; gap: 4px; }
+  .sb-design-toggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 3px; padding: 0; border: none; background: none; color: var(--text-muted); font-size: var(--font-xs); cursor: pointer; }
+  .sb-design-toggle:hover { color: var(--accent-purple); }
+  .sb-design-body { margin: 0; padding: 6px 8px; background: var(--bg-tertiary); border-radius: var(--radius-sm); font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
+    /* 折叠态：默认只显两行（对齐 Flova），点击正文或「展开」看完整分镜 */
+    .sb-design-body--collapsed { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .sb-design-arrow { transition: transform 0.15s; }
+    .sb-design-arrow.expanded { transform: rotate(180deg); }
+    /* 编辑态（双击进入）：蓝框 contenteditable、可全选复制（项目惯例蓝框，
+       Flova 绿框是其色系；本项目语义色法绿色保留给成功态） */
+    .sb-design-body--editing { border: 1px solid var(--accent-blue); cursor: text; user-select: text; -webkit-user-select: text; }
+    /* 内联引用块：读态可点跳转；编辑态块内 × 删除该引用 */
+    .sb-design-body .mention-chip { cursor: pointer; }
+    .desc-ref-remove { margin-left: 4px; cursor: pointer; color: var(--color-danger); font-weight: 700; }
   .sb-index { font-size: var(--font-sm); font-weight: 700; color: var(--text-dim); min-width: 16px; text-align: center; }
   .sb-desc { font-size: var(--font-sm); color: var(--text-muted); line-height: 1.4; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 

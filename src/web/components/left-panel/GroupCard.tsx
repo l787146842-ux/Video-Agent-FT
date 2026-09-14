@@ -6,6 +6,7 @@ import { GroupHeader } from './group-card/GroupHeader';
 import { SceneRefsChips } from './group-card/SceneRefsChips';
 import { GroupDescEditor } from './group-card/GroupDescEditor';
 import { GroupAdjustBox } from './group-card/GroupAdjustBox';
+import { ShotDescEditor } from './group-card/ShotDescEditor';
 import type {
   AnyGroup, AudioGroup, DraftType, KeyElementGroup, ShotGroup,
 } from '@/types';
@@ -66,7 +67,7 @@ export function GroupCard(props: {
     const el = t as HTMLElement | null;
     if (!el || typeof el.closest !== 'function') return false;
     // 文字/徽标/按钮/卡片/输入框等交互与内容区域不可拖（用于选中复制与各自交互）
-    if (el.closest('input, textarea, button, a, select, video, audio, img, .sb-title, .sb-desc, .sb-badge-wrap, .sb-index, .draft-card-col, .scene-refs, .card-adjust-box')) return false;
+    if (el.closest('input, textarea, button, a, select, video, audio, img, .sb-title, .sb-desc, .sb-badge-wrap, .sb-index, .draft-card-col, .scene-refs, .sb-design, .card-adjust-box')) return false;
     // 已有选中文字时优先复制
     const sel = window.getSelection();
     if (sel && sel.type === 'Range') return false;
@@ -162,6 +163,11 @@ export function GroupCard(props: {
 
       {/* 描述（双击编辑；子组件承载自适应编辑框） */}
       <GroupDescEditor type={props.type} groupId={props.group.id} desc={() => meta().desc} />
+
+      {/* 分镜正文（对齐 Flova：两行折叠 + 内联引用块，双击进编辑） */}
+      <Show when={props.type === 'shot' && (props.group as ShotGroup).desc}>
+        <ShotDescEditor group={props.group as ShotGroup} />
+      </Show>
 
       {/* 草稿卡片行（小标编号：组号-卡序号，可拖动排序） */}
       <div

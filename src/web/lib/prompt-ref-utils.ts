@@ -106,12 +106,13 @@ export function makeChip(name: string, info: { url: string; type: MediaKind }): 
     wrap.appendChild(vid);
     wrap.appendChild(badge);
     span.appendChild(wrap);
-  } else {
+  } else if (info.type !== 'image') {
     const icon = document.createElement('span');
     icon.className = 'mention-chip-icon';
     icon.textContent = info.type === 'video' ? '▶' : '♬';
     span.appendChild(icon);
   }
+  // image 无 url（元素尚未生成概念图）：纯名块（对齐 Flova pill），不放误导图标
   const label = document.createElement('span');
   label.className = 'mention-chip-name';
   label.textContent = name;

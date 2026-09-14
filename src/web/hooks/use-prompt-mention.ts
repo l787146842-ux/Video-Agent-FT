@@ -26,6 +26,10 @@ export interface PromptMentionOptions {
   maxRefs: () => number;
   /** 编辑器内容变化后同步到草稿（重新序列化） */
   syncPrompt: () => void;
+  /** 故事板候选分类过滤（缺省不过滤）；分镜正文编辑器只要关键元素 */
+  cats?: Array<'keyElement' | 'shot' | 'audio'>;
+  /** 额外候选（无媒体的关键元素等，url 为空渲染纯名块）；分镜正文编辑器用 */
+  extraBoardItems?: () => MentionItem[];
 }
 
 export function usePromptMention(opts: PromptMentionOptions) {
@@ -52,12 +56,14 @@ export function usePromptMention(opts: PromptMentionOptions) {
     });
   }
 
-  /** 上区：故事板素材（带分类，供面板分区/搜索） */
+  /** 上区：故事板素材（带分类，供面板分区/搜索；cats 过滤 + 额外候选并入） */
   const boardItems = (): MentionItem[] => {
     const q = mentionQuery().toLowerCase();
-    const list: MentionItem[] = storyboardMediaList().map((b) => ({
+    let list: MentionItem[] = storyboardMediaList().map((b) => ({
       url: b.url, name: b.name, type: b.kind, category: b.category,
     }));
+    if (opts.cats) list = list.filter((it) => opts.cats!.includes(it.category!));
+    if (opts.extraBoardItems) list = [...list, ...opts.extraBoardItems()];
     if (!q) return list;
     return list.filter((it) => it.name.toLowerCase().includes(q));
   };
@@ -76,13 +82,15 @@ export function usePromptMention(opts: PromptMentionOptions) {
     return list.filter((it) => it.name.toLowerCase().includes(q));
   };
 
-  /** 键盘导航用合并列表（参考栏优先 + 故事板，URL 去重） */
+  /** 键盘导航用合并列表（参考栏优先 + 故事板；有 url 按 url 去重，
+   *  无 url 的纯名候选按名去重） */
   const mentionItems = (): MentionItem[] => {
     const seen = new Set<string>();
     const merged: MentionItem[] = [];
     for (const it of [...refItems(), ...boardItems()]) {
-      if (seen.has(it.url)) continue;
-      seen.add(it.url);
+      const key = it.url || `n:${it.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       merged.push(it);
     }
     return merged;
@@ -97,7 +105,8 @@ export function usePromptMention(opts: PromptMentionOptions) {
   /** 根据当前光标所在文本节点检测 @ 触发（兼容半角@与全角＠） */
   function detectMention() {
     // 参考栏与故事板都没有可引用媒体时才直接关闭
-    if (!opts.refAssets().length && !storyboardMediaList().length) {
+    if (!opts.refAssets().length && !storyboardMediaList().length
+      && !(opts.extraBoardItems && opts.extraBoardItems().length)) {
       if (mentionActive()) closeMention();
       return;
     }

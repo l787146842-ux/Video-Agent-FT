@@ -56,13 +56,14 @@ function adjacentChip(e: KeyboardEvent): HTMLElement | null {
   return null;
 }
 
-/** 编辑器 keydown 入口：先弹层导航，再 chip 整体删除（删除成功回刷草稿） */
+/** 编辑器 keydown 入口：先弹层导航，再 chip 整体删除（删除成功回刷草稿）。
+ *  返回是否已消费该按键（供宿主编辑器决定是否继续自己的键处理） */
 export function promptEditorKeyDown(
   e: KeyboardEvent,
   mention: MentionApi,
   syncPrompt: () => void,
-) {
-  if (handleMentionKeys(e, mention)) return;
+): boolean {
+  if (handleMentionKeys(e, mention)) return true;
   // @ 缩略块删除：Backspace/Delete 紧邻 chip 时整体删除（视频 chip 等原生难删）
   if (e.key === 'Backspace' || e.key === 'Delete') {
     const chip = adjacentChip(e);
@@ -70,6 +71,8 @@ export function promptEditorKeyDown(
       e.preventDefault();
       chip.remove();
       syncPrompt();
+      return true;
     }
   }
+  return false;
 }
