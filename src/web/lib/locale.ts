@@ -34,6 +34,7 @@ const zhCN = {
   'agent.flowGatePause': '越阶操作被流程门禁拦截，已强制暂停',
   'agent.opsDone': '已完成：{ops}',
   'agent.modelFallback': '模型 {from} 繁忙/异常，已切换 {to} 重试…',
+  'agent.fakestopResume': '模型本轮未携带工具调用即收尾，已机械续跑（第 {count}/{cap} 次）…',
   // planner 队列级 status 文案（原硬编码中文，收编入字典）
   'agent.roundStart': '第 {step} 轮推理中…（执行上轮操作后继续规划）',
   'agent.planning': '正在推理…（模型正在读状态并规划操作）',
@@ -201,6 +202,9 @@ const zhCN = {
   'rp.timeline.thinking': '深度思考',
   'rp.timeline.processing': '正在处理…（已完成 {count} 项）',
   'rp.timeline.processed': '已处理 {count} 个操作',
+  // 机器判定事实条（账本内与工具行并排，不计入「已处理 N 个操作」）
+  'rp.timeline.resumeNotice': '系统检测到本轮未执行任何操作，已要求模型继续（第 {count} 次）',
+  'rp.timeline.noAction': '本轮未执行任何操作',
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',

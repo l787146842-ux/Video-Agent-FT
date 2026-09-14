@@ -77,6 +77,30 @@ describe('增量事件路由与异常帧', () => {
     expect(spies.finishStream).toHaveBeenCalledTimes(1);
   });
 
+  it('agent.fakestopResume：瞬时状态栏之外同步入账本（机器判定事实需跳回合留痕）', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      { type: 'status', key: 'agent.fakestopResume', text: '已机械续跑（第 1/2 次）',
+        params: { count: 1, cap: 2 } },
+      doneFrame(),
+    ]));
+    await streamAgentChat(req);
+
+    expect(spies.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining('已机械续跑'));
+    // id 带 count（同事件重复到达不双登），文案由 noticeKind 经 i18n 派生
+    expect(spies.systemNotice).toHaveBeenCalledWith(
+      'resume-1', 'rp.timeline.resumeNotice', { count: 1 });
+  });
+
+  it('非续跑类 status 事件不得误登系统提醒条', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      { type: 'status', key: 'agent.flowGatePause', text: '已强制暂停' },
+      doneFrame(),
+    ]));
+    await streamAgentChat(req);
+    expect(spies.systemNotice).not.toHaveBeenCalled();
+  });
+
   it('done 携带 chat_inserts：去重后逐一插入媒体并提示', async () => {
     vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
       {

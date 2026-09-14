@@ -2,8 +2,8 @@
  * （开始/进度/思考/工具/增量/状态/重连恢复/清空）；消息入库归 chat/messages.ts。
  */
 import { produce } from 'solid-js/store';
-import { t } from '@/lib/locale';
-import { emptyLedger, ledgerFromLive } from '@/lib/turn-ledger';
+import { t, type LocaleKey } from '@/lib/locale';
+import { emptyLedger, ledgerFromLive, SYSTEM_NOTICE } from '@/lib/turn-ledger';
 import { resetStreamFields } from '@/lib/stream-finalize';
 import { setChatState, type TimelineToolEntry } from '../chat-core';
 
@@ -85,6 +85,21 @@ export const streamActions = {
   /** 设置状态提示 */
   setStatus(text: string) {
     setChatState('turnLedger', 'statusText', text);
+  },
+
+  /** 系统事实条目进本轮账本（假停机械续跑等机器判定事件）：statusText 只活到
+   * 下一条 status 覆盖为止，而机器判定的事实需跨相位/刷新留痕，否则模型正文
+   * 的自述就成了用户唯一可见的成果（文案走 noticeKind，本层不拼字面）。
+   * id 幂等：同事件重复到达不双登（与 toolStarted upsert 同纪律）。 */
+  systemNotice(
+    id: string, noticeKind: LocaleKey, noticeParams?: Record<string, string | number>,
+  ) {
+    setChatState(produce((s) => {
+      if (!id || s.turnLedger.items.some((item) => item.id === id)) return;
+      s.turnLedger.items.push({
+        id, name: SYSTEM_NOTICE, summary: '', status: 'done', noticeKind, noticeParams,
+      });
+    }));
   },
 
   /** 恢复流式状态（任务式传输重连：先回放服务端累计状态，再收实时增量）。

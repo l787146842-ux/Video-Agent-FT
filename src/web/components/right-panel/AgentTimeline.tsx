@@ -1,10 +1,11 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import {
-  FiCheckCircle, FiChevronDown, FiFlag, FiLoader, FiXCircle, FiZap,
+  FiAlertCircle, FiCheckCircle, FiChevronDown, FiFlag, FiLoader, FiXCircle, FiZap,
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { consolidateTimeline, formatElapsed, type TimelineItem } from '@/lib/timeline';
 import type { TurnPhase } from '@/lib/turn-ledger';
+import { countableItems, SYSTEM_NOTICE } from '@/lib/turn-ledger';
 import { TimelineDetail } from './TimelineDetail';
 
 // 耗时格式化与条目类型归 lib/timeline 单一事实源；保留 re-export 兼容既有导入
@@ -19,8 +20,16 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
   const item = () => props.item;
   // 事件卡（批 2 插播报）：产物落账里程碑，旗标图标 + 卡片配色与工具行区分
   const isCard = () => item().name === 'event_card';
+  // 系统事实条（假停机械续跑等机器判定事件）：三角徽标 + 弱化配色，
+  // 与工具行/事件卡三种语气区分；文案由 noticeKind 经 i18n 派生，不读 summary
+  const isNotice = () => item().name === SYSTEM_NOTICE;
+  const text = () => {
+    // 取局部常量做窄化：item() 为 signal 读值，重复调用不参与 TS 收窄
+    const kind = item().noticeKind;
+    return kind ? t(kind, item().noticeParams) : item().summary;
+  };
   return (
-    <li class={`tl-item tl-item-${item().status}${isCard() ? ' tl-item-card' : ''}`}>
+    <li class={`tl-item tl-item-${item().status}${isCard() ? ' tl-item-card' : ''}${isNotice() ? ' tl-item-notice' : ''}`}>
       <Show
         when={item().status !== 'running'}
         fallback={<FiLoader size={13} class="tl-item-icon spin" />}
@@ -30,17 +39,24 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           fallback={<FiXCircle size={13} class="tl-item-icon failed" />}
         >
           <Show
-            when={!isCard()}
-            fallback={<FiFlag size={13} class="tl-item-icon card" />}
+            when={isNotice()}
+            fallback={
+              <Show
+                when={!isCard()}
+                fallback={<FiFlag size={13} class="tl-item-icon card" />}
+              >
+                <FiCheckCircle size={13} class="tl-item-icon ok" />
+              </Show>
+            }
           >
-            <FiCheckCircle size={13} class="tl-item-icon ok" />
+            <FiAlertCircle size={13} class="tl-item-icon notice" />
           </Show>
         </Show>
       </Show>
       {/* 带明细的合并条目：summary 可点击展开逐轮明细 */}
       <Show
         when={(item().details || []).length > 0}
-        fallback={<span class="tl-item-summary">{item().summary}</span>}
+        fallback={<span class="tl-item-summary">{text()}</span>}
       >
         <button
           type="button"
@@ -119,7 +135,10 @@ export function AgentTimeline(props: {
     (typeof props.reasoning === 'function' ? props.reasoning() : props.reasoning) || '';
   const hasReasoning = () => !!reasoningText();
   const hasItems = () => props.items.length > 0;
-  const doneCount = () => props.items.filter((i) => i.status !== 'running').length;
+  // 操作计数只算真实账目（系统提醒条不是“一次操作”，计入会把机器拦下的
+  // 零操作轮吹成“已处理 N 个操作”，反而给谎报做证）
+  const countable = () => countableItems(props.items);
+  const doneCount = () => countable().filter((i) => i.status !== 'running').length;
 
   // 流式思考视窗自动跟随：overflow-y:auto 可滚轮回看上文；
   // 仅当用户停在底部附近时才自动追新文字，滚上去看历史不被打断
@@ -206,7 +225,11 @@ export function AgentTimeline(props: {
                     && props.liveStatus() !== t('rp.streaming.processing')
                     ? `${props.liveStatus()}（已完成 ${doneCount()} 项）`
                     : t('rp.timeline.processing', { count: doneCount() }))
-                  : t('rp.timeline.processed', { count: props.items.length })}
+                  // 零真实账目而只有系统提醒（本轮被机器判定假停且未落任何账）
+                  // → 标题直接说客观事实，不再显示误导性的「已处理 1 个操作」
+                  : countable().length === 0
+                    ? t('rp.timeline.noAction')
+                    : t('rp.timeline.processed', { count: countable().length })}
               </span>
               <FiChevronDown size={12} class="tl-arrow" />
             </button>

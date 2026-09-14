@@ -54,6 +54,7 @@ export const spies = {
   appendDelta: vi.spyOn(chatActions, 'appendDelta'),
   appendReasoning: vi.spyOn(chatActions, 'appendReasoning'),
   setStatus: vi.spyOn(chatActions, 'setStatus'),
+  systemNotice: vi.spyOn(chatActions, 'systemNotice'),
   addMessage: vi.spyOn(chatActions, 'addMessage'),
   removeQueuedMessage: vi.spyOn(chatActions, 'removeQueuedMessage'),
   docWritten: vi.spyOn(chatActions, 'docWritten'),

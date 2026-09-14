@@ -10,6 +10,7 @@
  * 时间线 = 本轮已发生的全部账目。
  */
 import type { ChatMessage, TraceAction } from '@/types';
+import type { LocaleKey } from '@/lib/locale';
 import { ledgerFromSettled } from '@/lib/turn-ledger';
 import {
   TOOL_APPROVAL_TIERS,
@@ -38,6 +39,10 @@ export interface TimelineItem {
   args?: Record<string, unknown>;
   /** 合并条目的逐轮明细（点击展开） */
   details?: TimelineItem[];
+  /** 系统提醒的 i18n 键（仅 name=system_notice 条目携带，与 LedgerItem 同构） */
+  noticeKind?: LocaleKey;
+  /** 系统提醒插值参数（如续跑次数 count） */
+  noticeParams?: Record<string, string | number>;
 }
 
 /** 耗时格式化：<0.1s 显示毫秒（本地状态操作很快，0.0s 看着像没计时） */

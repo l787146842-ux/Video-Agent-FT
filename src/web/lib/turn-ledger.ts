@@ -10,6 +10,7 @@
  * 两入口输出同构 TurnLedger，渲染层单一消费面。
  */
 import type { AgentTrace, TraceAction } from '@/types';
+import type { LocaleKey } from '@/lib/locale';
 
 /** settled 账本消费面（消息侧字段子集，避免归一域反向依赖完整 ChatMessage） */
 export interface SettledLedgerSource {
@@ -22,6 +23,26 @@ export interface SettledLedgerSource {
 
 /** 轮次相位：live=流式累积中；settled=已完成（含停止/出错后的定型） */
 export type TurnPhase = 'live' | 'settled';
+
+/** 系统事实条目名（非工具账目：机器判定事件如假停机械续跑）。
+ * 对齐外部标杆「卡即凭证」口径：机器判定的事实必须与模型正文并排可见，
+ * 而不是只作瞬时 status 一闪而过（否则「本轮未执行操作」在刷新后零痕迹，
+ * 模型正文的自述就成了用户能看到的唯一成果）。 */
+export const SYSTEM_NOTICE = 'system_notice';
+
+/** 假停机械续跑的 trace step 标记（与后端 tracer end_step finish_reason 同字面） */
+export const FAKESTOP_RESUME_FINISH = 'fakestop_resume';
+
+/** 是否系统事实条目（操作计数与降噪合并一律排除，防把机器提醒算成一次操作） */
+export function isSystemNotice(item: { name?: string }): boolean {
+  return item.name === SYSTEM_NOTICE;
+}
+
+/** 可计数的真实账目（工具/规划条目，排除系统提醒）；泛型供渲染层
+ * TimelineItem（与 LedgerItem 同构）复用同一口径，防两处计数各写一遍走偏 */
+export function countableItems<T extends { name?: string }>(items: T[]): T[] {
+  return items.filter((i) => !isSystemNotice(i));
+}
 
 /** 账本单条（live 运行态与 settled 重建共用同一形态） */
 export interface LedgerItem {
@@ -41,6 +62,11 @@ export interface LedgerItem {
   planning?: boolean;
   /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */
   args?: Record<string, unknown>;
+  /** 系统提醒的 i18n 键（仅 name=SYSTEM_NOTICE 条目携带；文案由渲染层派生，
+   *  本模块仅取 locale 类型、无运行时依赖） */
+  noticeKind?: LocaleKey;
+  /** 系统提醒插值参数（如续跑次数 count） */
+  noticeParams?: Record<string, string | number>;
 }
 
 /** 轮次账本：live 期累积的单一数据体，完成即相位翻转随消息入库 */
@@ -99,6 +125,8 @@ export function ledgerFromLive(input: LiveLedgerInput = {}): TurnLedger {
     detail_md: tl.detail_md || undefined,
     planning: tl.planning ?? undefined,
     args: tl.args,
+    noticeKind: tl.noticeKind || undefined,
+    noticeParams: tl.noticeParams,
   }));
   return {
     phase: 'live',
@@ -130,6 +158,7 @@ export function ledgerFromSettled(input: SettledLedgerInput): TurnLedger {
     .filter(Boolean)
     .join('\n');
   const items: LedgerItem[] = [];
+  let resumeCount = 0;
   steps.forEach((s) => {
     (s.actions || []).forEach((a: TraceAction, i: number) => {
       // 规划条目与 live 事件同构 id 规则（llm-s{step}），重建也能命中合并降噪
@@ -146,6 +175,21 @@ export function ledgerFromSettled(input: SettledLedgerInput): TurnLedger {
         args: a.args,
       });
     });
+    // 假停机械续跑的客观事实（后端 tracer.end_step finish_reason=fakestop_resume）
+    // → 落一条系统提醒账目：机器判定的「本轮零操作」在回放/历史里永久可见，
+    // 使模型正文的自述不再是用户能看到的唯一成果。次数 = 按 step 序递增重建
+    // （trace 不携 cap，与 live 侧文案对齐：只报次数不报上限）。
+    if (s.finish_reason === FAKESTOP_RESUME_FINISH) {
+      resumeCount += 1;
+      items.push({
+        id: `resume-s${s.step}`,
+        name: SYSTEM_NOTICE,
+        summary: '',
+        status: 'done',
+        noticeKind: 'rp.timeline.resumeNotice',
+        noticeParams: { count: resumeCount },
+      });
+    }
   });
   if (!items.length && (input.actionLog || []).length) {
     (input.actionLog || []).forEach((op, i) => {
@@ -195,13 +239,19 @@ export function settleLedger(
  * 一致性回落：trace 是服务端权威源——当本地账本条目数少于 trace 动作
  * 总数（SSE 事件丢失等边缘）时改走 ledgerFromSettled(trace) 重建，
  * 防时间线条目变少；不动 finishStream 主链（仅消费面重建）。
+ *
+ * 系统提醒同口径：重连 replay 快照不回填提醒条目，故本地账本的提醒数少于
+ * trace 里的续跑 step 数时同样改走权威源重建（防机器判定痕迹刷新前后不一）。
+ * 动作数比较一律走 countableItems（提醒条目不是 trace 动作，计入会高估）。
  */
 export function settledLedgerForMessage(src: SettledLedgerSource): TurnLedger {
   const led = src.ledger;
-  if (led && (led.items.length > 0 || led.reasoning)) {
-    const traceActions = (src.trace?.steps || [])
-      .reduce((n, s) => n + ((s.actions || []).length), 0);
-    if (traceActions === 0 || led.items.length >= traceActions) return led;
+  const steps = src.trace?.steps || [];
+  const resumeInTrace = steps.filter((s) => s.finish_reason === FAKESTOP_RESUME_FINISH).length;
+  const resumeInLed = led ? led.items.filter(isSystemNotice).length : 0;
+  if (led && (led.items.length > 0 || led.reasoning) && resumeInLed >= resumeInTrace) {
+    const traceActions = steps.reduce((n, s) => n + ((s.actions || []).length), 0);
+    if (traceActions === 0 || countableItems(led.items).length >= traceActions) return led;
     // 账本条目不足于服务端 trace → 回落权威源重建
   }
   return ledgerFromSettled({

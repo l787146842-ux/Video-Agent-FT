@@ -14,7 +14,7 @@ import { uid } from '@/lib/utils';
 
 /** 事件路由所需的 chat store 写面（结构类型，hooks 层直接注入 chatActions） */
 export type SseChatFx = Pick<typeof chatActions,
-  | 'startStream' | 'streamError' | 'setStatus' | 'appendDelta'
+  | 'startStream' | 'streamError' | 'setStatus' | 'systemNotice' | 'appendDelta'
   | 'appendReasoning' | 'toolStarted' | 'toolFinished' | 'docWritten' | 'addMessage'
   | 'removeQueuedMessage' | 'restoreStreamingState' | 'clearStreaming' | 'loadMessages'
   | 'applyDecisionForm' | 'finishStream' | 'cancelStream'>;
@@ -193,6 +193,12 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
       // 后端下发 key 为运行时字符串，走 tDynamic（动态键回退链）
       const keyed = ev.key ? tDynamic(ev.key, ev.params) : '';
       fx.chat.setStatus(keyed && keyed !== ev.key ? keyed : (ev.text || ''));
+      // 假停机械续跑：瞬时状态栏之外同步入账本（机器判定事实需跨回合留痕，
+      // 与 settled 侧 trace 重建同一形态；id 带 count 天然幂等）
+      if (ev.key === 'agent.fakestopResume') {
+        const n = Number(ev.params?.count) || 0;
+        fx.chat.systemNotice(`resume-${n}`, 'rp.timeline.resumeNotice', { count: n });
+      }
       break;
     }
     case 'delta': fx.chat.appendDelta(ev.text || ''); break;

@@ -9,7 +9,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  emptyLedger, ledgerFromLive, ledgerFromSettled, settleLedger, type LedgerItem,
+  emptyLedger, ledgerFromLive, ledgerFromSettled, settleLedger,
+  settledLedgerForMessage, countableItems, isSystemNotice, SYSTEM_NOTICE,
+  type LedgerItem,
 } from '../turn-ledger';
 
 /** 语义投影：id 来源不同（live=SSE 事件 id、settled=重建规则 t-{step}-{i}），
@@ -238,5 +240,127 @@ describe('live/settled 对拍（同输入语义 → 同构输出）', () => {
     expect(live.items).toEqual([]);
     expect(settled.items).toEqual([]);
     expect(live.reasoning).toBe(settled.reasoning);
+  });
+});
+
+/* ================= 系统事实条（假停机械续跑留痕） ================= */
+
+const tool = (name: string, summary: string) => ({
+  name, summary, ok: true, elapsed_ms: 10,
+});
+
+describe('ledgerFromSettled（假停续跑事实入账）', () => {
+  it('finish_reason=fakestop_resume 的 step → 产一条系统提醒，排在同 step 工具账目之后', () => {
+    const led = ledgerFromSettled({
+      trace: { steps: [{
+        step: 3, timing_ms: 0, token_usage: 0, actions_applied: 0,
+        finish_reason: 'fakestop_resume', actions: [tool('storyboard_create_group', '建组')],
+      }] },
+    });
+    expect(led.items.map((i) => i.id)).toEqual(['t-3-0', 'resume-s3']);
+    const notice = led.items[1];
+    expect(notice.name).toBe(SYSTEM_NOTICE);
+    expect(notice.noticeKind).toBe('rp.timeline.resumeNotice');
+    expect(notice.noticeParams).toEqual({ count: 1 });
+    expect(notice.status).toBe('done');
+  });
+
+  it('多次续跑按 step 序递增计次（trace 不携 cap，与 live 侧文案口径一致）', () => {
+    const led = ledgerFromSettled({
+      trace: { steps: [
+        { step: 1, timing_ms: 0, token_usage: 0, actions_applied: 0, finish_reason: 'tool_calls' },
+        { step: 2, timing_ms: 0, token_usage: 0, actions_applied: 0, finish_reason: 'fakestop_resume' },
+        { step: 3, timing_ms: 0, token_usage: 0, actions_applied: 0, finish_reason: 'fakestop_resume' },
+      ] },
+    });
+    expect(led.items.filter(isSystemNotice).map((i) => i.noticeParams?.count)).toEqual([1, 2]);
+  });
+
+  it('零工具但有续跑事实的轮次 → 账本非空（机器判定痕迹不因无工具而消失）', () => {
+    const led = ledgerFromSettled({
+      trace: { steps: [{
+        step: 1, timing_ms: 0, token_usage: 0, actions_applied: 0,
+        finish_reason: 'fakestop_resume',
+      }] },
+    });
+    expect(led.items.length).toBe(1);
+    expect(countableItems(led.items)).toEqual([]);
+  });
+
+  it('countableItems / isSystemNotice：提醒条不计入操作数（防给谎报做证）', () => {
+    const items: LedgerItem[] = [
+      { id: 'a', summary: '甲', status: 'done', name: 'gen' },
+      { id: 'b', summary: '', status: 'done', name: SYSTEM_NOTICE, noticeKind: 'rp.timeline.resumeNotice' },
+    ];
+    expect(isSystemNotice(items[0])).toBe(false);
+    expect(isSystemNotice(items[1])).toBe(true);
+    expect(countableItems(items).map((i) => i.id)).toEqual(['a']);
+  });
+
+  it('ledgerFromLive 透传 noticeKind/noticeParams（重连 replay 不丢提醒）', () => {
+    const led = ledgerFromLive({
+      tools: [{ id: 'resume-1', name: SYSTEM_NOTICE, status: 'done',
+        noticeKind: 'rp.timeline.resumeNotice', noticeParams: { count: 1 } }],
+    });
+    expect(led.items[0].noticeKind).toBe('rp.timeline.resumeNotice');
+    expect(led.items[0].noticeParams).toEqual({ count: 1 });
+  });
+});
+
+describe('settledLedgerForMessage（提醒与一致性回落同口径）', () => {
+  it('本地账本提醒数少于 trace 续跑 step 数（重连 replay 未回填）→ 走权威源重建', () => {
+    const live = settleLedger(ledgerFromLive({
+      tools: [{ id: 't1', name: 'gen', summary: '生图', status: 'done' }],
+    }));
+    const trace = {
+      steps: [{
+        step: 1, timing_ms: 0, token_usage: 0, actions_applied: 0,
+        finish_reason: 'fakestop_resume' as const,
+        actions: [tool('gen', '生图')],
+      }],
+    };
+    const out = settledLedgerForMessage({ ledger: live, trace });
+    expect(out.items.filter(isSystemNotice).length).toBe(1);
+  });
+
+  it('提醒条目不得撑大动作数比较：7 真账目 + 3 提醒 对 traceActions=9 → 仍重建', () => {
+    const live = settleLedger(ledgerFromLive({
+      tools: Array.from({ length: 7 }, (_, i) => ({
+        id: `t${i}`, name: 'gen', summary: `操作${i}`, status: 'done' as const,
+      })).concat(Array.from({ length: 3 }, (_, i) => ({
+        id: `resume-${i}`, name: SYSTEM_NOTICE, summary: '', status: 'done' as const,
+        noticeKind: 'rp.timeline.resumeNotice',
+      }))),
+    }));
+    const out = settledLedgerForMessage({
+      ledger: live,
+      trace: {
+        steps: [{
+          step: 1, timing_ms: 0, token_usage: 0, actions_applied: 9, finish_reason: 'stop',
+          actions: Array.from({ length: 9 }, (_, i) => tool('gen', `操作${i}`)),
+        }],
+      },
+    });
+    // 旧口径（led.items.length=10 >= 9）会误判「账本已齐」而放行残缺账本
+    expect(out.items.length).toBe(9);
+    expect(out.phase).toBe('settled');
+  });
+
+  it('真账目已齐 + 提醒齐备 → 直接复用翻转账本（不做多余重建）', () => {
+    const live = settleLedger(ledgerFromLive({
+      tools: [
+        { id: 't1', name: 'gen', summary: '生图', status: 'done' },
+        { id: 'resume-1', name: SYSTEM_NOTICE, summary: '', status: 'done',
+          noticeKind: 'rp.timeline.resumeNotice', noticeParams: { count: 1 } },
+      ],
+    }));
+    const out = settledLedgerForMessage({
+      ledger: live,
+      trace: { steps: [{
+        step: 1, timing_ms: 0, token_usage: 0, actions_applied: 1,
+        finish_reason: 'fakestop_resume', actions: [tool('gen', '生图')],
+      }] },
+    });
+    expect(out).toBe(live);
   });
 });

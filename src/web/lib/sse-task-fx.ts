@@ -37,6 +37,7 @@ function makeShadowChat(convId: string): SseChatFx {
     startStream: noop,
     streamError: () => notify(t('rp.parallel.bgFailed')),
     setStatus: noop,
+    systemNotice: noop,
     appendDelta: noop,
     appendReasoning: noop,
     toolStarted: noop,
@@ -129,6 +130,11 @@ export function makeScopeTaskFx(
       markTerminal();
     },
     setStatus: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'status', text }),
+    // 浮窗无本轮账本模型（只有工具行），机器判定事实降级到状态文案呈现，
+    // 不停在 noop 里静默丢（「数据不静默丢」同纪律）
+    systemNotice: (_id, kind, params) => adjustScopeActions.appendEvent(scopeKey, {
+      kind: 'status', text: t(kind, params),
+    }),
     appendDelta: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'delta', text }),
     appendReasoning: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'reasoning', text }),
     toolStarted: (id, name, summary) => {

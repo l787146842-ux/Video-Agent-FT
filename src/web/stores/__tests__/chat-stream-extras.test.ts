@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { chatState, chatActions, setChatState } from '../chat';
 import { registerQueueStorageKey } from '@/lib/chat/queue-storage';
+import { countableItems, SYSTEM_NOTICE } from '@/lib/turn-ledger';
 import type { SseDonePayload, AgentTraceStep } from '@/types';
 
 const donePayload = (extra?: Partial<SseDonePayload>): SseDonePayload => ({
@@ -84,6 +85,24 @@ describe('chatActions 深度思考与工具时间线', () => {
     chatActions.startStream();
     chatActions.setStatus('自定义状态');
     expect(chatState.turnLedger.statusText).toBe('自定义状态');
+  });
+
+  it('systemNotice 进本轮账本（done 态、携 noticeKind），且不双登', () => {
+    chatActions.startStream();
+    chatActions.systemNotice('resume-1', 'rp.timeline.resumeNotice', { count: 1 });
+    const items = chatState.turnLedger.items;
+    expect(items.length).toBe(1);
+    expect(items[0].name).toBe(SYSTEM_NOTICE);
+    expect(items[0].status).toBe('done');
+    expect(items[0].noticeKind).toBe('rp.timeline.resumeNotice');
+    // 同 id 重复到达（重连/事件双达）不双登
+    chatActions.systemNotice('resume-1', 'rp.timeline.resumeNotice', { count: 1 });
+    expect(chatState.turnLedger.items.length).toBe(1);
+    // 不同次数→不同 id → 各自一条
+    chatActions.systemNotice('resume-2', 'rp.timeline.resumeNotice', { count: 2 });
+    expect(chatState.turnLedger.items.length).toBe(2);
+    // 提醒条不计操作数（真实账目口径归 countableItems）
+    expect(countableItems(chatState.turnLedger.items).length).toBe(0);
   });
 });
 

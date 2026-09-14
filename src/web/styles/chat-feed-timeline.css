@@ -28,6 +28,10 @@
   /* 事件卡（批 2 插播报）：产物落账里程碑行，与工具行区分 */
   .tl-item-card { color: var(--text-main); font-weight: 600; }
   .tl-item-card .tl-item-icon.card { color: var(--accent-blue); }
+  /* 系统事实条（假停机械续跑等机器判定事件）：弱化字重 + 警示色徽标，
+     与工具行（成功绿）/事件卡（里程碑蓝）三档语气互斥 */
+  .tl-item-notice { color: var(--text-dim); font-style: italic; }
+  .tl-item-notice .tl-item-icon.notice { color: var(--color-warning-strong); }
   /* .tl-item-summary 单行截断已归组至 chat-input-picker.css（任务#9 CSS 棘轮） */
   .tl-item-failed .tl-item-summary { color: var(--color-danger-strong); }
   .tl-item-elapsed { color: var(--text-dim); flex-shrink: 0; }
