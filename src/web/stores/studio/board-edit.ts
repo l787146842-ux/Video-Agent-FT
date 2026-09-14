@@ -104,7 +104,6 @@ export const boardEditActions = {
           else updated.prompt = patch.desc;
         }
         if (patch.badgeLabel !== undefined) updated.badgeLabel = patch.badgeLabel;
-        if (patch.shotType !== undefined) updated.shotType = patch.shotType;
         if (patch.timeRange !== undefined) updated.timeRange = patch.timeRange;
         return updated as unknown as AnyGroup;
       }),
