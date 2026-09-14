@@ -125,6 +125,7 @@ export interface KeyElementGroup {
 export interface ShotGroup {
   id: string;
   title: string;
+  desc?: string;
   duration?: string;
   roughDesc?: string;
   sceneRefs?: string[];
