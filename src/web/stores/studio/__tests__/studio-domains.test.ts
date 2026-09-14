@@ -60,6 +60,14 @@ describe('studio 域拆分后行为', () => {
     expect(state.selectedDraftId).toBe('');
   });
 
+  it('storyboard 域：renameGroupLocal 分镜正文写 desc（roughDesc 写口 2026-09-15 退役）', () => {
+    // ShotDescEditor 编辑分镜正文 → renameGroupLocal('shot',{desc}) 必须落 desc，
+    // 不再写 roughDesc（双通道歧义退役，与后端建组/patch 白名单一致）
+    studioActions.renameGroupLocal('shot', 's1', { desc: '完整分镜正文' });
+    expect(state.shots[0].desc).toBe('完整分镜正文');
+    expect(state.shots[0].roughDesc).toBe('');
+  });
+
   it('ui 域：markSkillUsed 去重追加', () => {
     setState('usedSkills', []);
     studioActions.markSkillUsed('screenwriter');

@@ -38,9 +38,8 @@ _DRAFT_FIELDS_HINT = (
 class CreateGroupInput(StrictToolInput):
     group_type: Literal["keyElement", "shot", "audio"] = Field(..., description="分组类型（闭集枚举）: keyElement | shot | audio")
     title: str = Field(..., description="分组标题")
-    desc: str = Field("", description="分组描述")
+    desc: str = Field("", description="分组描述（shot 类型：完整镜头设计写这里，唯一载体）")
     duration: str = Field("", description="时长（shot 类型用；整镜总时长）")
-    rough_desc: str = Field("", description="粗略描述（shot 类型用）")
     scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌解析")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
@@ -105,7 +104,7 @@ class StoryboardCreateGroupTool(BaseTool):
         "创建新的故事板分组（关键元素/分镜/音频），可附带草稿。"
         "建组规范：关键元素——每个元素单独一组，组名=元素名，"
         "元素设定全文写在分组描述 desc 上；分镜——每个镜头单独一组，组名=镜头名，"
-        "完整镜头描述写在 desc/roughDesc 上，引用到的元素用 [元素名] 令牌写在描述里"
+        "完整镜头描述写在 desc 上，引用到的元素用 [元素名] 令牌写在描述里"
         "（系统会自动解析为引用并挂参考），也可用 scene_refs 显式指定。"
     )
 
@@ -165,7 +164,10 @@ class StoryboardCreateGroupTool(BaseTool):
         # 分镜通道的未匹配元素令牌（非分镜恒空）
         unmatched_tokens: List[str] = []
         if cat_key == CAT_SHOTS:
-            new_group["roughDesc"] = params.rough_desc or params.desc
+            # roughDesc 写入通道退役（2026-09-15，6666 实证）：desc/roughDesc 双通道
+            # 歧义致模型把完整分镜设计写进 roughDesc——前端展示唯一认 desc，
+            # 内容落进盲区（用户看到 16 张空壳卡）。分镜正文唯一载体 = desc，
+            # 存量 roughDesc 数据只读保留（context_builder 照常注入）。
             new_group["duration"] = params.duration or "5s"
             # shotType 已摘除（2026-09-14 裁决）：单值「镜头语言」字段与 Skill 声明的
             # 多内切镜格式抢方向盘，致分镜时出内切镜时不出——分镜格式唯一载体 = desc。
@@ -175,7 +177,7 @@ class StoryboardCreateGroupTool(BaseTool):
             if params.scene_refs:
                 new_group["sceneRefs"] = params.scene_refs
             else:
-                tokens = ops.parse_element_tokens(f"{params.desc or ''}\n{params.rough_desc or ''}")
+                tokens = ops.parse_element_tokens(params.desc or "")
                 matched_titles, unmatched_tokens = ops.match_element_titles_report(
                     svc.state_dict, tokens)
                 new_group["sceneRefs"] = matched_titles

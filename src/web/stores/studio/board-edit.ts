@@ -99,9 +99,11 @@ export const boardEditActions = {
         const updated = { ...g } as Record<string, unknown>;
         if (patch.title !== undefined) updated.title = patch.title;
         if (patch.desc !== undefined) {
-          if (type === 'keyElement') updated.desc = patch.desc;
-          else if (type === 'shot') updated.roughDesc = patch.desc;
-          else updated.prompt = patch.desc;
+          // shot 分镜正文唯一载体 = desc（roughDesc 双通道写口 2026-09-15 退役，
+          // 与后端建组入参/patch 白名单一致，ShotDescEditor 编辑的正是 desc）；
+          // keyElement 元素设定同写 desc；audio 走 prompt
+          if (type === 'audio') updated.prompt = patch.desc;
+          else updated.desc = patch.desc;
         }
         if (patch.badgeLabel !== undefined) updated.badgeLabel = patch.badgeLabel;
         if (patch.timeRange !== undefined) updated.timeRange = patch.timeRange;

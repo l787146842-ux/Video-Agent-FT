@@ -55,12 +55,27 @@ async def test_shot_group_gets_no_badge_label(svc):
     tool = StoryboardCreateGroupTool()
     r = await tool.aexecute(CreateGroupInput(
         group_type="shot", title="S1 木星初醒",
-        desc="【场景】[星环号球形舱] 【空间锚点卡 / 星环号球形舱】固定参照物：观察窗",
-        rough_desc="建立镜", duration="10s",
+        desc="【场景】[星环号球形舱] 【空间锚点卡 / 星环号球形舱】固定参照物：观察窗。建立镜",
+        duration="10s",
         scene_refs=["星环号球形舱"]))
     assert r.success
-    g = _groups(svc, CAT_SHOTS)[0]
+    # 取新建卡（[-1]）：demo 项目自带预置 shot-1（含历史字段），[0] 会抓错卡
+    g = _groups(svc, CAT_SHOTS)[-1]
+    assert g["title"].startswith("S1") or "木星初醒" in g["title"]
     assert "badgeLabel" not in g
+    # roughDesc 写入通道退役（2026-09-15）：新建 shot 卡不再产 roughDesc，
+    # 分镜正文唯一载体 = desc
+    assert "roughDesc" not in g
+
+
+async def test_shot_group_rejects_rough_desc_field(svc):
+    """rough_desc 已从建组入参摘除（双通道歧义退役，2026-09-15 6666 实证）：
+    传 rough_desc 会被 StrictToolInput 拒收（拒收+回喂，不静默丢）"""
+    import pydantic
+    with pytest.raises(pydantic.ValidationError):
+        CreateGroupInput(
+            group_type="shot", title="S1", desc="x",
+            rough_desc="建立镜", scene_refs=["星环号球形舱"])
 
 
 async def test_shot_group_rejects_shot_type_field(svc):
