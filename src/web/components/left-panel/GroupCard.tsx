@@ -102,12 +102,14 @@ export function GroupCard(props: {
       case 'shot': {
         const g = props.group as ShotGroup;
         return {
-          badge: g.shotType || '分镜',
+          // 分镜角标固定「分镜」（2026-09-14 裁决：不再显 shotType 运镜——
+          // 单值运镜与 Skill 多内切镜格式抢方向盘；镜头语言唯一载体 = desc）
+          badge: '分镜',
           badgeStyle: {
             background: 'color-mix(in srgb, var(--accent-purple) 15%, transparent)',
             color: 'var(--accent-purple)',
           },
-          desc: g.roughDesc || '',
+          desc: '',  // 不显示 roughDesc 简介行（对齐 Flova：标题下直接是分镜正文）
           addTitle: '手动生成视频分镜',
           adjustLabel: '分镜',
         };
@@ -161,8 +163,10 @@ export function GroupCard(props: {
         <SceneRefsChips group={props.group as ShotGroup} />
       </Show>
 
-      {/* 描述（双击编辑；子组件承载自适应编辑框） */}
-      <GroupDescEditor type={props.type} groupId={props.group.id} desc={() => meta().desc} />
+      {/* 描述（双击编辑）——分镜不显 roughDesc 简介行，完整分镜走下方 ShotDesignBlock */}
+      <Show when={props.type !== 'shot'}>
+        <GroupDescEditor type={props.type} groupId={props.group.id} desc={() => meta().desc} />
+      </Show>
 
       {/* 分镜正文（对齐 Flova：两行折叠 + 内联引用块，双击进编辑） */}
       <Show when={props.type === 'shot' && (props.group as ShotGroup).desc}>

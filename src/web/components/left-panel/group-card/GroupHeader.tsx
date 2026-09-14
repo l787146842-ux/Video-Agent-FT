@@ -53,7 +53,9 @@ export function GroupHeader(props: {
     if (props.type === 'keyElement') {
       studioActions.renameGroupLocal(props.type, props.groupId, { badgeLabel: v } as never);
     } else if (props.type === 'shot') {
-      studioActions.renameGroupLocal(props.type, props.groupId, { shotType: v } as never);
+      // 分镜角标为固定类别名「分镜」，不可编辑（shotType 已摘除，镜头语言唯一载体 = desc）
+      setEditingBadge(false);
+      return;
     } else {
       studioActions.renameGroupLocal(props.type, props.groupId, { timeRange: v } as never);
     }

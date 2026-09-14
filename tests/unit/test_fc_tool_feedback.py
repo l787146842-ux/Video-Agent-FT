@@ -229,3 +229,61 @@ class TestFuzzyPick:
         tool = ReadProjectDocTool()
         result = await tool.aexecute(ReadProjectDocInput(name="final_video_spec"))
         assert result.success and "SPEC_CONTENT" in (result.data or {}).get("content", "")
+
+
+class TestParseFailReject8888:
+    """8888 事故批：工具参数 JSON 解析失败不再静默伪造 {} 继续调用——
+    抢救失败即结构化拒收，真实拒因（出错位置+原文片段）回喂模型。
+    8888 实证：伪造 {} 后工具按「未携带非空 title」假拒收，模型原样重发 15 轮。"""
+
+    def _runner(self):
+        from src.video_agent.core.fc_tool_runner import FCToolRunner
+        return FCToolRunner(tool_manager=object())
+
+    @staticmethod
+    def _call(args_str: str, name: str = "storyboard_create_group") -> dict:
+        return {"id": "call_8888", "type": "function",
+                "function": {"name": name, "arguments": args_str}}
+
+    async def test_broken_args_rejected_with_real_reason(self):
+        runner = self._runner()
+        ctx = runner._gate_ctx("")
+        events = []
+
+        async def on_event(ev):
+            events.append(ev)
+
+        c = await runner._prepare_call(
+            self._call('{"title": "S02·曹彬来电", "desc": "【空间锚'), 0,
+            ctx=ctx, image_provider="", image_aspect_ratio="",
+            paused_this_batch=False, on_event=on_event)
+        assert c.result is not None and c.result.success is False
+        assert "参数 JSON 解析失败" in (c.gate_error or "")
+        assert "S02·曹彬来电" in c.gate_error        # 原文片段随拒因可见（数据不丢）
+        assert "未携带" not in c.gate_error           # 假拒因禁绝
+        assert "未执行、未写入任何字段" in c.gate_error
+        # 任何中断都有痕迹：started 事件已发（时间线可见）
+        assert any(e.get("type") == "tool_started" for e in events)
+
+    async def test_control_char_args_rescued_not_rejected(self, monkeypatch):
+        """裸控制字符 → 抢救成功：args 为解析后 dict，走正常闸机链（不拒收）"""
+        from src.video_agent.core import fc_tool_runner as ftr_mod
+
+        runner = self._runner()
+        ctx = runner._gate_ctx("")
+        # 聚焦解析层：桩掉未注册判定/注入/闸机链（各自有独立测试覆盖）
+        monkeypatch.setattr(ftr_mod.fc_gates, "unknown_tool_error",
+                            lambda name, has_tool: None)
+        monkeypatch.setattr(ftr_mod.fc_gates, "run_gate_chain",
+                            lambda ctx, name, args, paused_this_batch:
+                            type("R", (), {"error": None})())
+        monkeypatch.setattr(ftr_mod.provider_injection, "inject",
+                            lambda *a, **k: None)
+        raw = '{"title": "S01", "desc": "第一行\n第二行"}'
+        c = await runner._prepare_call(
+            self._call(raw, name="read_skill"), 0,
+            ctx=ctx, image_provider="", image_aspect_ratio="",
+            paused_this_batch=False)
+        assert c.args == {"title": "S01", "desc": "第一行\n第二行"}
+        assert c.gate_error is None
+        assert c.result is None   # 未被拒收，交由后续派发执行

@@ -30,26 +30,27 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
     r = await StoryboardCreateGroupTool().aexecute(CreateGroupInput(
         group_type="shot",
         title="Shot_太空艇与宇航员坍缩",
-        shot_type="长镜头",
         scene_refs=["Element_监视太空艇", "Element_二维空间平面"],
         duration="10s",
-        rough_desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
+        desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
         draft={"label": "分镜卡片", "prompt": "p"},
     ))
     assert r.success
     shot = svc.state_dict["shots"][-1]
-    assert shot["shotType"] == "长镜头"
+    # shotType 已退役（2026-09-14）：多内切镜格式唯一载体 = desc，不再有单值镜头语言字段
+    assert "shotType" not in shot
     assert shot["sceneRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
-    assert "0-4s" in shot["roughDesc"]
+    assert "0-4s" in shot["desc"]
     assert shot["duration"] == "10s"
 
 
 def test_update_group_shot_fields(svc):
     shot = svc.state_dict["shots"][0]
-    changed, _dropped = ops.patch_group(
+    changed, dropped = ops.patch_group(
         shot, {"shotType": "特写", "sceneRefs": ["Element_A"]})
     assert changed
-    assert svc.state_dict["shots"][0]["shotType"] == "特写"
+    # shotType 不在 group patch 白名单 → 被丢弃（镜头语言唯一载体 = desc）
+    assert "shotType" in dropped
     assert svc.state_dict["shots"][0]["sceneRefs"] == ["Element_A"]
 
 

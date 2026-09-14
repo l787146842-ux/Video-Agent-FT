@@ -33,9 +33,9 @@ ALLOWED_DRAFT_FIELDS = (
 # = patch 白名单 + id（新建时可显式指定 ID；patch 通道改 id 无意义仍拒收）
 ALLOWED_NEW_DRAFT_FIELDS = ALLOWED_DRAFT_FIELDS + ("id",)
 
-# group patch 允许写入的字段全集
+# group patch 允许写入的字段全集（shotType 已摘除：分镜镜头语言唯一载体 = desc）
 ALLOWED_GROUP_FIELDS = (
-    "title", "desc", "roughDesc", "duration", "timeRange", "prompt", "shotType", "sceneRefs",
+    "title", "desc", "roughDesc", "duration", "timeRange", "prompt", "sceneRefs",
     "badgeLabel",
 )
 

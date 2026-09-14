@@ -53,7 +53,6 @@ class GroupPatch(BaseModel):
     roughDesc: Optional[str] = None
     duration: Optional[str] = None
     timeRange: Optional[str] = None
-    shotType: Optional[str] = None
     sceneRefs: Optional[List[str]] = None
     prompt: Optional[str] = None
 

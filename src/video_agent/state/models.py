@@ -95,7 +95,6 @@ class ShotGroup(BaseModel):
     title: str = ""
     duration: str = ""
     rough_desc: str = Field(alias="roughDesc", default="")
-    shot_type: str = Field(alias="shotType", default="")
     camera_movement: str = Field(alias="cameraMovement", default="static")
     scene_refs: List[str] = Field(alias="sceneRefs", default_factory=list)
     transition: str = "cut"
@@ -132,7 +131,6 @@ class StoryGroup(BaseModel):
     title: str = ""
     description: str = Field(alias="desc", default="")
     # shot 专属
-    shot_type: str = Field(alias="shotType", default="")
     camera_movement: str = Field(alias="cameraMovement", default="static")
     rough_desc: str = Field(alias="roughDesc", default="")
     duration: str = ""
@@ -231,7 +229,7 @@ class ProjectState(BaseModel):
         for g in self.shots:
             groups.append(StoryGroup(
                 id=g.group_id, groupType="shot", title=g.title,
-                shotType=g.shot_type, cameraMovement=g.camera_movement,
+                cameraMovement=g.camera_movement,
                 roughDesc=g.rough_desc, duration=g.duration,
                 sceneRefs=g.scene_refs, transition=g.transition,
                 audioCue=g.audio_cue, timeRange=g.time_range,

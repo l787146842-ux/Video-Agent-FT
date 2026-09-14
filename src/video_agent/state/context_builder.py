@@ -128,7 +128,6 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
                 "index": gi + 1,
                 "title": g.get("title", ""),
                 "duration": g.get("duration", ""),
-                "shotType": g.get("shotType", ""),
                 "sceneRefs": g.get("sceneRefs", []),
                 "roughDesc": g.get("roughDesc", ""),
                 "drafts": [
@@ -245,7 +244,7 @@ def _full_scope_group(raw_group: Dict[str, Any], gi: int) -> Dict[str, Any]:
         drafts.append(entry)
     group: Dict[str, Any] = {
         k: raw_group.get(k, "") for k in (
-            "title", "desc", "duration", "shotType", "roughDesc", "timeRange")
+            "title", "desc", "duration", "roughDesc", "timeRange")
         if raw_group.get(k, "") != ""
     }
     group.update({

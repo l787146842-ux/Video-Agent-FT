@@ -83,8 +83,8 @@ describe('分组卡右上徽标 = 元素类型（台账 #10）', () => {
     expect(badgeText(container)).toBe('人物');
   });
 
-  it('分镜：镜头类型字段优先，缺省回落「分镜」', () => {
-    const withType: ShotGroup = {
+  it('分镜：角标固定「分镜」（shotType 已摘除，不再显运镜）', () => {
+    const legacyType: ShotGroup = {
       id: 'g2', title: '开场', shotType: '特写',
       drafts: [{ id: 'd1', label: '分镜 1', mediaType: 'video', videoUrl: '', prompt: '' }],
     };
@@ -92,7 +92,8 @@ describe('分组卡右上徽标 = 元素类型（台账 #10）', () => {
       id: 'g3', title: '过场',
       drafts: [{ id: 'd2', label: '分镜 2', mediaType: 'video', videoUrl: '', prompt: '' }],
     };
-    expect(badgeText(setup(withType, 'shot').container)).toBe('特写');
+    // 旧数据即使残留 shotType 也不再入角标
+    expect(badgeText(setup(legacyType, 'shot').container)).toBe('分镜');
     expect(badgeText(setup(plain, 'shot').container)).toBe('分镜');
   });
 
@@ -134,17 +135,14 @@ describe('分组卡右上徽标 = 元素类型（台账 #10）', () => {
     expect(badgeText(container)).toBe('场景');
   });
 
-  it('分镜/音频徽标编辑后 Enter 保存（类型字段各自落库分支）', () => {
+  it('分镜角标不可编辑（固定类别名）、音频徽标编辑后 Enter 保存', () => {
     const shot: ShotGroup = {
-      id: 'g2', title: '开场', shotType: '特写',
+      id: 'g2', title: '开场',
       drafts: [{ id: 'd1', label: '分镜 1', mediaType: 'video', videoUrl: '', prompt: '' }],
     };
     const { container: cShot } = setup(shot, 'shot');
-    fireEvent.dblClick(cShot.querySelector('.sb-badge') as HTMLElement);
-    const shotInput = cShot.querySelector('.sb-badge-input') as HTMLInputElement;
-    fireEvent.input(shotInput, { target: { value: '全景' } });
-    fireEvent.keyDown(shotInput, { key: 'Enter' });
-    expect(cShot.querySelector('.sb-badge-input')).toBeNull();
+    // 分镜角标固定「分镜」，双击不进入编辑（shotType 已摘除）
+    expect(badgeText(cShot)).toBe('分镜');
 
     const audio: AudioGroup = {
       id: 'g4', title: '配乐', timeRange: '0-10s',

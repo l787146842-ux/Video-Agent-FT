@@ -27,29 +27,36 @@ from src.video_agent.storage.media_urls import resolve_injectable_url
 # 写类 Input 统一继承 StrictToolInput（extra="forbid"，批 4b 单一事实源）；
 # 只读/交互控制面 Input 保持 BaseModel 原样，不扩大拒收面。
 
+# draft 合法字段枚举（对齐 dsh schema 精确性：模型看得见字段就不用猜——
+# 8888/3333 两次实测都把卡名写成 draft.title 被白名单拒收；白名单唯一源
+# = ops.ALLOWED_NEW_DRAFT_FIELDS，此处动态拼接防漂移）
+_DRAFT_FIELDS_HINT = (
+    f"合法字段（白名单外字段整单拒收）：{', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}。"
+    "卡片名用 label（不是 title）；提示词放 prompt；卡片描述放 desc。"
+)
+
 class CreateGroupInput(StrictToolInput):
     group_type: Literal["keyElement", "shot", "audio"] = Field(..., description="分组类型（闭集枚举）: keyElement | shot | audio")
     title: str = Field(..., description="分组标题")
     desc: str = Field("", description="分组描述")
-    duration: str = Field("", description="时长（shot 类型用）")
+    duration: str = Field("", description="时长（shot 类型用；整镜总时长）")
     rough_desc: str = Field("", description="粗略描述（shot 类型用）")
-    shot_type: str = Field("", description="镜头语言（shot 类型用）")
     scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌解析")
-    draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）")
+    draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class PatchDraftInput(StrictToolInput):
     draft_id: str = Field(..., description="草稿 ID 或 'current'")
     draft_type: str = Field("", description="草稿类型: keyElement | shot | audio")
-    patch: Dict[str, Any] = Field(..., description="要更新的字段字典")
+    patch: Dict[str, Any] = Field(..., description="要更新的字段字典。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class AddDraftInput(StrictToolInput):
     group_id: str = Field("current", description="目标分组 ID 或 'current'")
     group_type: str = Field("", description="分组类型")
-    draft: Union[Dict[str, Any], str] = Field(..., description="新草稿数据（JSON 对象；字符串会自动解析一次）")
+    draft: Union[Dict[str, Any], str] = Field(..., description="新草稿数据（JSON 对象；字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
@@ -148,13 +155,20 @@ class StoryboardCreateGroupTool(BaseTool):
         _raw_title = str(params.title or "")
         _title = ops.normalize_group_title(_raw_title)
         new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": params.desc, "drafts": []}
+        # 角标归一接回（3333 批回归修复）：9/1 文本轨退役批删除旧调用点后，
+        # keyElement 组 badgeLabel 恒空、前端全落「关键元素」兜底——按 desc
+        # 锚点确定性归一（人物/场景/道具/声音特征；本工具无角标入参，纯推导）
+        if cat_key == CAT_KEY_ELEMENTS:
+            new_group["badgeLabel"] = ops.normalize_badge_label(
+                "", str(params.desc or ""), group_type=params.group_type)
 
         # 分镜通道的未匹配元素令牌（非分镜恒空）
         unmatched_tokens: List[str] = []
         if cat_key == CAT_SHOTS:
             new_group["roughDesc"] = params.rough_desc or params.desc
             new_group["duration"] = params.duration or "5s"
-            new_group["shotType"] = params.shot_type
+            # shotType 已摘除（2026-09-14 裁决）：单值「镜头语言」字段与 Skill 声明的
+            # 多内切镜格式抢方向盘，致分镜时出内切镜时不出——分镜格式唯一载体 = desc。
             # 批 6 · A3：分镜描述里的 [元素名] 令牌自动解析为元素引用
             # （显式传 scene_refs 则以显式为准；匹配不到的令牌丢弃不拒收，
             # 但必须回喂告知——3333 批裁决：静默丢弃=模型以为挂上了引用）
