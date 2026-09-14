@@ -40,13 +40,23 @@ class ChatResponse(BaseModel):
 
 class StreamChunk(BaseModel):
     """流式增量块"""
-    type: str = "text_delta"  # text_delta | reasoning_delta | tool_call | done
+    type: str = "text_delta"  # text_delta | reasoning_delta | tool_call | tool_call_delta | done
     text: str = ""
     tool_name: str = ""
     tool_args: Dict[str, Any] = {}
     # 供应商 tool_call id（上下文与缓存优化计划批 C1）：仅在 type="tool_call"
-    # 时携带（端点未下发时为空，消费方回落合成 id），供 tool role 结果配对
+    # 时携带（端点未下发时空串，消费方回落合成 id），供 tool role 结果配对
     tool_call_id: str = ""
+    # 8888 事故批（对齐 dsh「数据不丢」）：type="tool_call" 且 arguments 解析
+    # 失败时携带原始参数串与拒因——消费方不再伪造 {}，拒收时把真实原因回喂
+    # 模型（抢救成功则两字段为空、tool_args 为抢救后的 dict）
+    tool_args_raw: str = ""
+    tool_args_error: str = ""
+    # 8888 事故批（对齐 dsh tool-call-delta）：type="tool_call_delta" 时携带——
+    # 工具参数生成的流式进度提示（tool_index=分片序号，tool_args_len=该调用
+    # 已累积参数长度），仅展示用，闸机仍以流末完整参数为准
+    tool_index: int = 0
+    tool_args_len: int = 0
     finish_reason: str = ""  # 仅在 type="done" 时携带（stop / length / tool_calls）
     # 仅在 type="done" 时机会性携带（中继在流内下发 usage 才有值，不强求）
     usage_tokens: int = 0

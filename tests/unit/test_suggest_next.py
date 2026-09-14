@@ -5,8 +5,8 @@
 （平台统一 8 节点图量异构 skill 必失真——商品宣传无分析步、宣言式 13 步
 恒显"剧本分析"，3333 同款误导）。现口径：
 
-- 平台不再发 kind="next" 建议；建议动作只剩失败重试（retry）与
-  假停兜底继续（continue，label 固定「继续」不取节点标题）；
+- 平台不再发 kind="next" 建议；建议动作只剩失败重试（retry）——
+  假停「继续」按钮已随词表退役（2026-09-14 批，机械续跑取代按钮兜底）；
 - "下一步"由模型聊天自述（外部标杆转录原样）；
 - 防复活在 scripts/check_legacy_orchestration.py FORBIDDEN 机械承接
   （退役符号字面不落本文件，测试内运行时拼接断言）。
@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # 运行时拼接退役符号（防复活门禁扫描 *.py 字面，测试断言合法含这些词）
 _FN = "suggest_" + "next_actions"
 _TITLE = "current_" + "node_title"
+_BTN = '{"kind": "continue", "label": "继续", "value": "继续"}'
 
 
 def test_retired_symbols_absent_from_src():
@@ -25,14 +26,8 @@ def test_retired_symbols_absent_from_src():
     rep_src = (ROOT / "src/video_agent/core/round_end_policies.py").read_text(encoding="utf-8")
     assert _FN not in rep_src
     assert _TITLE not in rep_src
+    assert _BTN not in rep_src, "假停按钮已随词表退役（2026-09-14），机械续跑取代"
     loop_src = (ROOT / "src/video_agent/core/agent_loop.py").read_text(encoding="utf-8")
     assert _FN not in loop_src
     wr_src = (ROOT / "src/video_agent/core/workflow_runtime.py").read_text(encoding="utf-8")
     assert _TITLE not in wr_src
-
-
-def test_fakestop_continue_label_is_generic():
-    """假停兜底继续按钮 label 固定「继续」：不再取节点标题（异构 skill 失真源）。"""
-    src = (ROOT / "src/video_agent/core/round_end_policies.py").read_text(encoding="utf-8")
-    assert '{"kind": "continue", "label": "继续", "value": "继续"}' in src
-    assert '"kind": "next"' not in src, "平台不再计算 kind=next 建议"

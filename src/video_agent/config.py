@@ -103,6 +103,13 @@ class Settings:
     # 子代理 run_subagent 总开关（关=不下发 run_subagent 工具，一键回滚）
     subagent_enabled: bool = field(default_factory=lambda: _env_bool("SUBAGENT_ENABLED", True))
 
+    # 原始 SSE 落盘观测开关（默认关；SSE_CAPTURE=1 开启）：开 = OpenAI 兼容
+    # 流式路径把中转实际下发的每个 SSE data 行原样追加到 data/sse_capture/
+    # （每次 LLM 调用一个 jsonl，头部/尾部各一条元数据行，上限 500 个滚动清理）。
+    # 用途：假停/丢工具调用抓现行——区分「上游没发」与「我方拼装丢弃」。
+    # 仅诊断用，常开会占盘，抓完即关。
+    sse_capture: bool = field(default_factory=lambda: _env_bool("SSE_CAPTURE", False))
+
 
 
     # LLM 超时（秒）
@@ -274,6 +281,11 @@ class Settings:
     default_video_model: str = ""
     # 聊天框出图开关：关 = Agent 在对话中不主动触发生图
     chat_image_enabled: bool = True
+    # 假停机械续跑（dsh Stop hook 同款门禁；2026-09-14 词表退役批改结构性
+    # 判定并默认开）：Skill 进行中、不含工具调用的纯文本收尾轮 → 机械注入
+    # 提醒续跑（连续第 1 轮续、第 2 轮视为真完成放行；每回合上限见
+    # round_end_policies.FAKESTOP_AUTO_RESUME_MAX）；关 = 不做任何检测
+    fakestop_auto_resume_enabled: bool = True
     default_image_resolution: str = "1K"
     default_video_resolution: str = "1080p"
     # 分镜最大时长（秒）：Agent 自拆分镜单镜时长上限与新建分镜默认时长
@@ -433,7 +445,7 @@ SETTINGS_GROUPS: dict = {
                  "rate_limit_per_minute", "rate_limit_generate_per_minute"),
     "agent": ("adjust_subdialog_enabled", "adjust_task_concurrency",
               "execution_preference", "execution_mode", "pipeline_orchestrator_enabled",
-              "script_inject_limit"),
+              "script_inject_limit", "fakestop_auto_resume_enabled"),
     "llm": ("llm_timeout", "llm_stream_timeout", "adapter_retry_max",
             "adapter_retry_base_delay", "llm_max_tokens", "llm_temperature",
             "llm_output_limit", "llm_json_timeout", "llm_thinking_level",

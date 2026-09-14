@@ -71,12 +71,12 @@ _PRODUCT_AUDIT: List[Tuple[re.Pattern, Any, str]] = [
      lambda st: not prompt_gates.has_spec_document(st), "制片规格"),
 ]
 
-# fakestop：延续承诺措辞——正文声称要继续/正在做，却以 stop 收尾且零操作。
-# 只覆盖任务流常见承诺句式，配合 applied==0 + skill 激活条件使用，防普通对话误触发。
-_CONTINUATION_PROMISE_RE = re.compile(
-    r"马上继续|继续推进|继续执行|现在(?:进行|执行|调用|写入|分析|拆解|开始)|"
-    r"接下来(?:我|将|会)|即将开始|马上开始|立刻开始",
-)
+# 假停机械续跑（dsh Stop hook 同款门禁）：结构性判定，无词表（2026-09-14
+# 裁决词表退役——1111 实证 5 种句式全漏网，词表匹配是不可维护的打地鼠）。
+# 判定唯一形态：Skill 进行中 + 不含工具调用的纯文本收尾轮。连续第 1 轮
+# → 机械续跑（note 注入「已完成请再总结，否则继续下一批」）；连续第 2 轮
+# → 真完成放行；cap = FAKESTOP_AUTO_RESUME_MAX 封死「文本↔工具」交替拉锯。
+FAKESTOP_AUTO_RESUME_MAX = 2
 
 
 def _claims_structure_done(*texts: str) -> bool:
@@ -139,6 +139,14 @@ class RoundEndContext:
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     wants_continue: bool = False
     applied: int = 0
+    # 假停自动续跑批：本回合已发生的自动续跑次数（agent_loop 填充；
+    # 策略据此判断是否还允许再续——FAKESTOP_AUTO_RESUME_MAX 封顶）
+    resumes_used: int = 0
+    # 假停机械续跑批（词表退役）：本回合**此前连续**纯文本收尾轮数
+    # （agent_loop 填充：工具轮归零、纯文本轮递增；传值为本轮之前的计数）。
+    # 0 = 本轮是连续第 1 轮（假停嫌疑，续跑）；≥1 = 连续第 2 轮
+    # （模型已重申完成，真完成放行）。
+    text_round_streak: int = 0
     # 输出态（策略写入，agent_loop 回读）
     hard_break: bool = False
     hard_break_finish: str = ""
@@ -457,24 +465,31 @@ async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None
 
 
 def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
-    # fakestop：模型说「马上继续/现在进行…」却零操作、无暂停地收尾，
-    # 用户会困惑「怎么停了」。确定性三问全中（状态可算、机器可判、无创作空间），收归系统。
+    # fakestop 机械续跑（dsh Stop hook 同款；2026-09-14 裁决词表退役）：
+    # 结构性判定取代词表匹配——Skill 进行中、不含工具调用的纯文本收尾轮
+    # 即假停嫌疑（契约唯一出口 = 纯文本轮只允许真完成；中间批次必须带工具
+    # 调用）。确定性三问全中（状态可算、机器可判、无创作空间），收归系统。
+    # 连续第 2 轮纯文本（streak≥1）= 模型已按 note 重申完成 → 真完成放行；
+    # cap 封死「文本↔工具」交替拉锯；开关关 = 无检测（dsh 默认不配 hook）。
     return (
-        bool(ctx.skill)
-        and ctx.applied == 0
+        settings.fakestop_auto_resume_enabled
+        and bool(ctx.skill)
+        and ctx.text_round_streak == 0
         and not ctx.confirmation
-        and not ctx.wants_continue
-        and not ctx.suggested_actions
-        and bool(_CONTINUATION_PROMISE_RE.search(ctx.content or ""))
+        and ctx.resumes_used < FAKESTOP_AUTO_RESUME_MAX
     )
 
 
 async def _apply_aborted_continuation_audit(ctx: RoundEndContext, emit: Callable) -> None:
-    # 批 3 · B4 拆伪按钮：label 固定「继续」——不再取平台统一 8 节点图算
-    # 节点标题（异构 skill 恒失真，3333 同款误导源；"下一步"归模型聊天自述）。
-    # 本策略只保留假停兜底语义（模型承诺继续却零操作 → 机械给继续按钮）。
-    ctx.suggested_actions.append({"kind": "continue", "label": "继续", "value": "继续"})
-    logger.info("[RoundEnd] audit-0819-fakestop: 延续承诺措辞且零操作，机械追加继续按钮")
+    # 机械续跑本身即处置（dsh Stop hook decision:block + reason 注入同款）：
+    # 置 continue_turn，agent_loop 追加模型原文 + FAKESTOP_RESUME_NOTE 续跑。
+    # 无按钮兜底——cap 满顶或连续第 2 轮即真完成放行（词表退役批：按钮随
+    # 词表判定一并退役，suggested_actions 仅存 retry 语义）。
+    ctx.continue_turn = True
+    logger.info(
+        "[RoundEnd] audit-0819-fakestop: Skill 进行中纯文本收尾轮（零工具），"
+        f"标记机械续跑（已续 {ctx.resumes_used}/{FAKESTOP_AUTO_RESUME_MAX}）"
+    )
 
 
 # （批 3 · B4 拆伪按钮：状态驱动的"下一步建议"函数族整体退役——平台统一
@@ -493,8 +508,8 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
                    requires=("content", "executor")),
     RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,
                    _cond_aborted_continuation_audit, _apply_aborted_continuation_audit,
-                   requires=("skill", "applied", "confirmation", "wants_continue",
-                             "suggested_actions", "content")),
+                   requires=("skill", "text_round_streak", "confirmation",
+                             "resumes_used")),
 ]
 
 # 登记期依赖自检（模块加载即执行；引用不存在字段的死策略在 import 期报错）

@@ -72,7 +72,7 @@ async def test_guidance_injected_between_steps(executor):
     events, on_event = _events_collecter()
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5, on_event=on_event,
+        history=[], on_event=on_event,
         pending_injector=pending_injector, stop_scope=scope,
     )
     assert injected["n"] >= 1                      # 第 2 轮触发过注入器
@@ -99,7 +99,7 @@ async def test_guidance_injector_exception_degrades_safely(executor):
     events, on_event = _events_collecter()
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5, on_event=on_event,
+        history=[], on_event=on_event,
         pending_injector=pending_injector, stop_scope=scope,
     )
     assert result.stopped is False
@@ -124,7 +124,7 @@ async def test_guidance_blank_text_skipped(executor):
     events, on_event = _events_collecter()
     await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5, on_event=on_event,
+        history=[], on_event=on_event,
         pending_injector=pending_injector, stop_scope=scope,
     )
     assert not [e for e in events if e.get("type") == "guidance_injected"]
@@ -143,7 +143,7 @@ async def test_llm_raises_agent_stopped_error_clean_exit(executor):
     events, on_event = _events_collecter()
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3, on_event=on_event, stop_scope=scope,
+        history=[], on_event=on_event, stop_scope=scope,
     )
     assert result.stopped is True
     assert result.stop_phase == "streaming"
@@ -165,7 +165,7 @@ async def test_stop_before_bad_output_retry(executor):
     events, on_event = _events_collecter()
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3, on_event=on_event, stop_scope=scope,
+        history=[], on_event=on_event, stop_scope=scope,
     )
     assert result.stopped is True
     assert result.stop_phase == "thinking"
@@ -190,7 +190,7 @@ async def test_generation_cancelled_converges_to_stop(executor):
     events, on_event = _events_collecter()
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3, on_event=on_event, stop_scope=scope,
+        history=[], on_event=on_event, stop_scope=scope,
     )
     assert result.stopped is True
     assert result.stop_phase == "tool_executing"
@@ -211,7 +211,7 @@ async def test_empty_text_falls_back_to_confirmation(executor):
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3,
+        history=[],
     )
     assert result.confirmation == "请确认是否继续"
     assert result.text == "请确认是否继续"
@@ -250,7 +250,7 @@ async def test_length_finish_appends_truncation_warning(executor):
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5,
+        history=[],
     )
     assert any("截断" in w for w in result.warnings)
     assert "全部完成" in result.text

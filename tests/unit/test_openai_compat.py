@@ -297,6 +297,87 @@ class TestChatStream:
         await adapter.close()
 
 
+class TestToolArgsRescue8888:
+    """8888 事故批：工具参数解析失败不再伪造 {} —— raw+拒因原样下发，
+    抢救成功（裸控制字符）则正常解析；参数生成进度经 tool_call_delta 流式提示。"""
+
+    def _mock_sse(self, sse_body: str):
+        respx.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                content=sse_body.encode(),
+                headers={"content-type": "text/event-stream"},
+            )
+        )
+
+    async def _collect(self, adapter, sse_body: str):
+        self._mock_sse(sse_body)
+        chunks = []
+        async for chunk in adapter.chat_stream([{"role": "user", "content": "test"}]):
+            chunks.append(chunk)
+        await adapter.close()
+        return chunks
+
+    @respx.mock
+    async def test_broken_args_kept_raw_with_error(self, adapter):
+        """8888 实证形态（截断坏 JSON）：tool_call 携带原始串+真实拒因，
+        不再静默伪造 {} —— runner 层据此把真实原因回喂模型"""
+        tool_call_data = {
+            "choices": [{"delta": {"tool_calls": [
+                {"function": {
+                    "name": "storyboard_create_group",
+                    "arguments": '{"title": "S02·曹彬来电", "desc": "【空间锚',
+                }}]}}]
+        }
+        chunks = await self._collect(
+            adapter, f'data: {json.dumps(tool_call_data)}\n\ndata: [DONE]\n\n')
+
+        tc = [c for c in chunks if c.type == "tool_call"][0]
+        assert tc.tool_args == {}                       # 无可解析参数
+        assert tc.tool_args_raw.startswith('{"title"')  # 原始串保留（数据不丢）
+        assert "参数 JSON 解析失败" in tc.tool_args_error
+        assert "未执行、未写入任何字段" in tc.tool_args_error
+
+    @respx.mock
+    async def test_bare_control_chars_rescued_inline(self, adapter):
+        """字符串值内裸换行 → 本地抢救成功：tool_args 为解析后 dict，无 error"""
+        bad_args = '{"title": "S01", "desc": "第一行\n第二行"}'
+        tool_call_data = {
+            "choices": [{"delta": {"tool_calls": [
+                {"function": {"name": "storyboard_create_group", "arguments": bad_args}}]}}]
+        }
+        chunks = await self._collect(
+            adapter, f'data: {json.dumps(tool_call_data)}\n\ndata: [DONE]\n\n')
+
+        tc = [c for c in chunks if c.type == "tool_call"][0]
+        assert tc.tool_args == {"title": "S01", "desc": "第一行\n第二行"}
+        assert tc.tool_args_error == ""
+        assert tc.tool_args_raw == ""
+
+    @respx.mock
+    async def test_tool_call_delta_progress_emitted(self, adapter):
+        """参数生成进度：调用名首现报 1 条 tool_call_delta，参数每满 2K 再报"""
+        args_head = '{"title": "S01", "desc": "' + "锚" * 100
+        args_tail = "锚" * 2600 + '"}'
+        d1 = {"choices": [{"delta": {"tool_calls": [
+            {"function": {"name": "storyboard_create_group", "arguments": args_head}}]}}]}
+        d2 = {"choices": [{"delta": {"tool_calls": [
+            {"function": {"arguments": args_tail}}]}}]}
+        sse_body = (f'data: {json.dumps(d1)}\n\n'
+                    f'data: {json.dumps(d2)}\n\ndata: [DONE]\n\n')
+        chunks = await self._collect(adapter, sse_body)
+
+        deltas = [c for c in chunks if c.type == "tool_call_delta"]
+        assert len(deltas) == 2                       # 名字首现 + 2K 阈值进度
+        assert deltas[0].tool_name == "storyboard_create_group"
+        assert deltas[0].tool_args_len == len(args_head)
+        assert deltas[1].tool_args_len == len(args_head) + len(args_tail)
+        # 最终 tool_call 正常解析（长参数本身合法）
+        tc = [c for c in chunks if c.type == "tool_call"][0]
+        assert tc.tool_args["title"] == "S01"
+        assert tc.tool_args_error == ""
+
+
 # ---------- base64 图片提取 ----------
 
 
@@ -527,3 +608,107 @@ class TestMaxTokensClamp:
         assert route.call_count == 2
         assert img._max_tokens_caps == {"glm-4.6": 131_072}
         await img.close()
+
+
+# ---------- 原始 SSE 落盘观测（诊断开关，默认关） ----------
+
+
+def _sse_lines(*chunks: str) -> str:
+    return "".join(f"data: {c}\n\n" for c in chunks) + "data: [DONE]\n\n"
+
+
+class TestSSECapture:
+    """抓假停现行：settings.sse_capture 开启时逐 data 行落盘，关闭时零落盘。
+
+    落盘目录经 monkeypatch 指向 tmp_path（模块级 _SSE_CAPTURE_DIR 常量仅
+    在 _SSECapture.__init__ 调用期解析）；frozen settings 用
+    object.__setattr__ 开关（项目测试惯例，finally 复位）。
+    """
+
+    @pytest.fixture
+    def capture_dir(self, tmp_path, monkeypatch):
+        from src.video_agent.adapters import openai_compat as oc
+
+        d = tmp_path / "sse_capture"
+        monkeypatch.setattr(oc, "_SSE_CAPTURE_DIR", d)
+        return d
+
+    @staticmethod
+    def _set_capture(on: bool) -> None:
+        from src.video_agent.config import settings
+
+        object.__setattr__(settings, "sse_capture", on)
+
+    @respx.mock
+    async def test_capture_disabled_by_default(self, adapter, capture_dir):
+        """开关关闭时：流式照常工作，不落任何文件。
+
+        显式置 False（与 test_capture_on_writes_raw_lines 对称）：本用例断言的是
+        「关→零落盘」行为，不能依赖环境默认值——开发机 .env 可能设 SSE_CAPTURE=1，
+        那样会误判为失败。"""
+        self._set_capture(False)
+        respx.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                content=_sse_lines('{"choices":[{"delta":{"content":"你好"}}]}').encode(),
+                headers={"content-type": "text/event-stream"},
+            )
+        )
+        chunks = [c async for c in adapter.chat_stream([{"role": "user", "content": "hi"}])]
+        assert [c.type for c in chunks][-1] == "done"
+        assert not capture_dir.exists() or not list(capture_dir.glob("sse-*.jsonl"))
+        await adapter.close()
+
+    @respx.mock
+    async def test_capture_on_writes_raw_lines(self, adapter, capture_dir):
+        """开关开启时：header + 逐 data 行（含 [DONE]）+ footer，全部合法 JSON"""
+        self._set_capture(True)
+        try:
+            respx.post(f"{BASE_URL}/chat/completions").mock(
+                return_value=httpx.Response(
+                    200,
+                    content=_sse_lines(
+                        '{"choices":[{"delta":{"content":"好"}}]}',
+                        '{"choices":[{"delta":{},"finish_reason":"stop"}]}',
+                    ).encode(),
+                    headers={"content-type": "text/event-stream"},
+                )
+            )
+            _ = [c async for c in adapter.chat_stream([{"role": "user", "content": "hi"}])]
+
+            files = list(capture_dir.glob("sse-*.jsonl"))
+            assert len(files) == 1
+            rows = [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
+            assert "__header__" in rows[0]
+            assert rows[0]["__header__"]["model"] == "test-model"
+            assert rows[0]["__header__"]["messages_n"] == 1
+            raws = [r["raw"] for r in rows if "__chunk__" in r]
+            assert len(raws) == 3  # content + finish + [DONE]
+            assert raws[-1] == "[DONE]"
+            assert "__footer__" in rows[-1]
+            assert rows[-1]["__footer__"]["finish_reason"] == "stop"
+            assert rows[-1]["__footer__"]["tool_calls"] == 0
+            assert rows[-1]["__footer__"]["error"] == ""
+        finally:
+            self._set_capture(False)
+        await adapter.close()
+
+    @respx.mock
+    async def test_capture_mid_stream_error_still_closes(self, adapter, capture_dir):
+        """流中途异常：footer 仍落盘并携带 error（录像不因事故丢帧尾）"""
+        self._set_capture(True)
+        try:
+            respx.post(f"{BASE_URL}/chat/completions").mock(
+                side_effect=httpx.ReadError("boom")
+            )
+            with pytest.raises(AdapterError):
+                _ = [c async for c in adapter.chat_stream([{"role": "user", "content": "hi"}])]
+
+            files = list(capture_dir.glob("sse-*.jsonl"))
+            assert files, "异常路径也应有落盘文件"
+            last = files[-1].read_text(encoding="utf-8").splitlines()[-1]
+            footer = json.loads(last)["__footer__"]
+            assert footer["error"] != ""
+        finally:
+            self._set_capture(False)
+        await adapter.close()

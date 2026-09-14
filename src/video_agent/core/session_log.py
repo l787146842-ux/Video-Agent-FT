@@ -47,6 +47,10 @@ EV_TURN_END = "turn/end"
 EV_COMPACTION_START = "compaction/start"
 EV_COMPACTION_SUMMARY = "compaction/summary"
 EV_COMPACTION_END = "compaction/end"
+# log-only 事件（8888 事故批）：步内流式增量（思考/正文），步末完整
+# assistant/message 为准据——本事件只服务实时观察与中断现场审计，
+# 历史装载/回放一律忽略
+EV_ASSISTANT_PARTIAL = "assistant/partial"
 
 # user/message 事件来源（二期 G1，dsh inject 同款形态）：真人输入 / 状态注入
 # （G3）/ 压缩检查点 / 媒体回喂（G4，view_storyboard_media 图片 parts 的
@@ -203,6 +207,19 @@ def append_step_feedback(svc: Any, conversation_id: str, step: int, tool_count: 
     """步回喂事实落流（log-only，细案 D2）：不存原文，装载时按模板派生。"""
     return append_event(svc, conversation_id, EV_STEP_FEEDBACK,
                         step=int(step), tool_count=int(tool_count))
+
+
+def append_partial(
+    svc: Any, conversation_id: str, step: int, kind: str, text: str,
+) -> Optional[Dict[str, Any]]:
+    """步内流式增量落流（8888 事故批，log-only）：思考（kind="reasoning"）/
+    正文（kind="text"）在步进行中每攒 ~2K 字符或 5 秒追加一行**增量**；
+    步末完整 assistant/message 为准据，本事件仅服务实时观察与中断现场
+    审计（dsh assistant/attempt 同语义：流记录持久化，结算点另立）。
+    历史装载与回放一律忽略本事件。"""
+    return append_event(svc, conversation_id, EV_ASSISTANT_PARTIAL,
+                        step=int(step), kind=str(kind or ""),
+                        text=str(text or ""))
 
 
 def rewind_last_turn(svc: Any, conversation_id: str = "") -> bool:

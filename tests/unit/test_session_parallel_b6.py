@@ -120,6 +120,9 @@ class _StubTM:
     def __init__(self):
         self.created = []
 
+    def list_running(self, project_id=""):
+        return []
+
     def create(self, project_id, worker_factory, task_id="", model="", conversation_id=""):
         record = {
             "task_id": task_id or "agt-stub",

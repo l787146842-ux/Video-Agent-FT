@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 from loguru import logger
 
 from src.video_agent.core.action_executor import StateOperationExecutor
+from src.video_agent.core.agent_loop import is_conversation_loop_active
 from src.video_agent.config import settings
 from src.video_agent.state import conversation_ops
 from src.video_agent.core import prompt_gates
@@ -179,9 +180,21 @@ def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
             status_code=429, error_code="ADJUST_SCOPE_BUSY")
     conversation_id = (getattr(body, "conversation_id", "") or "").strip() \
         or str(submission_svc.conversations_meta_payload().get("active_conversation_id") or "")
+    # 会话忙闲闸（8888 事故批，对齐 dsh 单驱动/收件箱语义）：同会话已有
+    # 运行中任务或活跃 agent 循环（含孤儿循环）时拒收新任务——8888 实证
+    # 续跑新循环与停止后孤儿循环并行 4 分钟，状态写入互斥丢弃、分镜组
+    # 重复创建、缓存前缀互踩。前端「执行中发消息」既有 /guidance 轮间
+    # 注入通道（= dsh steer）不受影响；循环层 acquire 为权威兜底。
+    tm = get_agent_task_manager()
+    if next((r for r in tm.list_running()
+             if str(r.get("conversation_id") or "") == conversation_id), None) \
+            or is_conversation_loop_active(conversation_id):
+        raise VideoAgentError(
+            "上一条指令仍在执行中：请等待其完成，或先停止该任务再发送；"
+            "执行中的补充要求请用「插入消息」通道传达",
+            status_code=429, error_code="CONVERSATION_BUSY")
     workspace_dir = str(submission_svc._workspace_dir)
     task_id = gen_id("agt")
-    tm = get_agent_task_manager()
     record = tm.create(
         project_id,
         lambda: _run_agent_task(body, project_id, task_id, workspace_dir, conversation_id),

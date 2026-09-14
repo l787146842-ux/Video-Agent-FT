@@ -65,7 +65,7 @@ async def test_checkpoint_after_llm_clean_exit(executor):
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5, on_event=on_event, stop_scope=scope,
+        history=[], on_event=on_event, stop_scope=scope,
     )
     assert result.stopped is True
     assert result.stop_phase == "thinking"
@@ -100,7 +100,7 @@ async def test_checkpoint_before_model_call_clean_exit(executor):
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5, on_event=on_event, stop_scope=scope,
+        history=[], on_event=on_event, stop_scope=scope,
     )
     assert result.stopped is True
     assert result.stop_phase == "thinking"
@@ -113,8 +113,10 @@ async def test_checkpoint_before_model_call_clean_exit(executor):
 
 # ---------- CancelledError 守门 ----------
 
-async def test_cancelled_with_stop_flag_converges_to_stop(executor):
-    """硬取消落地且停止标志在位 → 收敛为用户停止（发 stopped 终态事件），不当故障。"""
+async def test_cancelled_with_stop_flag_emits_stopped_then_reraises(executor):
+    """硬取消落地且停止标志在位 → 先发 stopped 终态事件（干净收尾痕迹），
+    随后 CancelledError 原样上抛（8888 事故批，对齐 dsh abort 语义：
+    硬取消是一次性投递，吞掉返回会让孤儿循环在 worker 死后继续跑）。"""
     scope = "test-stop-cancel-flag"
 
     async def llm_call(system_prompt, messages, stream_hook=None):
@@ -126,13 +128,14 @@ async def test_cancelled_with_stop_flag_converges_to_stop(executor):
     async def on_event(ev):
         events.append(ev)
 
-    result = await run_agent_loop(
-        "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3, on_event=on_event, stop_scope=scope,
-    )
-    assert result.stopped is True
-    assert result.stop_phase == "thinking"
+    with pytest.raises(asyncio.CancelledError):
+        await run_agent_loop(
+            "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
+            history=[], on_event=on_event, stop_scope=scope,
+        )
+    # 收尾痕迹已落：stopped 终态事件照发（不当故障处理）
     assert _stopped_events(events)
+    # 标志已清：不误杀下一任务
     assert not is_stop_requested(scope)
 
 
@@ -146,7 +149,7 @@ async def test_cancelled_without_flag_reraises(executor):
     with pytest.raises(asyncio.CancelledError):
         await run_agent_loop(
             "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-            history=[], max_steps=3, stop_scope=scope,
+            history=[], stop_scope=scope,
         )
 
 
@@ -216,7 +219,7 @@ async def test_quick_reconnect_new_stop_survives_old_finalize(executor):
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=5, on_event=on_event, stop_scope=scope,
+        history=[], on_event=on_event, stop_scope=scope,
     )
     assert result.stopped is True
     assert _stopped_events(events), "旧运行照常收敛为 stopped 终态"
@@ -225,8 +228,132 @@ async def test_quick_reconnect_new_stop_survives_old_finalize(executor):
     clear_stop(scope)
 
 
-# ---------- 在途外部生成任务登记 ----------
+# ---------- 子代理停止清理作用域隔离（8888 事故批） ----------
 
+async def test_subagent_own_scope_keeps_parent_flag_alive(executor):
+    """子代理独立 stop_scope_own：父标志触发子循环停止，但子收尾只清自己的
+    作用域，父标志保持置位（8888 事故钉死：子代理 finalize 清掉共享标志，
+    主循环失聪成孤儿，与续跑新循环并行 4 分钟）。"""
+    parent_scope = "parent-scope-8888"
+    child_scope = "parent-scope-8888::sub::conv-child"
+    request_stop(parent_scope)
+
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        return ("不应到达", "stop", 0, 0.0, {})
+
+    events = []
+
+    async def on_event(ev):
+        events.append(ev)
+
+    result = await run_agent_loop(
+        "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
+        history=[], on_event=on_event,
+        stop_scope=parent_scope, stop_scope_own=child_scope,
+    )
+    assert result.stopped is True          # 子循环照常干净收尾
+    assert calls["n"] == 0                 # 检查点 1 命中，模型调用未发生
+    assert _stopped_events(events)         # 子循环自己的 stopped 终态事件已发
+    # 核心断言：父标志未被子循环收尾清掉（父循环下一检查点可见）
+    assert is_stop_requested(parent_scope) is True
+    assert not is_stop_requested(child_scope)
+    clear_stop(parent_scope)
+
+
+async def test_top_level_own_scope_defaults_to_stop_scope(executor):
+    """顶级循环不传 stop_scope_own = 与 stop_scope 同：收尾清理行为不变。"""
+    scope = "top-level-scope"
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        request_stop(scope)
+        return ("再见", "stop", 0, 0.0, {})
+
+    result = await run_agent_loop(
+        "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
+        history=[], stop_scope=scope,
+    )
+    assert result.stopped is True
+    assert not is_stop_requested(scope)    # 顶级循环收尾清自己的标志（原语义）
+
+
+# ---------- 会话忙闲闸（8888 事故批） ----------
+
+async def test_conversation_busy_gate_rejects_second_loop(executor):
+    """同会话已有活跃循环 → 第二个 run_agent_loop 拒收（CONVERSATION_BUSY）；
+    首个循环结束后闸释放，可再次运行。"""
+    from src.video_agent.core.agent_loop import (
+        is_conversation_loop_active,
+    )
+    from src.video_agent.exceptions import VideoAgentError
+
+    cid = "conv-busy-gate"
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        started.set()
+        await release.wait()
+        return ("完成", "stop", 0, 0.0, {})
+
+    first = asyncio.create_task(run_agent_loop(
+        "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
+        history=[], stop_scope="busy-scope-1",
+        session_conversation_id=cid,
+    ))
+    await started.wait()
+    assert is_conversation_loop_active(cid)
+
+    async def llm_call_never(system_prompt, messages, stream_hook=None):
+        raise AssertionError("忙时第二个循环不应发起模型调用")
+
+    with pytest.raises(VideoAgentError) as ei:
+        await run_agent_loop(
+            "x", llm_call=llm_call_never, context_builder=lambda: "ctx",
+            executor=executor, history=[], stop_scope="busy-scope-2",
+            session_conversation_id=cid,
+        )
+    assert ei.value.error_code == "CONVERSATION_BUSY"
+    assert ei.value.status_code == 429
+
+    release.set()
+    result = await first
+    assert result.stopped is False
+    assert not is_conversation_loop_active(cid)   # 出口对称释放
+
+    # 释放后可再次运行（不残留闸）
+    async def llm_call_ok(system_prompt, messages, stream_hook=None):
+        return ("再跑", "stop", 0, 0.0, {})
+
+    again = await run_agent_loop(
+        "x", llm_call=llm_call_ok, context_builder=lambda: "ctx", executor=executor,
+        history=[], stop_scope="busy-scope-1",
+        session_conversation_id=cid,
+    )
+    assert "再跑" in again.text
+
+
+async def test_busy_gate_skipped_without_conversation_binding(executor):
+    """无会话绑定（测试/非 studio 路径）不设闸：并行循环互不影响。"""
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        await asyncio.sleep(0.01)
+        return ("ok", "stop", 0, 0.0, {})
+
+    await asyncio.gather(*[
+        run_agent_loop(
+            "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
+            history=[], stop_scope=f"no-cid-{i}",
+        ) for i in range(3)
+    ])
+    assert calls["n"] == 3
+
+
+# ---------- 在途外部生成任务登记 ----------
 def test_snapshot_inflight_generations(monkeypatch):
     from src.video_agent.web import task_manager as tm_mod
 

@@ -3,15 +3,21 @@
 - audit-0819-leak 演化（audit-0819b 协议单轨化；决策史见 git tag adr-archive-20260901）：暂停确认不再合成
   studio-actions 文本块（防泄漏的根治：通道消失则无可泄漏），改经
   结构化第 5 元组上抛；原 strip 清洗断言随通道退役；
-- audit-0819-fakestop：模型以延续承诺措辞收尾却零操作/无暂停时，
-  轮末策略机械追加「继续」建议动作。
+- audit-0819-fakestop（2026-09-14 词表退役批）：Skill 进行中的纯文本收尾轮
+  结构性机械续跑（dsh Stop hook 同款）——连续第 1 轮机械续跑注入 note、
+  连续第 2 轮视为真完成放行、工具轮归零 streak、cap 封死「文本↔工具」拉锯。
+  词表匹配整体退役（1111 实证 5 种句式全漏网）。
 """
 import asyncio
 
 import pytest
 
 from src.video_agent.core.agent_loop import run_agent_loop
-from src.video_agent.core.round_end_policies import RoundEndContext, run_round_end_policies
+from src.video_agent.core.round_end_policies import (
+    FAKESTOP_AUTO_RESUME_MAX,
+    RoundEndContext,
+    run_round_end_policies,
+)
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.action_executor import StateOperationExecutor
 
@@ -77,7 +83,7 @@ async def test_fc_text_visible_as_is(executor):
     assert result.text == body
 
 
-# ---------- 无效/异常输出处置（单轨化后：正文即用户可见，无解析/重试） ----------
+# ---------- 假停机械续跑：策略层单元（结构性判定，无词表） ----------
 
 
 class _StubExec:
@@ -92,107 +98,136 @@ def _run_policies(ctx):
     return asyncio.run(run_round_end_policies(ctx, _noop_emit))
 
 
-def test_fakestop_suggests_continue():
+@pytest.fixture
+def resume_on():
+    """开关开（frozen settings 定点突破 + 还原；默认已是开，钉死显式形态）。"""
+    from src.video_agent.config import settings
+    original = settings.fakestop_auto_resume_enabled
+    object.__setattr__(settings, "fakestop_auto_resume_enabled", True)
+    yield
+    object.__setattr__(settings, "fakestop_auto_resume_enabled", original)
+
+
+@pytest.fixture
+def resume_off():
+    """开关关：无检测语义（dsh 默认不配 hook 的放手形态）。"""
+    from src.video_agent.config import settings
+    original = settings.fakestop_auto_resume_enabled
+    object.__setattr__(settings, "fakestop_auto_resume_enabled", False)
+    yield
+    object.__setattr__(settings, "fakestop_auto_resume_enabled", original)
+
+
+def test_resume_marks_continue_turn_on_first_text_round(resume_on):
+    """连续第 1 轮纯文本收尾（streak=0）+ Skill 激活 → 机械续跑标记。"""
     ctx = RoundEndContext(
         step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
-        content="明白，马上继续！正在调用剧本分析执行器：",
-        applied=0,
+        content="5 位主角已落账。继续第二批：3 位船员。",
+        applied=0, resumes_used=0, text_round_streak=0,
     )
     _run_policies(ctx)
-    assert any(a.get("kind") == "continue" for a in ctx.suggested_actions)
+    assert ctx.continue_turn is True
+    assert not ctx.suggested_actions, "续跑即处置，无按钮（词表退役批）"
 
 
-def test_fakestop_label_generic_after_b4():
-    """批 3 · B4 拆伪按钮：假停「继续」按钮 label 固定「继续」——
-    不再取平台统一 8 节点图算节点标题（异构 skill 恒失真，3333 同款误导源）；
-    "下一步"归模型聊天自述。"""
-    stub = _StubExec()
-    stub.state = {"workflow_run": {
-        "run_id": "run_fs", "current_node": "storyboard_shots",
-        "completed_nodes": [], "run_version": 0, "event_sequence": 0,
-    }}
+def test_second_consecutive_text_round_passes_through(resume_on):
+    """连续第 2 轮纯文本（streak≥1）= 模型已按 note 重申完成 → 真完成放行。"""
     ctx = RoundEndContext(
-        step=1, executor=stub, skill="AI-短剧一站式生成",
-        content="马上继续推进分镜工作。",
-        applied=0,
+        step=2, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="任务已完成。",
+        applied=0, resumes_used=1, text_round_streak=1,
     )
     _run_policies(ctx)
-    cont = [a for a in ctx.suggested_actions if a.get("kind") == "continue"]
-    assert cont and cont[0]["label"] == "继续"
-    assert cont[0]["value"] == "继续"
+    assert ctx.continue_turn is False
 
 
-def test_fakestop_skips_without_skill():
+def test_resume_disabled_no_detection(resume_off):
+    """开关关：不做任何检测（无续跑标记、无按钮）。"""
+    ctx = RoundEndContext(
+        step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="继续第二批：3 位船员。",
+        applied=0, resumes_used=0, text_round_streak=0,
+    )
+    _run_policies(ctx)
+    assert ctx.continue_turn is False
+    assert not ctx.suggested_actions
+
+
+def test_resume_skips_without_skill(resume_on):
     """无 Skill 的普通对话不触发（防误伤闲聊）。"""
     ctx = RoundEndContext(
         step=1, executor=_StubExec(), skill="",
         content="好的，接下来我可以帮你做这些事。",
-        applied=0,
+        applied=0, resumes_used=0, text_round_streak=0,
     )
     _run_policies(ctx)
-    assert not ctx.suggested_actions
+    assert ctx.continue_turn is False
 
 
-def test_fakestop_skips_when_actions_applied():
-    """本轮有实际操作不算假停。"""
+def test_resume_skips_when_paused(resume_on):
+    """已发暂停卡不算假停（确认卡优先于续跑）。"""
     ctx = RoundEndContext(
-        step=1, executor=_StubExec(), skill="S",
-        content="马上继续！正在写入。",
-        applied=2,
+        step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="先确认一下。",
+        applied=0, resumes_used=0, text_round_streak=0,
+        confirmation="请确认",
     )
     _run_policies(ctx)
-    assert not ctx.suggested_actions
+    assert ctx.continue_turn is False
 
 
-def test_fakestop_skips_when_paused():
-    """已发暂停卡不算假停。"""
+def test_resume_skips_at_cap(resume_on):
+    """达上限（resumes_used=MAX）：不再续跑（cap 封死交替拉锯），无按钮。"""
     ctx = RoundEndContext(
-        step=1, executor=_StubExec(), skill="S",
-        content="马上继续，但先确认一下。",
-        applied=0, confirmation="请确认",
+        step=3, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="继续：3 位船员。",
+        applied=0, resumes_used=FAKESTOP_AUTO_RESUME_MAX, text_round_streak=0,
     )
     _run_policies(ctx)
+    assert ctx.continue_turn is False
     assert not ctx.suggested_actions
 
 
-# ---------- agent_loop 级集成回归（I-1 退役后可达性审计） ----------
-# 钉死：轮末工具失败汇总策略退役后，其余策略所需字段在生产唯一
-# 构造点（agent_loop 纯文本收尾分支）确被正确填充、可达策略确能触发（非写死死值）。
+# ---------- agent_loop 级集成回归（生产构造点字段可达性） ----------
 
 
-async def test_agent_loop_pure_text_round_reaches_fakestop(executor, monkeypatch):
-    """真实纯文本收尾轮：skill/content/executor 在生产构造点正确填充，
-    假停兜底 aborted_continuation_audit 端到端可达并触发（applied=0 因本轮
-    确无工具执行，填 result.applied_actions 真实累计值）。"""
+async def test_agent_loop_resume_then_restate_completes(executor, monkeypatch, resume_on):
+    """端到端：假停文本轮 → 机械续跑（note 注入）→ 模型重申完成 → 放行收尾。
+    钉死三件事：续跑发生（steps=2）、对话链完整（assistant 原文 + note
+    进 messages）、result.text 两段齐备且无按钮。"""
     import src.video_agent.core.agent_loop as al
 
     monkeypatch.setattr(
         al, "fallback_skill_from_state", lambda _state: "AI-短剧一站式生成")
 
-    body = "明白，马上继续！正在推进后续步骤。"
+    seen_messages = []
+    calls = {"n": 0}
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        # 纯文本轮：fc_applied=0、无 confirmation → 落入轮末策略求值分支
-        return body, "stop", 0, 0.0, {}
+        calls["n"] += 1
+        seen_messages.append([dict(m) for m in messages])
+        if calls["n"] == 1:
+            return "5 位主角已落账。继续第二批：3 位船员。", "stop", 0, 0.0, {}
+        return "任务已完成。", "stop", 0, 0.0, {}
 
     result = await run_agent_loop(
         "继续", llm_call=llm_call, context_builder=lambda: "ctx",
         executor=executor, history=[],
     )
-    # 正文经 false_claim_audit 拼接收纳（result_text 路径可达）。
-    # 完成盖章与「未盖章续跑预算」已随阶段规则去代码化批退役（2026-09-10）：
-    # 零工具纯口头收尾不再被驳回续跑，一轮即收尾。
-    assert result.text.endswith(body)
-    assert result.text.count(body) == 1, "未盖章续跑预算退役→纯文本轮一轮收尾"
-    # 假停兜底端到端触发：延续承诺措辞 + skill 激活 + 零操作
-    assert any(a.get("kind") == "continue" for a in result.suggested_actions), \
-        "纯文本轮末假停兜底未触发（策略所需字段未在生产构造点正确填充/不可达）"
+    assert calls["n"] == 2 and result.steps == 2
+    # 对话链：第 2 轮 messages 尾部 = 第 1 轮 assistant 原文 + 机械提醒
+    tail = seen_messages[1][-2:]
+    assert tail[0]["role"] == "assistant" and "继续第二批" in tail[0]["content"]
+    assert tail[1]["role"] == "user" and "未包含任何工具调用" in tail[1]["content"]
+    # 正文两段齐备（pre-resume 可见文本不丢）
+    assert "继续第二批" in (result.text or "") and "任务已完成" in (result.text or "")
+    # 续跑即处置：无按钮
+    assert not any(a.get("kind") == "continue" for a in result.suggested_actions)
 
 
-async def test_agent_loop_applied_reflects_real_cumulative_count(executor, monkeypatch):
-    """applied 填 result.applied_actions 真实累计值（非写死 0）：第 1 轮 FC
-    执行 2 个工具、第 2 轮纯文本收尾带延续承诺措辞——因本回合确曾操作
-    （applied=2），假停兜底正确**不**触发（若写死 0 会误触发）。"""
+async def test_agent_loop_tool_round_resets_streak(executor, monkeypatch, resume_on):
+    """工具轮归零 streak：假停→续跑→工具→假停→续跑→重申完成→放行。
+    全程两次续跑（未达 cap），applied 累计 3。"""
     import src.video_agent.core.agent_loop as al
 
     monkeypatch.setattr(
@@ -203,15 +238,64 @@ async def test_agent_loop_applied_reflects_real_cumulative_count(executor, monke
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["n"] += 1
         if calls["n"] == 1:
-            # FC 工具轮：执行 2 个工具、无正文（工具轮常态）
-            return "", "tool_calls", 2, 0.0, {}
-        # 纯文本收尾轮：延续承诺措辞（若 applied 写死 0 则会误触发假停）
-        return "好的，马上继续推进。", "stop", 0, 0.0, {}
+            return "", "tool_calls", 2, 0.0, {}      # FC 批轮
+        if calls["n"] == 2:
+            return "继续下一批。", "stop", 0, 0.0, {}   # 假停 #1 → 续跑
+        if calls["n"] == 3:
+            return "", "tool_calls", 1, 0.0, {}      # 工具轮归零 streak
+        if calls["n"] == 4:
+            return "写完这批了。", "stop", 0, 0.0, {}   # 假停 #2 → 续跑
+        return "任务已完成。", "stop", 0, 0.0, {}      # 连续第 2 轮 → 放行
 
     result = await run_agent_loop(
         "继续", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[], max_steps=4,
+        executor=executor, history=[],
     )
-    assert result.applied_actions == 2
-    assert not any(a.get("kind") == "continue" for a in result.suggested_actions), \
-        "本回合已执行工具（applied=2），假停兜底不应触发（写死 0 会误触发）"
+    assert calls["n"] == 5 and result.steps == 5
+    assert result.applied_actions == 3
+    assert not any(a.get("kind") == "continue" for a in result.suggested_actions)
+
+
+async def test_agent_loop_resume_cap_two_then_pass(executor, monkeypatch, resume_on):
+    """cap 封顶：续跑×2 后第三轮纯文本直接放行（无按钮兜底，词表退役批）。"""
+    import src.video_agent.core.agent_loop as al
+
+    monkeypatch.setattr(
+        al, "fallback_skill_from_state", lambda _state: "AI-短剧一站式生成")
+
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        if calls["n"] in (1, 3, 5):
+            return f"继续：这是第 {calls['n']} 轮。", "stop", 0, 0.0, {}
+        return "", "tool_calls", 1, 0.0, {}          # FC 轮归零 streak
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm_call, context_builder=lambda: "ctx",
+        executor=executor, history=[],
+    )
+    assert calls["n"] == 5 and result.steps == 5
+    assert not any(a.get("kind") == "continue" for a in result.suggested_actions)
+
+
+async def test_agent_loop_resume_disabled_single_text_round_ends(
+        executor, monkeypatch, resume_off):
+    """开关关：纯文本收尾轮一轮即收尾（现状语义，无检测）。"""
+    import src.video_agent.core.agent_loop as al
+
+    monkeypatch.setattr(
+        al, "fallback_skill_from_state", lambda _state: "AI-短剧一站式生成")
+
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        return "任务已完成。", "stop", 0, 0.0, {}
+
+    result = await run_agent_loop(
+        "x", llm_call=llm_call, context_builder=lambda: "ctx",
+        executor=executor, history=[],
+    )
+    assert calls["n"] == 1 and result.steps == 1
+    assert "任务已完成" in (result.text or "")

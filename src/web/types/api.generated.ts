@@ -351,7 +351,6 @@ export interface GroupPatch {
   roughDesc?: string | undefined;
   duration?: string | undefined;
   timeRange?: string | undefined;
-  shotType?: string | undefined;
   sceneRefs?: string[] | undefined;
   prompt?: string | undefined;
 }
@@ -488,6 +487,7 @@ export interface ReorderRequest {
 export interface RuntimeSettings {
   model_fallback_enabled: boolean;
   chat_image_enabled: boolean;
+  fakestop_auto_resume_enabled: boolean;
   default_image_provider_id: string;
   default_image_model: string;
   default_video_provider_id: string;
@@ -506,6 +506,7 @@ export interface RuntimeSettings {
 export interface RuntimeSettingsUpdate {
   model_fallback_enabled?: boolean | undefined;
   chat_image_enabled?: boolean | undefined;
+  fakestop_auto_resume_enabled?: boolean | undefined;
   default_image_provider_id?: string | undefined;
   default_image_model?: string | undefined;
   default_video_provider_id?: string | undefined;

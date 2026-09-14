@@ -101,8 +101,9 @@ def test_finalization_to_document_clause():
 
 def test_f2_prompt_dual_source_merge():
     """F-2 双源合并快照锁（重组后单家 = protocol.md / skill_runtime.md）：
-    ① 防虚报表述源唯一 = skill_runtime《Skill 流程纪律》第 4 条（含状态对账细节；
-       2026-09-12 治理批纪律重编号：原第 7 条 → 第 4 条），
+    ① 防虚报表述源唯一 = skill_runtime《Skill 流程纪律》第 3 条（含状态对账细节；
+       2026-09-12 治理批纪律重编号：原第 7 条 → 第 4 条；同日规格收集退役批
+       纪律3 退役再重编号：第 4 条 → 第 3 条），
        protocol 只留一句引用式短述；
     ② 回复精简模型可见表述归 protocol 回复输出纪律（治理批压缩为三行契约，
        全文归属锚点 = 草稿卡/事件卡），铁律模板只留头部指针；
@@ -111,10 +112,10 @@ def test_f2_prompt_dual_source_merge():
     from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY, _NEW_PRIORITY
 
     ir = load_prompt("planner/protocol.md")
-    assert "《Skill 流程纪律》第 4 条" in ir, "防虚报引用式短述丢失"
+    assert "《Skill 流程纪律》第 3 条" in ir, "防虚报引用式短述丢失"
     assert "动作通道唯一 = 工具调用，只在正文写不产生任何效果" not in ir, "防虚报双源回潮"
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
-    assert "状态对账" in sd, "防虚报表述源（第 4 条）丢失"
+    assert "状态对账" in sd, "防虚报表述源（第 3 条）丢失"
 
     od = load_prompt("planner/protocol.md")
     assert "归属草稿卡" in od and "事件卡" in od, "回复纪律表述源丢失"

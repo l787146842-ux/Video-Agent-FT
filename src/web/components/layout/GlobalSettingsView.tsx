@@ -193,6 +193,24 @@ export default function GlobalSettingsView() {
             <p class="gs-hint">开启时模型联不通/出不了图视频自动换同模型其他 API 厂商；关闭则直接按上游报错。</p>
           </section>
 
+          {/* 假停机械续跑（dsh Stop hook 同款门禁；2026-09-14 词表退役批改结构性判定） */}
+          <section class="gs-section">
+            <h3>假停机械续跑</h3>
+            <button
+              type="button"
+              class="toggle-switch"
+              aria-pressed={gs()!.fakestop_auto_resume_enabled}
+              onClick={() => set({ fakestop_auto_resume_enabled: !gs()!.fakestop_auto_resume_enabled })}
+            >
+              <span>关</span>
+              <span class={`switch-track ${gs()!.fakestop_auto_resume_enabled ? 'active' : ''}`}>
+                <span class="switch-thumb" />
+              </span>
+              <span>开</span>
+            </button>
+            <p class="gs-hint">开启时（默认），Skill 流程中模型未携带工具调用即收尾的纯文本轮，系统自动注入机械提醒让模型续跑（每回合最多 2 次；模型连续两轮纯文本视为真完成放行）；关闭时不做任何检测。仅 Skill 流程中生效。</p>
+          </section>
+
           {/* 执行偏好三档（花钱生成是否先弹确认卡；批 B） */}
           <ExecutionPreferenceSection gs={gs} set={set} />
 

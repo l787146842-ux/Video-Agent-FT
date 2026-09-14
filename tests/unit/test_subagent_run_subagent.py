@@ -126,10 +126,10 @@ async def test_launch_subagent_builds_isolated_child(svc, monkeypatch):
         text = "子代理完成：建了 3 个关键元素"
 
     async def _fake_handle(self, user_message, context, stream_hook=None,
-                           on_event=None, max_steps=None):
+                           on_event=None, **kwargs):
         captured["msg"] = user_message
         captured["ctx"] = context
-        captured["max_steps"] = max_steps
+        captured["extra_kwargs"] = kwargs
         return _FakeResp()
 
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
@@ -142,7 +142,7 @@ async def test_launch_subagent_builds_isolated_child(svc, monkeypatch):
     assert ctx.subagent_depth == 1                 # 父+1
     assert ctx.subagent_no_confirm is True         # 审批=never（不发确认卡）
     assert "run_subagent" not in ctx.subagent_whitelist
-    assert captured["max_steps"] is None           # 步数上限退役（planner 不传）
+    assert "max_steps" not in captured["extra_kwargs"]  # 步数上限退役（参数已整体删除）
     assert "被委派的子代理" in captured["msg"]      # 固定范围声明注入
 
 

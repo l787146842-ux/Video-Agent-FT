@@ -39,8 +39,9 @@ from .errors import (
 from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.live_metrics import record_degradation
+from src.video_agent.utils.json_rescue import rescue_tool_arguments
 from src.video_agent.utils.model_limits import output_limit_for_model
-from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.utils.paths import ASSETS_DIR, DATA_DIR
 from src.video_agent.utils.provider_config_loader import chat_model_meta
 from src.video_agent.utils import gen_id
 from src.video_agent.storage import get_storage
@@ -56,6 +57,74 @@ def _preclamp_max_tokens(requested: int, caps: Dict[str, int], model: str) -> in
     if cap is not None and requested > cap:
         return cap
     return requested
+
+
+# ---------- 原始 SSE 落盘观测（诊断开关，settings.sse_capture 默认关） ----------
+
+_SSE_CAPTURE_DIR = DATA_DIR / "sse_capture"
+_SSE_CAPTURE_MAX_FILES = 500
+_SSE_CAPTURE_LINE_CAP = 2000
+
+
+class _SSECapture:
+    """单次 LLM 流式调用的原始 SSE 碎片落盘器（抓假停/丢工具调用现行用）。
+
+    逐 `data:` 行记录中转实际下发内容（截断到 2000 字/行防病态巨行），
+    头部一条请求元数据、尾部一条收尾元数据（finish_reason/碎片数/工具数/
+    异常）。文件写入 data/sse_capture/sse-*.jsonl，目录超 500 个滚动清理
+    最旧。仅诊断用，不影响主流程：任何落盘异常静默降级为关闭。
+    """
+
+    def __init__(self, model: str, base_url: str, payload: Dict[str, Any]) -> None:
+        self._fh = None
+        self._chunks = 0
+        try:
+            _SSE_CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+            files = sorted(_SSE_CAPTURE_DIR.glob("sse-*.jsonl"))
+            while len(files) >= _SSE_CAPTURE_MAX_FILES:
+                files.pop(0).unlink(missing_ok=True)
+            self._path = _SSE_CAPTURE_DIR / f"{gen_id('sse')}-{model.replace('/', '_')}.jsonl"
+            self._fh = self._path.open("a", encoding="utf-8")
+            self._meta({"__header__": {
+                "ts": time.time(), "model": model, "base_url": base_url,
+                "messages_n": len(payload.get("messages") or []),
+                "tools_n": len(payload.get("tools") or []),
+                "max_tokens": payload.get("max_tokens"),
+                "stream": payload.get("stream"),
+            }})
+        except Exception as e:  # 落盘失败不阻断对话
+            logger.debug(f"[OpenAICompat] SSE 落盘开启失败（忽略）: {e}")
+            self._fh = None
+
+    def _meta(self, obj: Dict[str, Any]) -> None:
+        if self._fh is not None:
+            try:
+                self._fh.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
+                self._fh.flush()
+            except Exception as e:
+                logger.debug(f"[OpenAICompat] SSE 落盘写失败（忽略）: {e}")
+                self._fh = None
+
+    def write_chunk(self, raw: str) -> None:
+        self._chunks += 1
+        self._meta({"__chunk__": self._chunks, "raw": raw[:_SSE_CAPTURE_LINE_CAP]})
+
+    def close(self, **footer: Any) -> None:
+        if self._fh is None:
+            return
+        self._meta({"__footer__": {"chunks": self._chunks, **footer}})
+        try:
+            self._fh.close()
+        except Exception:
+            pass
+        self._fh = None
+
+
+def _sse_capture_open(model: str, base_url: str, payload: Dict[str, Any]) -> Optional[_SSECapture]:
+    """开关关闭或开启失败时返回 None（调用方全程空值短路）。"""
+    if not settings.sse_capture:
+        return None
+    return _SSECapture(model, base_url, payload)
 
 
 def _clamp_max_tokens_payload(payload: Dict[str, Any], body: str, model: str) -> Optional[int]:
@@ -654,6 +723,16 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         timeout: int,
     ) -> AsyncGenerator[StreamChunk, None]:
         """单次流式请求（连接 + 逐行解析 SSE），异常转译为 AdapterError。"""
+        # 原始 SSE 落盘观测（诊断开关；None = 关闭，调用侧空值短路）
+        cap = _sse_capture_open(self.model, self.base_url, payload)
+        last_finish = ""
+        tc_n = 0
+        err_txt = ""
+        # 抓包盲区计数（9999 假停批）：非 data: 非空行（中转异常分帧嫌疑）
+        # 与 JSON 解析失败行——两者都是「解析器静默跳过、此前抓包不可见」
+        # 的唯一通道，footer 计数 >0 即提示人工回看 raw
+        _skip_non_data = 0
+        _skip_bad_json = 0
         try:
             client = self._get_client(timeout)
             async with client.stream(
@@ -669,7 +748,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     # 供应商不支持流式，按普通 JSON 处理；
                     # 畸形体按契约转 AdapterError，不漏裸解析错误（与 chat 同契约）。
                     try:
-                        data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
+                        _raw_body = (await resp.aread()).decode("utf-8", errors="replace")
+                        if cap is not None:
+                            cap.write_chunk(_raw_body)
+                        data = json.loads(_raw_body)
                     except json.JSONDecodeError as e:
                         raise AdapterError(
                             f"LLM 返回非 JSON 响应（可能被误当流式）：{e}",
@@ -711,13 +793,20 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 async for line in resp.aiter_lines():
                     line = line.strip()
                     if not line.startswith("data:"):
+                        # 空行 = SSE 事件分隔符（协议噪声，不计）；
+                        # 非空非 data 行 = 异常分帧（诊断信号，计数进 footer）
+                        if line:
+                            _skip_non_data += 1
                         continue
                     chunk = line[5:].strip()
+                    if cap is not None and chunk:
+                        cap.write_chunk(chunk)
                     if chunk == "[DONE]":
                         break
                     try:
                         data = json.loads(chunk)
                     except json.JSONDecodeError:
+                        _skip_bad_json += 1
                         continue
                     choices = data.get("choices", [])
                     # usage chunk 可能 choices 为空：先取 usage 再判空
@@ -757,7 +846,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     if delta.get("tool_calls"):
                         for tc in delta["tool_calls"]:
                             idx = tc.get("index", 0)
-                            slot = tc_accumulator.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                            slot = tc_accumulator.setdefault(idx, {"id": "", "name": "", "arguments": "", "_notified": 0})
                             if tc.get("id"):
                                 slot["id"] = tc["id"]
                             fn = tc.get("function", {}) or {}
@@ -765,36 +854,59 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                                 slot["name"] += fn["name"]
                             if fn.get("arguments"):
                                 slot["arguments"] += fn["arguments"]
+                            # 8888 事故批（对齐 dsh tool-call-delta）：参数生成进度
+                            # 流式提示——调用名首现即报、参数每满 2K 字符报一次，
+                            # 消除「大参数工具调用生成期间的分钟级黑箱」（仅展示）
+                            _args_len = len(slot["arguments"])
+                            if (slot["name"] and slot["_notified"] == 0) or (
+                                    _args_len - slot["_notified"] >= 2000):
+                                slot["_notified"] = _args_len
+                                yield StreamChunk(
+                                    type="tool_call_delta",
+                                    tool_name=slot["name"],
+                                    tool_index=idx,
+                                    tool_args_len=_args_len,
+                                )
                 # 流结束：对完整 arguments 统一解析后逐条下发 tool_call chunk
+                # （8888 事故批：解析失败不再伪造 {} —— 先本地抢救，仍失败则
+                # 原始串+拒因原样下发，由 runner 层结构化拒收并把真实原因回喂模型）
                 for idx in sorted(tc_accumulator):
                     slot = tc_accumulator[idx]
                     raw_args = slot["arguments"]
-                    try:
-                        args = json.loads(raw_args) if raw_args.strip() else {}
-                    except (json.JSONDecodeError, ValueError):
+                    args, parse_err = rescue_tool_arguments(raw_args)
+                    if args is None:
                         logger.warning(f"[OpenAICompat] tool_call arguments 解析失败: {raw_args[:100]}")
-                        args = {}
                     yield StreamChunk(
                         type="tool_call",
                         tool_name=slot["name"],
                         tool_args=args if isinstance(args, dict) else {},
                         tool_call_id=slot["id"] or "",
+                        tool_args_raw=raw_args if args is None else "",
+                        tool_args_error=parse_err if args is None else "",
                     )
                 # 流结束后 yield done chunk 携带 finish_reason（+ 机会性 usage）
+                tc_n = len(tc_accumulator)
                 yield StreamChunk(type="done", finish_reason=last_finish or "stop",
                                   usage_tokens=_stream_tokens,
                                   prompt_tokens=_stream_prompt,
                                   cached_tokens=_stream_cached)
-        except AdapterError:
+        except AdapterError as e:
+            err_txt = str(e)[:200]
             raise
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
+            err_txt = f"timeout({timeout}s): {e}"
             raise AdapterError(
                 f"LLM 流式请求超时（{timeout}s）", retryable=True, kind=KIND_TIMEOUT,
             )
         except httpx.HTTPError as e:
+            err_txt = f"http: {e}"
             raise AdapterError(
                 f"LLM 流式请求失败: {e}", retryable=True, kind=KIND_NETWORK,
             )
+        finally:
+            if cap is not None:
+                cap.close(finish_reason=last_finish, tool_calls=tc_n, error=err_txt,
+                          skipped_non_data=_skip_non_data, skipped_bad_json=_skip_bad_json)
 
 
 class OpenAICompatImageAdapter(BaseImageAdapter):

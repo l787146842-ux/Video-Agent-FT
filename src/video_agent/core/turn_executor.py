@@ -403,6 +403,32 @@ class TurnExecutor:
             # P2-1 KV-cache 遥测：流内 prompt/缓存命中 token 同机会性收集
             _stream_prompt_tokens = 0
             _stream_cached_tokens = 0
+            # 8888 事故批：步内流式增量落盘（assistant/partial）——
+            # 思考/正文每攒 ~2K 字符或 5 秒落一行增量，步末仍写完整
+            # assistant/message 为准据；大步中断不再全量丢失
+            _sess_cid_stream = str(getattr(self._context, "session_conversation_id", "") or "")
+            _partial: Dict[str, Any] = {
+                "buf_reasoning": [], "buf_text": [],
+                "last_ts": time.monotonic(), "step": self._step_count,
+            }
+
+            async def _flush_partial(kind: str, force: bool = False) -> None:
+                if not _sess_cid_stream:
+                    return
+                _buf = _partial[f"buf_{kind}"]
+                _pending = "".join(_buf)
+                if not _pending:
+                    return
+                _due = time.monotonic() - _partial["last_ts"] >= 5.0
+                if not (force or len(_pending) >= 2000 or _due):
+                    return
+                _buf.clear()
+                _partial["last_ts"] = time.monotonic()
+                # append_event 内部静默降级（D4），失败不阻断主流程
+                session_log.append_partial(
+                    self.planner.state_manager, _sess_cid_stream,
+                    step=_partial["step"], kind=kind, text=_pending)
+
             async for chunk in self.call_llm_stream(system_prompt, messages):
                 # 协作式停止：流式消费中命中停止标志即提前断流，
                 # 不再继续烧 token；后续阶段判定/收尾归 agent_loop 检查点
@@ -410,24 +436,39 @@ class TurnExecutor:
                     break
                 if chunk.type == "text_delta" and chunk.text:
                     content_parts.append(chunk.text)
+                    _partial["buf_text"].append(chunk.text)
+                    await _flush_partial("text")
                     # 确认走结构化 workflow_pause 工具——
                     # 正文原样透传，流式抑制器同批下账
                     await hook(chunk.text)
                 elif chunk.type == "reasoning_delta" and chunk.text:
                     # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
                     reasoning_parts.append(chunk.text)
+                    _partial["buf_reasoning"].append(chunk.text)
+                    await _flush_partial("reasoning")
                     tracer.record_reasoning(chunk.text)
                     if self._on_event is not None:
                         await self._on_event({"type": SSE_REASONING_DELTA, "text": chunk.text})
+                elif chunk.type == "tool_call_delta":
+                    # 8888 事故批（对齐 dsh tool-call-delta）：工具参数生成进度
+                    # 推状态栏（无 key 纯文案，前端直接显示），消除大参数黑箱
+                    if self._on_event is not None:
+                        _tn = chunk.tool_name or f"调用#{chunk.tool_index + 1}"
+                        _msg = (f"开始生成工具调用 {_tn}" if not chunk.tool_args_len
+                                else f"正在生成工具调用 {_tn}（参数已 ~{chunk.tool_args_len} 字符）")
+                        await self._on_event({"type": SSE_STATUS, "text": _msg})
                 elif chunk.type == "tool_call":
                     # C1：优先用供应商真实 tool_call id（tool role 结果配对用；
                     # 端点未下发时空串，回落合成 id 保持唯一性）
+                    # 8888 事故批：arguments 解析失败时保留原始串（数据不丢），
+                    # runner 层据此结构化拒收并把真实原因回喂模型
                     stream_tool_calls.append({
                         "id": chunk.tool_call_id or f"call_stream_{len(stream_tool_calls)}",
                         "type": "function",
                         "function": {
                             "name": chunk.tool_name,
-                            "arguments": json.dumps(chunk.tool_args, ensure_ascii=False),
+                            "arguments": (chunk.tool_args_raw if chunk.tool_args_error
+                                          else json.dumps(chunk.tool_args, ensure_ascii=False)),
                         },
                     })
                 elif chunk.type == "done":
@@ -435,6 +476,9 @@ class TurnExecutor:
                     _stream_usage_tokens = int(getattr(chunk, "usage_tokens", 0) or 0)
                     _stream_prompt_tokens = int(getattr(chunk, "prompt_tokens", 0) or 0)
                     _stream_cached_tokens = int(getattr(chunk, "cached_tokens", 0) or 0)
+            # 步末冲刷剩余增量（force），随后完整 assistant/message 为准据
+            await _flush_partial("reasoning", force=True)
+            await _flush_partial("text", force=True)
             content = "".join(content_parts)
             response = ChatResponse(content=content, finish_reason=finish,
                                     tool_calls=stream_tool_calls,

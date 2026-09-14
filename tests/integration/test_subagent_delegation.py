@@ -4,8 +4,8 @@
 钉死两条链路（真过闸机、真写工作台，只把模型换成脚本）：
 ① 父经 FC `run_subagent` 委派 → 子在隔离上下文（独立 messages + 类型白名单）连续
    跑完并真落账 → 只回摘要给父（子的中间步不进父上下文）→ 子线程事件流自描述落流；
-② 零工具纯口头"已完成"收尾**不受理**（dsh A2 未盖章不放行）：确实多走一步，
-   预算耗尽后以事实性警告收尾（2222 那类空转轮不再静默结束）。
+② 假停机械续跑开关关时的放手形态：零工具纯口头收尾一轮即止（开关开的结构性
+   机械续跑语义由 test_fc_leak_fakestop 钉死，2026-09-14 翻案批）。
 """
 import json
 
@@ -32,6 +32,16 @@ def _ensure_tools():
     register_storyboard_tools()
     register_document_tools()
     register_analysis_tools()
+
+
+@pytest.fixture
+def fakestop_off():
+    """假停机械续跑显式关：本文件两测钉隔离/放手形态，不随环境 runtime_settings 漂移。"""
+    from src.video_agent.config import settings
+    original = settings.fakestop_auto_resume_enabled
+    object.__setattr__(settings, "fakestop_auto_resume_enabled", False)
+    yield
+    object.__setattr__(settings, "fakestop_auto_resume_enabled", original)
 
 
 @pytest.fixture
@@ -98,8 +108,11 @@ def _tool_call_names(messages) -> list:
     return out
 
 
-async def test_delegation_runs_child_in_isolated_context_and_returns_summary(svc):
-    """父发 run_subagent → 子真建组落账 → 只回摘要；子的中间步不出现在父上下文。"""
+async def test_delegation_runs_child_in_isolated_context_and_returns_summary(svc, fakestop_off):
+    """父发 run_subagent → 子真建组落账 → 只回摘要；子的中间步不出现在父上下文。
+
+    假停机械续跑显式关：本测钉的是子代理上下文隔离，收尾轮次形态不在此设防
+    （开关开的机械续跑语义由 test_fc_leak_fakestop 覆盖）。"""
     adapter = _ScriptedAdapter([
         # 1) 父：委派（通用子代理，无类型）
         {"tool": "run_subagent", "args": {
@@ -145,9 +158,12 @@ async def test_delegation_runs_child_in_isolated_context_and_returns_summary(svc
                for e in events if e.get("type") == "assistant/message")
 
 
-async def test_zero_action_stop_ends_in_one_round(svc):
-    """零工具纯口头收尾不再被驳回续跑（完成盖章 + 未盖章续跑预算退役，
-    2026-09-10）：平台不判完成、不续跑，模型自决收尾即收尾。"""
+async def test_zero_action_stop_ends_in_one_round(svc, fakestop_off):
+    """开关关 = 无检测放行（dsh 默认不配 hook 的放手形态）：零工具纯口头收尾一轮即止。
+
+    2026-09-14 翻案 2026-09-10「模型自决收尾即收尾」：开关开时 Skill 进行中纯文本
+    收尾轮会被结构性机械续跑，该语义由 test_fc_leak_fakestop 钉死；本测显式关开关，
+    钉住另一侧形态，不随环境 runtime_settings 漂移。"""
     adapter = _ScriptedAdapter([
         {"text": "已完成关键元素与分镜拆解，请查看故事板。"},
         {"text": "不该到达"},

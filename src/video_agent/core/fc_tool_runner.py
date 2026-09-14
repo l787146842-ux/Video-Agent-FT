@@ -52,6 +52,7 @@ from src.video_agent.core.fc_feedback import (
     compose_failure_feedback,
     describe_fc_tool,
 )
+from src.video_agent.utils.json_rescue import rescue_tool_arguments
 
 # 单步并行池上限（五项修法批 3）：整组连续 parallel_safe 调用按本上限切片
 # 并发执行（对齐 dsh 有界并行池思路，上限保守取 4）
@@ -307,10 +308,35 @@ class FCToolRunner:
         func = call.get("function", {}) if isinstance(call, dict) else {}
         name = func.get("name", "")
         args_raw = func.get("arguments", "{}")
-        try:
-            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-        except json.JSONDecodeError:
-            args = {}
+        # 8888 事故批（对齐 dsh「数据不丢、错误可见」）：参数解析失败不再
+        # 静默伪造 {} 继续调用——先本地抢救（控制字符转义），仍失败则结构化
+        # 拒收并把真实拒因（出错位置+原文片段）回喂模型。原实现伪造 {} 后
+        # 工具按「未携带非空 title」拒收，模型收到假拒因原样重发 15 轮。
+        if isinstance(args_raw, str):
+            args, _parse_err = rescue_tool_arguments(args_raw)
+            if args is None:
+                _tool_event_id = str(call.get("id") or f"fc-{index}") if isinstance(call, dict) else f"fc-{index}"
+                _c = _CallCtx(
+                    index=index, name=name, args={},
+                    tool_event_id=_tool_event_id,
+                    args_preview={}, start_summary=f"{name}（参数 JSON 解析失败）",
+                    tool_t0=time.monotonic(),
+                )
+                if on_event is not None:
+                    await on_event({
+                        "type": SSE_TOOL_STARTED,
+                        "id": _tool_event_id,
+                        "name": name,
+                        "summary": _c.start_summary,
+                        "args": {},
+                    })
+                logger.warning(
+                    f"[ToolRunner] 工具参数 JSON 解析失败（拒收）: {name}: {_parse_err[:200]}")
+                _c.gate_error = _parse_err
+                _c.result = ToolResult(success=False, error=_parse_err)
+                return _c
+        else:
+            args = args_raw
         # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
         fc_gates.resolve_current_refs(ctx, name, args)
 

@@ -11,6 +11,8 @@
 - execution_preference：执行偏好三档（管花钱生成是否先弹确认卡；
   2026-08-30 用户裁决，Skill 系统修复批 B）；
 - execution_mode：执行模式四档（管流程推进的暂停策略；2026-09-06 用户裁决，对齐批）；
+- fakestop_auto_resume_enabled：假停机械续跑开关（2026-09-14 词表退役批：
+  结构性判定取代词表匹配，默认开；关 = 不做任何检测）；
 - max_shot_duration：Agent 自拆分镜的单镜最大时长（秒）。
 - llm_max_tokens：单次 LLM 输出 token 上限（Q3 步数上限退役后，跑飞兜底改为
   输出 token 截断 + 模型自决；对齐 dsh DEFAULT_MAX_TOKENS=256k）。
@@ -36,7 +38,7 @@ router = APIRouter()
 RUNTIME_SETTINGS_FILE = PROJECT_ROOT / "data" / "runtime_settings.json"
 
 # 可热更新的运行时设置键 → 类型转换（定点突破 frozen Settings，仅限本域）
-_BOOL_KEYS = ("model_fallback_enabled", "chat_image_enabled")
+_BOOL_KEYS = ("model_fallback_enabled", "chat_image_enabled", "fakestop_auto_resume_enabled")
 _STR_KEYS = (
     "default_image_provider_id", "default_image_model",
     "default_video_provider_id", "default_video_model",
@@ -66,6 +68,7 @@ _EXEC_MODE_KEYS = ("execution_mode",)
 class RuntimeSettingsUpdate(BaseModel):
     model_fallback_enabled: Optional[bool] = None
     chat_image_enabled: Optional[bool] = None
+    fakestop_auto_resume_enabled: Optional[bool] = None
     default_image_provider_id: Optional[str] = None
     default_image_model: Optional[str] = None
     default_video_provider_id: Optional[str] = None
@@ -99,6 +102,7 @@ class RuntimeSettings(BaseModel):
     """运行时设置读形态（GET/PUT 响应同形；字段恒下发，契约层必填）"""
     model_fallback_enabled: bool
     chat_image_enabled: bool
+    fakestop_auto_resume_enabled: bool
     default_image_provider_id: str
     default_image_model: str
     default_video_provider_id: str
@@ -135,6 +139,7 @@ def _current_dict() -> Dict[str, Any]:
     return {
         "model_fallback_enabled": settings.model_fallback_enabled,
         "chat_image_enabled": settings.chat_image_enabled,
+        "fakestop_auto_resume_enabled": settings.fakestop_auto_resume_enabled,
         "default_image_provider_id": settings.default_image_provider_id,
         "default_image_model": settings.default_image_model,
         "default_video_provider_id": settings.default_video_provider_id,
@@ -162,7 +167,11 @@ async def get_runtime_settings():
 
 @router.put("/settings/runtime", response_model=RuntimeSettings)
 async def put_runtime_settings(body: RuntimeSettingsUpdate):
-    """热更新运行时设置：内存即时生效 + 落盘持久化（仅应用请求中提供的字段）"""
+    """热更新运行时设置：内存即时生效 + 落盘持久化（仅应用请求中提供的字段）。"""
+    return await _put_runtime_settings_impl(body)
+
+
+async def _put_runtime_settings_impl(body: RuntimeSettingsUpdate):
     payload = body.model_dump(exclude_none=True)
     applied: Dict[str, Any] = {}
     for key, value in payload.items():

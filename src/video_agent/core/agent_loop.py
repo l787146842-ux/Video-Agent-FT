@@ -44,6 +44,7 @@ from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # 轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
 from src.video_agent.core.round_end_policies import (
     RoundEndContext,
+    FAKESTOP_AUTO_RESUME_MAX,
     claims_unbacked_products,  # 批 12 对账扩展：产物族宣称 ↔ 账本对账
     run_round_end_policies,
 )
@@ -51,7 +52,7 @@ from src.video_agent.utils import live_metrics
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import session_log
 from src.video_agent.state.manager import StateManager
-from src.video_agent.exceptions import AdapterError
+from src.video_agent.exceptions import AdapterError, VideoAgentError
 # 失败恢复分级：循环骨架不再硬编码恢复语义，重试预算与处置动作
 # 全部来自恢复策略分派表（policy-as-data，与闸机哲学一致）
 from src.video_agent.core.recovery_policy import (
@@ -92,6 +93,39 @@ ContextBuilder = Callable[[], str]
 
 # _bad_output_nudge 已随批 2 物理删除（nudge 重试退役，判空 = 正常收轮）；
 # 退役记录见 core/recovery_policy.py 模块头。
+
+
+# ---------- 会话忙闲闸（8888 事故批，对齐 dsh 单驱动/收件箱语义） ----------
+# dsh 同一会话结构上只有一个驱动循环，运行中消息进收件箱（steer/followup）；
+# 本项目缺这层保证时曾出现「停止后孤儿循环 + 续跑新循环并行 4 分钟」双跑
+# 事故（8888 项目：状态写入互斥丢弃、分镜组重复创建、缓存前缀互踩）。
+# 本注册表以 conversation_id 为键登记活跃循环：任务创建忙时拒收（web 层
+# start_agent_task 预检），循环层 acquire 兜底（孤儿/竞态都拦）。
+# 前端「执行中发消息」既有 /guidance 轮间注入通道（= dsh steer），不受影响。
+_ACTIVE_LOOPS: Dict[str, int] = {}
+
+
+def is_conversation_loop_active(conversation_id: str) -> bool:
+    """该会话是否有活跃 agent 循环（含孤儿循环——不依赖任务记录存活）。"""
+    return bool(str(conversation_id or "")) and _ACTIVE_LOOPS.get(
+        str(conversation_id), 0) > 0
+
+
+def acquire_conversation_loop(conversation_id: str) -> bool:
+    """登记活跃循环；同会话已有活跃循环时返回 False（调用方应拒收）。"""
+    cid = str(conversation_id or "")
+    if not cid:
+        return True  # 无会话绑定（测试/非 studio 路径）不设闸
+    if _ACTIVE_LOOPS.get(cid, 0) > 0:
+        return False
+    _ACTIVE_LOOPS[cid] = 1
+    return True
+
+
+def release_conversation_loop(conversation_id: str) -> None:
+    cid = str(conversation_id or "")
+    if cid:
+        _ACTIVE_LOOPS.pop(cid, None)
 
 
 @dataclass
@@ -140,22 +174,29 @@ async def run_agent_loop(
     context_builder: ContextBuilder,
     executor: "StateOperationExecutor",
     history: List[Dict[str, Any]],
-    max_steps: Optional[int] = None,
     on_event=None,
     stream_hook: Optional[Callable[[str], Awaitable[None]]] = None,
     prelude_notes: Optional[List[tuple]] = None,
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     user_id: str = "",
+    model: str = "",
     stop_scope: str = "chat",
+    # 8888 事故批（对齐 dsh「父停杀子、子停不碍父」单向语义）：循环自己的
+    # 停止标志清理作用域。空 = 与 stop_scope 相同（顶级循环，行为不变）；
+    # 子代理传独立作用域——子观察 stop_scope（父标志置位即停）但收尾/轮始
+    # 只清理自己的作用域，不再把父循环待消费的停止标志「截胡」清掉
+    # （8888 实证：子代理 _finalize_stop 清掉共享标志后主循环失聪成孤儿）。
+    stop_scope_own: Optional[str] = None,
     session_conversation_id: str = "",
     state_event_content: str = "",
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
+    model（可选）：当前对话模型名，仅用于步事实日志（假停取证批）定位
+    「这轮用的什么模型」，不参与任何行为。
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
     stop_scope（端到端中断协议）：协作式停止标志作用域
     （SSE 直连="chat"；任务式传输=task_id），每步检查点读取，命中即干净收尾。
-    max_steps（Q3 已退役）：不再设步数上限，靠输出 token 截断 + 模型自决。
     state_event_content（二期 G3）：轮首状态事件正文（planner 轮始已落流），
     组装时追加在 user 消息之后——与日志 seq 同序（user → state → steps），
     回放 = 请求逐字节（缓存结构性保证）。"""
@@ -179,7 +220,7 @@ async def run_agent_loop(
                             step_no: int, applied: int) -> None:
         """会话事件流镜像（v4 主刀批 E1，细案 §五）：FC 步 tool 结果回喂逐条
         落流 + 媒体回喂图片消息落流（二期 G4）+ 步回喂事实落流。覆盖本分支
-        全部出口（continue/问即停/提前终止/max_steps）——这些轮的结果今天随
+        全部出口（continue/问即停/提前终止）——这些轮的结果今天随
         内存列表蒸发，是「状态断层」直接来源，落流后下轮全量回放可见
         （append-only 结构红利）。落流失败静默（D4）。"""
         if not session_conversation_id:
@@ -219,10 +260,20 @@ async def run_agent_loop(
     if state_event_content:
         messages.append({"role": "user", "content": state_event_content})
 
-    # 协作式停止：循环开始无条件清除残留标志（上一任务被停止后
-    # 未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop）；
+    # 协作式停止：循环开始无条件清除**自己作用域**的残留标志（上一任务被
+    # 停止后未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop；
+    # 子代理传独立 stop_scope_own，不清父作用域——见签名注解）；
     # 包装 stream_hook 跟踪是否已产生流式正文（阶段判定用）
-    clear_stop(stop_scope)
+    _own_scope = str(stop_scope_own or "") or str(stop_scope or "chat")
+    # 会话忙闲闸（8888 事故批）：同会话已有活跃循环（含孤儿）时拒收，
+    # 防双循环并行互踩状态/缓存（web 层 start_agent_task 预检为快路径，
+    # 此处 acquire 为权威兜底；无会话绑定的测试路径不设闸）
+    if not acquire_conversation_loop(session_conversation_id):
+        raise VideoAgentError(
+            "上一条指令仍在执行中：请等待其完成，或先停止该任务再发送；"
+            "执行中的补充要求请用「插入消息」通道传达",
+            status_code=429, error_code="CONVERSATION_BUSY")
+    clear_stop(_own_scope)
     # 取消令牌贯穿 adapters：绑定上下文作用域令牌，长工具调用（视频生成
     # 轮询等）在检查点观察同一令牌协作退出；cancelled 判定内置同 scope
     # 停止标志观察，停止端点置标志即生效。inflight 登记保留为兜底
@@ -283,20 +334,26 @@ async def run_agent_loop(
             )
             logger.info(f"[AgentLoop] 已被用户停止：phase={err.phase} step={_step_no}")
             await emit({"type": SSE_STOPPED, "phase": err.phase, "step": _step_no})
-            # 代际匹配清理：收尾期间若已有新停止请求（快速重连场景），不清
+            # 代际匹配清理：只清**自己作用域**（子代理不清父标志——8888 事故批）；
+            # 收尾期间若已有新停止请求（快速重连场景），不清
             if err.stop_id:
-                clear_stop(stop_scope, err.stop_id)
+                clear_stop(_own_scope, err.stop_id)
             else:
-                clear_stop(stop_scope)
+                clear_stop(_own_scope)
             result.trace = tracer.finish_trace(total_actions=result.applied_actions)
             return result
 
         async def _await_llm_with_stop_guard(phase_when_streamed: str, extra_messages: Optional[List[Dict[str, Any]]] = None):
             """llm_call 调用统一守门：
             - AgentStoppedError（planner 层工具批执行前检查点抛出）→ 干净收尾；
-            - CancelledError 硬取消落地：有停止标志 = 用户停止 → 收敛为干净收尾
-              （阶段按已产生流式正文与否判定），无标志 = 异常取消原样上抛。
-            返回 (None, 收尾结果) 表示已被停止（调用方直接返回），否则 (5 元组, None)。"""
+            - CancelledError 硬取消落地：有停止标志 = 用户停止 → 先干净收尾
+              （stopped 终态事件 + trace，阶段按已产生流式正文与否判定），
+              随后**原样上抛**——8888 事故批（对齐 dsh abort 语义）：硬取消
+              是一次性投递，吞掉返回会让「孤儿循环」在 worker 死后继续烧
+              token/写状态（8888 实证：子代理守门吞掉 cancel，主循环又跑了
+              4 分钟）；无标志 = 异常取消原样上抛。
+            返回 (5 元组, None) 表示正常返回；停止/取消一律经异常或返回值
+            终止循环，不再静默续跑。"""
             # 无附加消息时直传原列表引用：llm_call 内的回喂 append（read_* 全文
             # 渐进式披露回路）与惰性压缩都靠原地修改生效，拼新副本会丢回喂；
             # 带 extra_messages（坏输出重试 nudge）才拼副本，nudge 不持久化
@@ -311,8 +368,11 @@ async def run_agent_loop(
                 sid = current_stop_id(stop_scope)
                 if sid:
                     _ph = phase_when_streamed if _streamed["on"] else STOP_PHASE_THINKING
-                    return None, await _finalize_stop(
+                    _stopped = await _finalize_stop(
                         AgentStoppedError(_ph, result.steps, stop_id=sid))
+                    # 收尾（终态事件/trace）已落，硬取消继续穿透——绝不吞
+                    del _stopped
+                    raise
                 cancel_token.cancel()
                 raise
             except AdapterError as _adapter_err:
@@ -334,6 +394,13 @@ async def run_agent_loop(
                 raise
 
         step = 0
+        # 假停自动续跑计数（run_agent_loop 局部：每回合天然重置；
+        # 子代理各循环独立计数，勿提升模块级——防跨回合/跨代理串账）
+        _fakestop_resumes = 0
+        # 假停机械续跑（词表退役批）：连续纯文本收尾轮计数（工具轮归零）。
+        # 传给策略的是本轮之前的计数：0 = 连续第 1 轮（假停嫌疑续跑），
+        # ≥1 = 连续第 2 轮（模型已重申完成，真完成放行）
+        _text_round_streak = 0
 
 
         while True:
@@ -408,6 +475,19 @@ async def run_agent_loop(
                 return _stopped_result
             content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
             plan_total = float(plan_ms or 0.0)
+            # 假停取证批（2026-09-13 9999 三连假停教训）：每步 LLM 响应落一行
+            # 事实日志——纯文本收尾轮（假停签名：有正文+finish=stop+零调用）
+            # 此前零日志，模型名也无处可查；本行覆盖所有步出口前的事实面。
+            # fc_calls=发起调用数 / applied=闸后实执行数，二者分离可辨
+            # 「上游没发调用」与「全被闸拒收」。
+            logger.info(
+                f"[AgentLoop] step={step} model={model or '-'} "
+                f"finish={finish_reason or '-'} "
+                f"fc_calls={len(list((fc_extra or {}).get('_fc_tool_calls') or []))} "
+                f"applied={fc_applied} "
+                f"confirm={bool((fc_extra or {}).get('confirmation'))} "
+                f"content_chars={len(str(content or ''))}"
+            )
             # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
             # P2-1 KV-cache 遥测：本轮前缀缓存命中 token 同步入账 step trace
@@ -492,12 +572,9 @@ async def run_agent_loop(
                 visible = (content or "").strip()
                 if visible:
                     result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
-                logger.info(
-                    f"[AgentLoop] step={step} fc_applied={fc_applied} "
-                    f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
-                )
+                # 步事实日志已前移到 llm_call 返回点（覆盖全部出口，含模型名）
                 # 会话事件流镜像（v4 批 E1）：本分支所有出口统一落流——
-                # 问即停/提前终止/max_steps 出口的工具结果今天随内存列表
+                # 问即停/提前终止出口的工具结果今天随内存列表
                 # 蒸发（C2 回喂组装在其后，break 先行），落流后下轮回放可见
                 _mirror_fc_feedback(
                     list((fc_extra or {}).get("_pending_feedback_msgs") or []),
@@ -588,6 +665,8 @@ async def run_agent_loop(
                 #   步回喂文本派生与其同源 = session_log.render_step_feedback）
                 messages.append({"role": "user",
                                  "content": session_log.render_step_feedback(step, fc_applied)})
+                # 工具轮归零连续纯文本计数（假停机械续跑 streak 语义）
+                _text_round_streak = 0
                 continue
 
             # 纯文本轮：模型本轮未发出工具调用，即本轮为面向用户的回复，
@@ -608,19 +687,21 @@ async def run_agent_loop(
                 confirmation_options=[],
                 wants_continue=False,
                 # 可达性修复（2026-09-03）：纯文本收尾轮的 fc_applied 恒 0
-                # （FC 批轮在上方分支已 continue/break），填真实累计工具数，
-                # 假停判定「本回合确曾做过操作」才可达（不再写死死值）
+                # （FC 批轮在上方分支已 continue/break），填真实累计工具数
                 applied=result.applied_actions,
+                # 假停自动续跑批：已续次数供策略判上限（I-1.4 一等字段）
+                resumes_used=_fakestop_resumes,
+                # 假停机械续跑批（词表退役）：传本轮**之前**的连续纯文本轮数，
+                # 0 = 连续第 1 轮（嫌疑续跑）、≥1 = 连续第 2 轮（真完成放行）
+                text_round_streak=_text_round_streak,
                 result_text=result.text,
 
             )
+            _text_round_streak += 1
             await run_round_end_policies(_re_ctx, emit, tracer=tracer)
             result.text = _re_ctx.result_text
             if _re_ctx.result_warnings:
                 result.warnings.extend(_re_ctx.result_warnings)
-            # fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）
-            if _re_ctx.suggested_actions and not result.suggested_actions:
-                result.suggested_actions.extend(_re_ctx.suggested_actions)
             if _re_ctx.confirmation or _re_ctx.hard_break:
                 # 轮末策略注入的暂停卡（规格审阅/规格收集等）：带回前端
                 result.confirmation = _re_ctx.confirmation
@@ -631,8 +712,36 @@ async def run_agent_loop(
                     token_usage=step_tokens, cached_tokens=step_cached,
                 )
                 break
+            # 假停机械续跑（dsh Stop hook 同款门禁；2026-09-14 词表退役批）：
+            # 策略层已判「Skill 进行中 + 纯文本收尾轮 + 连续第 1 轮 + 开关开 +
+            # 未达上限」（continue_turn）——结构性判定取代词表匹配（1111 实证
+            # 5 种句式全漏网），并翻案 2026-09-10「模型自决收尾即收尾」裁决
+            # （本批 CHANGELOG 留痕）。机械补两消息保持对话链（纯文本轮
+            # assistant 正文本不入 messages）：模型原文 + FAKESTOP_RESUME_NOTE，
+            # 随后 continue 进下一步——模型要么补发工具调用，要么重申完成
+            # （下一轮 streak≥1 放行，结构封死无限续跑）。
+            # 位置约束：必须位于确认/hard_break break 之后（确认卡优先于续跑）。
+            if _re_ctx.continue_turn:
+                _fakestop_resumes += 1
+                await emit(status_event(
+                    "agent.fakestopResume",
+                    f"检测到模型未携带工具调用即收尾，已机械续跑"
+                    f"（第 {_fakestop_resumes}/{FAKESTOP_AUTO_RESUME_MAX} 次）",
+                    {"count": _fakestop_resumes, "cap": FAKESTOP_AUTO_RESUME_MAX},
+                ))
+                messages.append({"role": "assistant", "content": content or ""})
+                _resume_note = load_prompt_section(
+                    "planner/feedback.md", "FAKESTOP_RESUME_NOTE")
+                if not _resume_note:  # 分节缺失诚实降级（Rule 6 口径）
+                    logger.warning(
+                        "[AgentLoop] planner/feedback.md 缺 FAKESTOP_RESUME_NOTE 分节，用占位文案")
+                    _resume_note = "（系统提醒：上一条回复未执行任何工具操作。）"
+                messages.append({"role": "user", "content": _resume_note})
+                tracer.end_step(step, actions_applied=0, finish_reason="fakestop_resume",
+                                token_usage=step_tokens, cached_tokens=step_cached)
+                continue
             # 正常收尾（批 3 · B4：状态驱动的"下一步建议"已退役，
-            # "下一步"由模型聊天自述；建议动作只剩失败重试/假停继续）
+            # "下一步"由模型聊天自述；建议动作只剩失败重试）
             tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
                             token_usage=step_tokens, cached_tokens=step_cached)
             break
@@ -652,7 +761,7 @@ async def run_agent_loop(
         )
         logger.info(f"[AgentLoop] 生成任务已被取消：step={_step_no}")
         await emit({"type": SSE_STOPPED, "phase": STOP_PHASE_TOOL_EXECUTING, "step": _step_no})
-        clear_stop(stop_scope, sid)
+        clear_stop(_own_scope, sid)
         result.trace = AgentTracer.get_instance().finish_trace(
             total_actions=result.applied_actions)
         # 与 _finalize_stop 同语义直接返回：不再落空文本兜底文案
@@ -680,6 +789,8 @@ async def run_agent_loop(
         # 统一解绑（幂等）：任何出口都经此收尾，不再有分散解绑点
         unbind_progress_emitter(_progress_token)
         unbind_cancel_token(_cancel_bind)
+        # 会话忙闲闸释放（8888 事故批）：正常/停止/取消/异常全出口对称释放
+        release_conversation_loop(session_conversation_id)
         # 轮末事件流闭合（v4 批 E3）：任何轮出口（正常/停止/取消/异常上抛）
         # 都落 turn/end；非 studio（无会话绑定）与落流失败静默（D4）
         if session_conversation_id:

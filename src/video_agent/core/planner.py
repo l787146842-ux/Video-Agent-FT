@@ -149,6 +149,13 @@ class PlannerContext:
     # 协作式停止标志作用域（端到端中断协议）：
     # SSE 直连="chat"；任务式传输=task_id（web 层按传输路径装配）
     stop_scope: str = "chat"
+    # 8888 事故批（对齐 dsh「父停杀子、子停不碍父」）：循环自己的停止标志
+    # 清理作用域。空 = 与 stop_scope 相同（顶级循环行为不变）；子代理构造
+    # context 时必须传独立作用域（父 scope::sub::子会话 id）——子循环观察
+    # stop_scope（父标志置位即停），但轮始/收尾只清理本作用域，不再截胡
+    # 父循环待消费的停止标志（8888 实证：共享标志被子代理清掉，主循环
+    # 失聪成孤儿，与续跑新循环并行 4 分钟）
+    stop_scope_own: str = ""
     # 同源裁剪解释（stage_excluded_tools/stage_note）已随批 B 工具全量常驻
     # 退役（2026-09-09 用户裁决）：阶段裁剪与边界注释不再存在，正确性由
     # 闸机 + 工具自身校验兜底。
@@ -405,6 +412,11 @@ class Planner:
             user_id=getattr(parent_ctx, "user_id", "") or "",
             thinking_level=child_thinking,
             stop_scope=getattr(parent_ctx, "stop_scope", "chat") or "chat",
+            # 8888 事故批：子代理独立停止清理作用域（父停杀子、子停不碍父，
+            # 见 PlannerContext.stop_scope_own 注解）；绑定子会话 id 保唯一
+            stop_scope_own=(
+                f"{getattr(parent_ctx, 'stop_scope', 'chat') or 'chat'}"
+                f"::sub::{child_cid}"),
             subagent_depth=child_depth,
             subagent_no_confirm=True,
             subagent_whitelist=subagent_mod.whitelist_for_kind(resolved_kind),
@@ -568,7 +580,6 @@ class Planner:
         context: PlannerContext,
         stream_hook=None,
         on_event=None,
-        max_steps: Optional[int] = None,
     ) -> PlannerResponse:
         """
         对话处理（多步循环）—— 流式/非流式统一入口。
@@ -740,7 +751,6 @@ class Planner:
         # 委托给统一循环（越阶/越暂停由闸机在工具调用点否决）
         loop_result = await run_agent_loop(
             user_message,
-            max_steps=max_steps,
             llm_call=self._turn_executor.llm_call,
             context_builder=context_builder,
             executor=executor,
@@ -749,8 +759,13 @@ class Planner:
             on_event=on_event,
             prelude_notes=context.prelude_notes,
             user_id=context.user_id,
+            # 假停取证批：步事实日志用（仅观测，不参与行为）
+            model=str(getattr(self.llm_adapter, "model", "") or ""),
             pending_injector=context.pending_injector,
             stop_scope=context.stop_scope,
+            # 8888 事故批：循环自己的停止清理作用域（子代理独立；顶级为空
+            # = 与 stop_scope 同，行为不变）
+            stop_scope_own=str(getattr(context, "stop_scope_own", "") or ""),
             # 会话事件流归属（v4 批 E1）：agent_loop FC 镜像点落流用
             session_conversation_id=str(getattr(context, "session_conversation_id", "") or ""),
             # 轮首状态事件正文（二期 G3）：组装时追加在 user 消息后

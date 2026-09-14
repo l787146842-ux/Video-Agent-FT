@@ -55,15 +55,18 @@ def test_s7_skill_runtime_no_output_form_clause():
     assert "中文叙事式多节拍" not in sd
     # 标题客观化：不再自称「最高优先级」（与冲突裁决链冲突的措辞）
     assert "最高优先级" not in sd
-    # 流程纪律其余条款保留（快照锁语义：暂停/分批/规格收集/小步推进；
+    # 流程纪律其余条款保留（快照锁语义：暂停/分批/小步推进；
     # audit-0819d：暂停正名钉 workflow_pause，request_confirmation 别名已删。
     # 2026-09-12 治理批：纪律2/4/6 退役重编号，「不超前承诺」随纪律6 迁出，
-    # 选项语义唯一家 = workflow_pause options 参数描述）
+    # 选项语义唯一家 = workflow_pause options 参数描述。
+    # 同日规格收集退役批（2222 诊断后用户裁决）：原纪律3「规格收集交互
+    # 一次性分组收集」退役——向导卡片契约唯一家 = workflow_pause options
+    # 参数描述（group/分页/一次性发回），纪律 4-7 重编号为 3-6）
     for kept in ("阶段逐段执行", "workflow_pause", "分批次确认",
-                 "规格收集交互", "小步推进"):
+                 "状态对账", "小步推进"):
         assert kept in sd, f"流程纪律条款丢失: {kept}"
     for retired in ("交付自检", "元素图像就绪闸门", "何时停（唯一判定）",
-                    "机械附挂"):
+                    "机械附挂", "一次性分组收集"):
         assert retired not in sd, f"流程纪律退役条款残留: {retired}"
 
 

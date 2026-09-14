@@ -101,3 +101,55 @@ async def test_all_rejected_round_surfaces_had_fc_calls_and_feedback(svc):
     assert any(str(m.get("tool_call_id")) for m in pending if m.get("role") == "tool")
     fc_calls = extra.get("_fc_tool_calls") or []
     assert fc_calls, "tool_calls 原样上抛供 agent_loop 组 assistant 消息"
+
+
+class FakeStreamingReasoningAdapter(BaseChatAdapter):
+    """流式假 adapter：产出思考增量 + 正文增量（8888 事故批 partial 落盘钉死）"""
+
+    @property
+    def supports_function_calling(self) -> bool:
+        return False
+
+    async def chat(self, messages, **kwargs) -> ChatResponse:
+        return ChatResponse(content="正文", finish_reason="stop")
+
+    async def chat_stream(self, messages, **kwargs):
+        from src.video_agent.adapters.base_chat import StreamChunk
+        for i in range(5):
+            yield StreamChunk(type="reasoning_delta", text=f"思考第{i}段" * 100)
+        yield StreamChunk(type="text_delta", text="这是正文")
+        yield StreamChunk(type="done", finish_reason="stop")
+
+
+async def test_stream_partial_events_persisted_and_ignored_on_replay(svc):
+    """8888 事故批：步内思考/正文增量落 assistant/partial 事件（流式路径），
+    步末完整 assistant/message 为准据；历史回放（derive_messages）忽略
+    partial——大步中断不再全量丢失，回放不重复。"""
+    from src.video_agent.core import session_log
+
+    planner = Planner(llm_adapter=FakeStreamingReasoningAdapter())
+    executor = planner._turn_executor
+    executor._context = PlannerContext(session_conversation_id="conv-partial-test")
+
+    async def hook(text: str) -> None:
+        pass
+
+    content, finish, fc_applied, plan_ms, extra = await executor.llm_call(
+        "system", [{"role": "user", "content": "你好"}], hook=hook,
+    )
+    assert content == "这是正文"
+
+    events = session_log.load_events(svc, "conv-partial-test")
+    partials = [e for e in events if e.get("type") == "assistant/partial"]
+    kinds = {e.get("kind") for e in partials}
+    assert "reasoning" in kinds and "text" in kinds, "思考与正文增量均须落盘"
+    reasoning_text = "".join(e.get("text") or "" for e in partials if e.get("kind") == "reasoning")
+    assert "思考第0段" in reasoning_text
+    # 步末完整消息为准据
+    finals = [e for e in events if e.get("type") == "assistant/message"]
+    assert finals and finals[-1].get("content") == "这是正文"
+    # 回放忽略 partial：推导消息不含 partial 内容、不重复
+    msgs = session_log.derive_messages(events)
+    joined = "\n".join(str(m.get("content") or "") for m in msgs)
+    assert "思考第0段" not in joined, "partial 事件不得进入 LLM 可见历史"
+    assert joined.count("这是正文") == 1
