@@ -60,7 +60,7 @@ from src.video_agent.core.turn_executor import TurnExecutor
 from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.progress import emit_event_card
-from src.video_agent.skill_runtime.registry import fallback_skill_from_state
+from src.video_agent.skill_runtime.registry import fallback_skill_from_state, tool_sections
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_contract, workflow_runtime
 from src.video_agent.core import state_delta as state_delta_mod
@@ -351,11 +351,15 @@ class Planner:
 
     async def _launch_subagent(
         self, task: str, parent_ctx: "PlannerContext", kind: str = "",
+        stage: str = "",
     ) -> str:
         """正宗子代理（one-shot）：模型经 FC `run_subagent` 发起 → 在隔离上下文里
         复用同一 `run_agent_loop`（经子 Planner）连续跑完 → 只回摘要。
 
         `kind` = 具名类型（qoder 花名册形态）：决定子级工具白名单与职责块。
+        `stage` = 阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离）：带 stage 时
+        系统精准注入该阶段 Skill 章节全文 + 工具面去 read_skill（断跨阶段预读
+        污染）；未知/缺省回落通用形态全现状。
         非机械执行器：发起方=模型、走同一 `guard_pipeline`、无 `exec_*`。子 Planner
         自带独立 FCToolRunner/TurnExecutor 实例（避免与父共享 runner 的轮内状态），
         仅共享 StateManager（父此刻挂起等待，无并发写冲突）。"""
@@ -364,15 +368,18 @@ class Planner:
                 getattr(parent_ctx, "subagent_depth", 0))
         except subagent_mod.SubagentDepthError:
             return "（已达子代理深度上限，无法再委派，请在当前层完成。）"
+        resolved_stage = subagent_mod.resolve_stage(stage)
         # 子会话：独立隐藏线程（携血缘）；创建失败回落不落流（子级仍在内存跑完）。
         child_cid = ""
         resolved_kind = subagent_mod.resolve_subagent_kind(kind)
+        # meta 记阶段（左栏子线程记录可辨）：带 stage 时 subagent_kind 位记 stage:名
+        meta_kind = f"stage:{resolved_stage}" if resolved_stage else resolved_kind
         try:
             parent_cid = str(getattr(parent_ctx, "session_conversation_id", "") or "")
             conv = conversation_ops.create_scoped_conversation(
                 self.state_manager,
                 {"kind": "subagent", "parent_conversation": parent_cid,
-                 "subagent_kind": resolved_kind,
+                 "subagent_kind": meta_kind,
                  "label": (task or "")[:24]},
                 title="子代理")
             child_cid = str((conv or {}).get("id") or "")
@@ -419,7 +426,8 @@ class Planner:
                 f"::sub::{child_cid}"),
             subagent_depth=child_depth,
             subagent_no_confirm=True,
-            subagent_whitelist=subagent_mod.whitelist_for_kind(resolved_kind),
+            subagent_whitelist=subagent_mod.whitelist_for_kind(
+                resolved_kind, resolved_stage),
         )
         child = Planner(
             state_manager=self.state_manager,
@@ -431,22 +439,37 @@ class Planner:
             chat_model=child_model,
             chat_adapter_factory=self._chat_adapter_factory,
         )
-        # 构建子级任务文本（通用形态：固定权限范围声明 + 幂等锚 + 任务书）
-        base_task = subagent_mod.build_subagent_task(task)
-        # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）
+        # 构建子级任务文本（通用：固定范围声明 + 幂等锚 + 任务书；
+        # 带 stage：另加一行阶段标注）
+        base_task = subagent_mod.build_subagent_task(task, stage=resolved_stage)
+        # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）：
+        # 带 stage → 精准注入该阶段章节全文（不截断；章节缺失回落全文截断）；
+        # 不带 stage → 现状全文前 8000 字截断（通用委派零改动）。
         parent_skill = str(getattr(parent_ctx, "skill_name", "") or "").strip()
         if parent_skill and self._skill_docs is not None:
-            try:
-                getter = getattr(self._skill_docs, "get_skill_doc", None)
-                if getter:
-                    doc = getter(parent_skill)
-                    if doc and doc.get("content"):
-                        sk = doc["content"]
-                        if len(sk) > 8000:
-                            sk = sk[:8000] + "\n...（章节内容截断，超预算，子代理可按需调 read_skill 读全文）"
-                        base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
-            except Exception as _e:
-                logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
+            injected = ""
+            if resolved_stage:
+                try:
+                    injected = tool_sections(parent_skill, resolved_stage)
+                except Exception as _e:
+                    logger.warning("[Subagent] 阶段章节取读失败（回落全文截断）: {}", _e)
+                    injected = ""
+            if injected:
+                base_task += (
+                    f"\n\n===== 注入 Skill 章节（{parent_skill} · {resolved_stage}）=====\n"
+                    f"{injected}")
+            else:
+                try:
+                    getter = getattr(self._skill_docs, "get_skill_doc", None)
+                    if getter:
+                        doc = getter(parent_skill)
+                        if doc and doc.get("content"):
+                            sk = doc["content"]
+                            if len(sk) > 8000:
+                                sk = sk[:8000] + "\n...（章节内容截断，超预算，子代理可按需调 read_skill 读全文）"
+                            base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
+                except Exception as _e:
+                    logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
         # 子在同一 asyncio task/同一 context 内联跑：包一层追踪隔离带（D1），
         # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
         # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。
@@ -603,7 +626,8 @@ class Planner:
         # 子级（depth≥1）置 None ⇒ 子级无法再委派（防递归）。随请求实例隔离，不跨请求泄漏。
         if settings.subagent_enabled and not getattr(context, "subagent_depth", 0):
             self._fc_runner.subagent_launcher = (
-                lambda task, kind="": self._launch_subagent(task, context, kind))
+                lambda task, kind="", stage="":
+                    self._launch_subagent(task, context, kind, stage))
         else:
             self._fc_runner.subagent_launcher = None
 

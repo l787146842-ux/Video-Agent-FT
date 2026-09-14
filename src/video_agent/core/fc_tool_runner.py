@@ -250,7 +250,8 @@ class FCToolRunner:
                     error_code="validation",
                 )
             summary = await launcher(
-                str((args or {}).get("task") or ""))
+                str((args or {}).get("task") or ""),
+                stage=str((args or {}).get("stage") or ""))
             text = str(summary or "").strip() or "（子代理未产出摘要）"
             # `detail` 是工具结果回喂给模型的既有专用通道（fc_feedback）：
             # 子代理的全部产出就是这段摘要，不带 detail 则父只看到

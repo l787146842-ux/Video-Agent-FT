@@ -176,3 +176,51 @@ async def test_zero_action_stop_ends_in_one_round(svc, fakestop_off):
     assert "请查看故事板" in (result.text or "")
     # 一次也没建成：工作台仍为空（平台只做事实对账，不拦人）
     assert not (svc.state_dict.get("keyElements") or [])
+
+
+async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
+    """阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离）端到端：
+    委派带 stage=storyboard_shots → 子级任务文本精准携带该阶段章节全文，
+    write_media_prompt 章节探针零在场（跨阶段污染根除）；子级真建组落账、
+    只回摘要；子线程 meta 记阶段名。用真实 Skill（data/skills）验证章节切割。"""
+    adapter = _ScriptedAdapter([
+        # 1) 父：委派分镜拆解阶段
+        {"tool": "run_subagent", "args": {
+            "task": "把已确认的分析产物拆解为分镜列表",
+            "stage": "storyboard_shots"}},
+        # 2) 子：真调建组工具（stage 面内，read_skill 不在面也不影响；
+        #    shot 组 sceneRefs 强非空是闸机硬要求，带上引用）
+        {"tool": "storyboard_create_group", "args": {
+            "group_type": "shot", "title": "S01 开场",
+            "scene_refs": ["星环号球形舱"],
+            "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
+                    "分镜语法：中景+平视+缓推。"}},
+        # 3) 子：摘要收尾
+        {"text": "已建 1 组分镜（S01 开场）。"},
+        # 4) 父：向用户交代
+        {"text": "分镜拆解已由子代理完成。"},
+    ])
+    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=ToolManager)
+    result = await planner.handle_message(
+        "开始拆镜头",
+        PlannerContext(skill_name=SKILL, use_studio_context=True))
+
+    # ① 落账与摘要回父（委派链路基本盘）
+    shots = svc.state_dict.get("shots") or []
+    assert any(g.get("title") == "S01 开场" for g in shots), "stage 子级建组未落账"
+    assert "分镜拆解已由子代理完成" in (result.text or "")
+
+    # ② 章节隔离：子级首轮模型调用的 user 消息（= build_subagent_task 包装文本）
+    #    含 storyboard_shots 章节真身探针，零含 write_media_prompt 章节探针
+    #   （真实 Skill 文本切割）；落流 user/message 是原始任务书（只读记录首行）
+    threads = svc.subagent_threads()
+    assert len(threads) == 1
+    scope = svc.get_conversation_scope(threads[0]["conversation_id"])
+    assert scope.get("subagent_kind") == "stage:storyboard_shots"
+    child_first = adapter.calls[1]
+    task_text = next(str(m.get("content") or "") for m in child_first
+                     if m.get("role") == "user")
+    assert "本次委派阶段：分镜设计" in task_text
+    assert "分镜语法三件套" in task_text, "storyboard_shots 章节未精准注入"
+    assert "No subtitles" not in task_text, "write_media_prompt 章节泄漏进分镜子代理"
+    assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"

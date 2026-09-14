@@ -101,8 +101,9 @@ async def test_dispatch_intercepts_run_subagent():
     runner = FCToolRunner(tool_manager=object())  # invoke_tool 不应被调用
     seen = {}
 
-    async def launcher(task):
+    async def launcher(task, kind="", stage=""):
         seen["task"] = task
+        seen["stage"] = stage
         return "子摘要:" + task
 
     runner.subagent_launcher = launcher
@@ -110,6 +111,13 @@ async def test_dispatch_intercepts_run_subagent():
     assert res.success is True
     assert res.data["summary"] == "子摘要:T"
     assert seen["task"] == "T"
+    assert seen["stage"] == ""          # 缺省不带阶段（通用形态）
+
+    # 阶段执行器（2026-09-15 试点）：stage 透传给 launcher
+    res_s = await runner._dispatch_tool(
+        "run_subagent", {"task": "T2", "stage": "storyboard_shots"})
+    assert res_s.success is True
+    assert seen["stage"] == "storyboard_shots"
 
     # 未装配（子级内 / 关开关）→ 明确失败，不静默
     runner.subagent_launcher = None

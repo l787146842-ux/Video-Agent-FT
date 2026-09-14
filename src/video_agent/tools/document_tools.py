@@ -54,7 +54,7 @@ class ReadUploadedDocInput(BaseModel):
 class ReadSkillInput(BaseModel):
     name: str = Field(..., description="Skill 名称（与 Skill 目录中的名称一致）")
     section: str = Field(
-        "", description="可选：章节标题（以 Skill 正文里的标题为准，如 planner/提示词写法），"
+        "", description="可选：章节标题（以选中 Skill 的章节目录为准），"
         "传入则只返回该章节全文；不传返回 Skill 全文（或按 start 续读）")
     start: int = Field(
         0, ge=0, description="读取起始位置（字符偏移，相对全文原文）；正文超长时工具会返回"
@@ -861,6 +861,14 @@ class RunSubagentInput(BaseModel):
         ...,
         description="交给子代理的任务书：写清这次要做什么、范围到哪（哪批卡 / 哪个流程段）。",
     )
+    # 阶段执行器试点（2026-09-15，对齐 Flova 章节隔离）：可选生产阶段，
+    # 带 stage 时平台精准注入该阶段 Skill 章节全文并适配工具面。
+    stage: str = Field(
+        "",
+        description="本次委派推进的生产阶段：script_analyze=剧本分析 / "
+        "storyboard_shots=分镜拆解。填写后系统自动把所选 Skill 对应阶段的章节全文"
+        "注入子代理（章节即产出规范），任务书里不用复述规范；其它工作留空即可。",
+    )
 
 
 class RunSubagentTool(BaseTool):
@@ -879,6 +887,8 @@ class RunSubagentTool(BaseTool):
         "连续执行到完成，不占用本对话的上下文，只回结果摘要、不回中间步骤。"
         "任务书只写要做什么、范围到哪即可——子代理与你共享工作台、平台随任务自动"
         "注入所选 Skill 正文，剧本/文档/规范它都能自己 read_* 取读，不必复述。"
+        "推进生产线阶段（剧本分析/分镜拆解）时带上 stage 参数，系统会把该阶段"
+        "章节全文精准注入子代理，更省往返、产出更贴规范。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
