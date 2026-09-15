@@ -251,7 +251,10 @@ class FCToolRunner:
                 )
             summary = await launcher(
                 str((args or {}).get("task") or ""),
-                stage=str((args or {}).get("stage") or ""))
+                stage=str((args or {}).get("stage") or ""),
+                # 2026-09-15 1111 批：把本轮 SSE on_event 透传给子循环，
+                # 子级增量事件（state_refresh/timeline/tool）进父流实时可见。
+                on_event=getattr(self, "_subagent_on_event", None))
             text = str(summary or "").strip() or "（子代理未产出摘要）"
             # `detail` 是工具结果回喂给模型的既有专用通道（fc_feedback）：
             # 子代理的全部产出就是这段摘要，不带 detail 则父只看到
@@ -823,6 +826,9 @@ class FCToolRunner:
         self._selected_type = selected_type or ""
         self.gate_override = gate_override
         self.gate_warnings = []
+        # 子代理流式透传（2026-09-15 1111 批）：run_subagent 派发时把本轮
+        # on_event 交给 launcher → 子循环，子活动实时进父 SSE。
+        self._subagent_on_event = on_event
         # 闸机上下文（批级）：生图配额计数随 ctx 跨工具累计
         ctx = self._gate_ctx(injected_skill)
         # 批末对账账本（客观事实逐项记账，对账归 fc_reconcile）

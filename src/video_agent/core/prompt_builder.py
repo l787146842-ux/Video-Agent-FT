@@ -649,7 +649,7 @@ def _sec_subagent(pb: "PromptBuilder", context: "PlannerContext") -> str:
     委派策略与业务无关（通用段），新增子代理场景（如画布）无需改本段。"""
     if not getattr(settings, "subagent_enabled", False):
         return ""
-    if getattr(context, "subagent_whitelist", None) or getattr(context, "subagent_depth", 0):
+    if getattr(context, "subagent_deny", None) or getattr(context, "subagent_depth", 0):
         return ""
     return subagent_mod.subagent_policy()
 

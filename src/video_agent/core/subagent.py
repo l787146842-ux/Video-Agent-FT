@@ -24,7 +24,6 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 非机械执行器（FORBIDDEN 符号零触碰）。
 """
 from typing import FrozenSet
-import hashlib
 
 from src.video_agent.utils.prompts import load_prompt_section
 # 阶段标注取展示标签（顶层导入：core→skill_runtime 无环，prompt_builder 同构先例）
@@ -40,15 +39,21 @@ SUBAGENT_MAX_DEPTH = 1
 # 缺省类型名（历史兼容占位；通用形态下只有一个类型）。
 SUBAGENT_KIND_GENERAL = "general"
 
-# 子级工具白名单唯一源（通用）：子代理能落账/取读的普通工具面。
-# **故意不含花钱生成**（image_generate/generate_video）——生成留主线程受确认闸管；
-# **不含 run_subagent**——天然防递归（子级看不到也无法调用）；
-# **不含 workflow_pause**——子级不向用户发起确认（审批=never）。
-SUBAGENT_TOOL_WHITELIST: FrozenSet[str] = frozenset({
-    "storyboard_create_group", "storyboard_add_draft", "storyboard_patch_draft",
-    "read_state_group", "read_draft", "read_skill", "read_uploaded_doc",
-    "read_project_doc", "view_storyboard_media", "document_write",
+# 子级工具面（2026-09-15 1111 批，对齐 dsh `applyChildComposition`：先 join 父
+# preset 再 `tools.restrict({allow,deny})`，缺省即继承父面）：子代理**继承主代理
+# 整面工具**，仅以 deny 集收口（inherit ∩ ¬deny），不再维护硬编码 allowlist。
+# 硬编码 allowlist 会漏授阶段落点工具——1111 实证：script_analyze 子代理拿不到
+# script_analysis_report（分析结论无法提交）。deny 四条与类型无关的硬约束：
+#   run_subagent —— 结构防递归（子级看不到也无法调用）；
+#   image_generate / generate_video —— 花钱生成留主线程受确认闸管；
+#   workflow_pause —— 子级不向用户发起确认（审批=never）。
+SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
+    "run_subagent", "image_generate", "generate_video", "workflow_pause",
 })
+
+# stage 模式额外 deny：read_skill——该阶段章节已由系统全文注入，
+# 结构上关闭跨阶段预读通道（分镜子代理物理看不到其它章节，等效 Flova 隔离）。
+STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({"read_skill"})
 
 # 阶段执行器试点（2026-09-15）：委派可选的生产阶段枚举（与
 # registry.CAPABILITY_TOOL_STAGES 键同名）；试点只开两个最吃上下文的阶段，
@@ -57,11 +62,6 @@ SUBAGENT_TOOL_WHITELIST: FrozenSet[str] = frozenset({
 PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
     "script_analyze", "storyboard_shots",
 })
-
-# stage 模式工具面 = 通用白名单去 read_skill：该阶段章节已由系统全文注入，
-# 结构上关闭跨阶段预读通道（分镜子代理物理看不到 write_media_prompt 章节，
-# 等效 Flova 子执行器隔离）；其余工具照旧（落账/读回/写文档）。
-STAGE_TOOL_WHITELIST: FrozenSet[str] = SUBAGENT_TOOL_WHITELIST - {"read_skill"}
 
 
 def resolve_subagent_kind(kind: str = ""):
@@ -78,11 +78,12 @@ def resolve_stage(stage: str = "") -> str:
     return s if s in PIPELINE_STAGE_KINDS else ""
 
 
-def whitelist_for_kind(kind: str = "", stage: str = "") -> FrozenSet[str]:
-    """子级工具白名单：不带 stage = 通用面（含 read_skill）；
-    带 stage = 收紧面（章节已注入，去 read_skill 断跨阶段预读）。
-    两面均不含 run_subagent / 花钱生成 / workflow_pause。"""
-    return STAGE_TOOL_WHITELIST if resolve_stage(stage) else SUBAGENT_TOOL_WHITELIST
+def child_deny_set(stage: str = "") -> FrozenSet[str]:
+    """子级 deny 集（dsh inherit∩restrict 的 restrict 面）：通用 = 四条硬约束；
+    带 stage 追加 read_skill（章节已注入，断跨阶段预读）。子级可见面 =
+    主代理面 − 本集（planner._compute_excluded_tools 据此裁剪）。"""
+    return SUBAGENT_TOOL_DENY | (
+        STAGE_TOOL_DENY_EXTRA if resolve_stage(stage) else frozenset())
 
 
 def subagent_kind_block(kind: str = "") -> str:
@@ -119,13 +120,14 @@ def subagent_policy() -> str:
 
 def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
                         stage: str = "") -> str:
-    """子级任务文本 = 固定权限范围声明 + 阶段标注（带 stage 时）+
-    待建清单（幂等锚）+ 本次委派任务。
+    """子级任务文本 = 固定权限范围声明 + 阶段标注（带 stage 时）+ 一句目标。
 
-    通用形态：不再前置分类型职责块；子级该做什么全凭任务书说明（与 dsh 一致）。
-    阶段形态（2026-09-15 试点）：只加一行阶段标注（取 registry.STAGE_LABELS，
-    不写 prose 花名册——③A 遗产保留），章节正文由 planner 装配层精准注入。
-    待建清单含幂等锚（task_id hash），重复委派同一任务时子级可跳过已做项。
+    2026-09-15 1111 批（对齐 flova 精简）：任务书**只承载目标**。范围/源文档/
+    产出规范一律不复述——子代理与主代理同看工作台状态（child_ctx
+    use_studio_context），源文档/Skill 自己用读工具取，产出规范以系统注入的
+    阶段章节为准；父复述只会污染子任务 + 双份事实源 + 烧 token。
+    通用形态：不再前置分类型职责块；阶段形态：只加一行阶段标注
+    （取 registry.STAGE_LABELS），章节正文由 planner 装配层精准注入。
     """
     clean = str(task or "").strip()
     ctx = subagent_delegation_context()
@@ -136,7 +138,4 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
     if resolved:
         label = STAGE_LABELS.get(resolved, resolved)
         header += f"本次委派阶段：{label}（系统已注入该阶段 Skill 章节全文，章节即产出规范的全部依据）。\n\n"
-    # 幂等锚：任务内容 hash 作为唯一标识，同 ID 工作已做完则跳过
-    task_id = hashlib.sha256(clean.encode("utf-8")).hexdigest()[:16]
-    header += f"===== 待建清单（task_id: {task_id}）=====\n按任务书目标一次性完成以下所有工作项。幂等锚：同一 task_id 的工作项如果已存在于工作台，直接跳过。\n\n"
-    return f"{header}===== 本次委派任务 =====\n{clean}"
+    return f"{header}===== 本次委派目标 =====\n{clean}"

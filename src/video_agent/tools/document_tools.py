@@ -855,11 +855,13 @@ class WorkflowPauseTool(BaseTool):
 
 class RunSubagentInput(BaseModel):
     # Skill 正文由平台随任务自动注入、文档与工作台状态与子级共享（见 planner
-    # ._launch_subagent），故任务书无需复述它们；description 只写正面契约（2026-09-12
+    # ._launch_subagent），子代理自看工作台/自读源（2026-09-15 1111 批对齐 flova），
+    # 故任务书只需一句目标；description 只写正面契约（2026-09-12
     # 裁决：说明层堆否定/解释会吓退模型、且撞指令体量上限）。
     task: str = Field(
         ...,
-        description="交给子代理的任务书：写清这次要做什么、范围到哪（哪批卡 / 哪个流程段）。",
+        description="交给子代理的目标：一句话写清要产出什么即可；"
+        "范围/源文档/产出规范不用写（子代理自看工作台、自读文档、章节已注入）。",
     )
     # 阶段执行器试点（2026-09-15，对齐 Flova 章节隔离）：可选生产阶段，
     # 带 stage 时平台精准注入该阶段 Skill 章节全文并适配工具面。

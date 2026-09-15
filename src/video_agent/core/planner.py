@@ -177,10 +177,11 @@ class PlannerContext:
     # 正宗子代理（run_subagent）上下文标记：
     # subagent_depth = 委派深度（顶级 0，子级 = 父+1，恢复态不得归零）；
     # subagent_no_confirm = 子级不向用户发确认（复用 _scope_auto_pause 通道）；
-    # subagent_whitelist = 子级可见工具白名单（非空 ⇒ 工具面裁剪为仅此集合）。
+    # subagent_deny = 子级工具 deny 集（非空 ⇒ 子级可见面 = 主代理面 − 本集，
+    # 对齐 dsh inherit∩restrict；含 run_subagent 天然防递归）。
     subagent_depth: int = 0
     subagent_no_confirm: bool = False
-    subagent_whitelist: Optional[frozenset] = None
+    subagent_deny: Optional[frozenset] = None
     # （step_info 已随二期 G3 退役删除：状态尾部步数行每步必变是强制
     # 前缀失效源；轮次信息由 STEP_FEEDBACK「第 N 轮」承载）
     # 会话事件流归属（v4 主刀批 E1）：本请求的 conversation_id（可空=活跃会话，
@@ -315,21 +316,14 @@ class Planner:
         仅保留轮界级裁剪源（canvas 探针 / MCP 白名单 / 非 studio 上下文）。
         """
         excluded = set()
-        # 子代理白名单模式（非空 ⇒ 只下发白名单）：run_subagent 天然不在白名单内
-        # ⇒ 子级看不到也无法调用（结构防递归）。覆盖 studio/canvas/MCP 常规裁剪。
-        whitelist = getattr(context, "subagent_whitelist", None)
-        if whitelist:
-            try:
-                all_schemas = self.tool_manager.get_all_tool_schemas() or []
-            except Exception:
-                all_schemas = []
-            all_names = set()
-            for s in all_schemas:
-                fn = (s or {}).get("function") or {}
-                n = fn.get("name")
-                if n:
-                    all_names.add(n)
-            return frozenset(n for n in all_names if n not in whitelist)
+        # 子代理 deny 模式（2026-09-15 1111 批，对齐 dsh inherit∩restrict）：
+        # 子级继承主代理整面工具，仅剔除 deny 集（run_subagent 防递归 / 花钱
+        # 生成 / workflow_pause / stage 去 read_skill）。不再用硬编码 allowlist
+        # （会漏授阶段落点工具，1111 实证 script_analysis_report 未授予）。
+        # deny 叠加在 studio/canvas/MCP 常规裁剪之上（子级与父同受这些轮界裁剪）。
+        deny = getattr(context, "subagent_deny", None)
+        if deny:
+            excluded |= set(deny)
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:
@@ -351,7 +345,7 @@ class Planner:
 
     async def _launch_subagent(
         self, task: str, parent_ctx: "PlannerContext", kind: str = "",
-        stage: str = "",
+        stage: str = "", on_event=None,
     ) -> str:
         """正宗子代理（one-shot）：模型经 FC `run_subagent` 发起 → 在隔离上下文里
         复用同一 `run_agent_loop`（经子 Planner）连续跑完 → 只回摘要。
@@ -426,8 +420,7 @@ class Planner:
                 f"::sub::{child_cid}"),
             subagent_depth=child_depth,
             subagent_no_confirm=True,
-            subagent_whitelist=subagent_mod.whitelist_for_kind(
-                resolved_kind, resolved_stage),
+            subagent_deny=subagent_mod.child_deny_set(resolved_stage),
         )
         child = Planner(
             state_manager=self.state_manager,
@@ -474,7 +467,10 @@ class Planner:
         # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
         # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。
         with AgentTracer.get_instance().child_trace_scope():
-            resp = await child.handle_message(base_task, child_ctx)
+            # 2026-09-15 1111 批（对齐 flova/dsh 子活动实时可见）：把父的 on_event
+            # 透传给子循环，子级 state_refresh/timeline/tool 事件进入父 SSE，
+            # 故事板增量亮卡（此前子级 emit 无出口，做完才一次性弹出）。
+            resp = await child.handle_message(base_task, child_ctx, on_event=on_event)
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:
@@ -626,8 +622,8 @@ class Planner:
         # 子级（depth≥1）置 None ⇒ 子级无法再委派（防递归）。随请求实例隔离，不跨请求泄漏。
         if settings.subagent_enabled and not getattr(context, "subagent_depth", 0):
             self._fc_runner.subagent_launcher = (
-                lambda task, kind="", stage="":
-                    self._launch_subagent(task, context, kind, stage))
+                lambda task, kind="", stage="", on_event=None:
+                    self._launch_subagent(task, context, kind, stage, on_event=on_event))
         else:
             self._fc_runner.subagent_launcher = None
 

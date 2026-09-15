@@ -19,7 +19,7 @@ from src.video_agent.core import session_log
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.core.subagent import (
-    SUBAGENT_TOOL_WHITELIST, build_subagent_task, resolve_child_depth,
+    SUBAGENT_TOOL_DENY, build_subagent_task, resolve_child_depth,
     SubagentDepthError,
 )
 from src.video_agent.state.manager import StateManager
@@ -39,12 +39,16 @@ def _ensure_platform_tools():
     # 显式重注册全套：同 worker 其它文件的夹具会 ToolManager.reset() 清空全局注册表
     #（跨文件污染先例，见 test_hybrid_boundaries / test_tool_risk_gate 同口径），
     # 本文件不依赖导入副作用——类型白名单里的工具（含故事板族）必须全部在册。
+    # generate_video 仅经 tools 包导入副作用注册（1111 批 deny 集含它），reset 后须补。
     from src.video_agent.tools.analysis_tools import register_analysis_tools
     from src.video_agent.tools.document_tools import register_document_tools
     from src.video_agent.tools.storyboard_tools import register_storyboard_tools
+    from src.video_agent.tools.manager import ToolManager
+    from src.video_agent.tools.video.generate_video import GenerateVideoTool
     register_storyboard_tools()
     register_document_tools()
     register_analysis_tools()
+    ToolManager.register(GenerateVideoTool())
 
 
 # ---------- 纯契约 ----------
@@ -55,11 +59,15 @@ def test_resolve_child_depth_monotone_and_capped():
         resolve_child_depth(1)  # 1+1=2 > max 1
 
 
-def test_whitelist_excludes_generation_and_recursion():
-    assert "run_subagent" not in SUBAGENT_TOOL_WHITELIST      # 防递归
-    assert "image_generate" not in SUBAGENT_TOOL_WHITELIST    # 花钱生成留主线程
-    assert "generate_video" not in SUBAGENT_TOOL_WHITELIST
-    assert "storyboard_create_group" in SUBAGENT_TOOL_WHITELIST
+def test_deny_excludes_generation_and_recursion():
+    """2026-09-15 1111 批（dsh inherit∩restrict）：子级面=主代理面−deny；
+    deny 只收四条硬约束，落账/落点工具不在 deny（子代理拿得到）。"""
+    assert "run_subagent" in SUBAGENT_TOOL_DENY        # 防递归
+    assert "image_generate" in SUBAGENT_TOOL_DENY      # 花钱生成留主线程
+    assert "generate_video" in SUBAGENT_TOOL_DENY
+    assert "workflow_pause" in SUBAGENT_TOOL_DENY      # 子级不确认
+    assert "storyboard_create_group" not in SUBAGENT_TOOL_DENY
+    assert "script_analysis_report" not in SUBAGENT_TOOL_DENY
 
 
 def test_build_subagent_task_carries_delegation_context():
@@ -82,15 +90,17 @@ def test_run_subagent_tool_registered_control_plane():
 
 # ---------- 子级工具面裁剪 ----------
 
-def test_compute_excluded_tools_whitelist_mode(svc):
+def test_compute_excluded_tools_deny_mode(svc):
+    """子级 deny 模式：deny 集进 excluded，其余工具继承主代理面（不下发=仅 deny）。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
-    wl = frozenset({"read_skill", "document_write"})
-    excluded = planner._compute_excluded_tools(PlannerContext(subagent_whitelist=wl))
-    assert "read_skill" not in excluded
-    assert "document_write" not in excluded
+    excluded = planner._compute_excluded_tools(
+        PlannerContext(subagent_deny=SUBAGENT_TOOL_DENY))
     assert "run_subagent" in excluded       # 子级看不到 → 结构防递归
     assert "image_generate" in excluded     # 花钱生成不下发给子级
-    # 顶级（无白名单）应能看到 run_subagent
+    # 非 deny 工具继承父面（含阶段落点工具）→ 不再漏授
+    assert "storyboard_create_group" not in excluded
+    assert "script_analysis_report" not in excluded
+    # 顶级（无 deny）应能看到 run_subagent
     top_excluded = planner._compute_excluded_tools(PlannerContext(use_studio_context=True))
     assert "run_subagent" not in top_excluded
 
@@ -101,7 +111,7 @@ async def test_dispatch_intercepts_run_subagent():
     runner = FCToolRunner(tool_manager=object())  # invoke_tool 不应被调用
     seen = {}
 
-    async def launcher(task, kind="", stage=""):
+    async def launcher(task, kind="", stage="", on_event=None):
         seen["task"] = task
         seen["stage"] = stage
         return "子摘要:" + task
@@ -123,6 +133,43 @@ async def test_dispatch_intercepts_run_subagent():
     runner.subagent_launcher = None
     res2 = await runner._dispatch_tool("run_subagent", {"task": "T"})
     assert res2.success is False
+
+
+async def test_launch_subagent_forwards_on_event(svc, monkeypatch):
+    """2026-09-15 1111 批（子活动流式可见）：父 on_event 透传给子循环，
+    子级增量事件进父 SSE（故事板增量亮卡，不再做完一次性弹出）。"""
+    seen = {}
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, stream_hook=None,
+                           on_event=None, **kw):
+        seen["on_event"] = on_event
+        return _FakeResp()
+
+    sentinel = object()
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    await parent._launch_subagent(
+        "拆解", PlannerContext(subagent_depth=0), on_event=sentinel)
+    assert seen["on_event"] is sentinel
+
+
+async def test_dispatch_passes_runner_on_event_to_launcher():
+    """run_subagent 派发把本轮 SSE on_event 交给 launcher（流式透传链路起点）。"""
+    runner = FCToolRunner(tool_manager=object())
+    seen = {}
+
+    async def launcher(task, kind="", stage="", on_event=None):
+        seen["on_event"] = on_event
+        return "摘要"
+
+    sentinel = object()
+    runner.subagent_launcher = launcher
+    runner._subagent_on_event = sentinel
+    await runner._dispatch_tool("run_subagent", {"task": "T"})
+    assert seen["on_event"] is sentinel
 
 
 # ---------- _launch_subagent 装配契约 ----------
@@ -149,7 +196,7 @@ async def test_launch_subagent_builds_isolated_child(svc, monkeypatch):
     ctx = captured["ctx"]
     assert ctx.subagent_depth == 1                 # 父+1
     assert ctx.subagent_no_confirm is True         # 审批=never（不发确认卡）
-    assert "run_subagent" not in ctx.subagent_whitelist
+    assert "run_subagent" in ctx.subagent_deny
     assert "max_steps" not in captured["extra_kwargs"]  # 步数上限退役（参数已整体删除）
     assert "被委派的子代理" in captured["msg"]      # 固定范围声明注入
 
@@ -354,38 +401,39 @@ async def test_launch_subagent_shares_parent_state_manager(svc, monkeypatch):
 
 # ---------- 批③A 通用单一子代理（具名类型退役） ----------
 
-def test_generic_whitelist_invariants():
-    """通用白名单不变式：不花钱生成、不递归、不拿确认工具；列项工具须真实在册。"""
-    from src.video_agent.core.subagent import SUBAGENT_TOOL_WHITELIST
+def test_generic_deny_invariants():
+    """通用 deny 不变式（dsh inherit∩restrict）：deny 只收硬约束且均为真实在册工具。"""
+    from src.video_agent.core.subagent import SUBAGENT_TOOL_DENY
     from src.video_agent.tools.manager import ToolManager
 
-    wl = SUBAGENT_TOOL_WHITELIST
-    assert wl
-    assert "run_subagent" not in wl
-    assert "image_generate" not in wl and "generate_video" not in wl
-    assert "workflow_pause" not in wl
-    assert "storyboard_create_group" in wl and "storyboard_patch_draft" in wl
-    for tool_name in wl:
+    deny = SUBAGENT_TOOL_DENY
+    assert deny
+    assert "run_subagent" in deny
+    assert "image_generate" in deny and "generate_video" in deny
+    assert "workflow_pause" in deny
+    for tool_name in deny:
         assert ToolManager.get_tool(tool_name) is not None, tool_name
 
 
 def test_resolve_kind_is_generic_single_type():
-    """通用形态：任意传入 kind 都归一到 general，白名单恒等于全集白名单。"""
+    """通用形态：任意传入 kind 都归一到 general；deny 与 kind 无关、只随 stage 变。"""
     from src.video_agent.core.subagent import (
-        SUBAGENT_KIND_GENERAL, SUBAGENT_TOOL_WHITELIST,
-        resolve_subagent_kind, whitelist_for_kind)
+        SUBAGENT_KIND_GENERAL, SUBAGENT_TOOL_DENY,
+        resolve_subagent_kind, child_deny_set)
 
     assert resolve_subagent_kind("storyboard_split") == SUBAGENT_KIND_GENERAL
     assert resolve_subagent_kind("") == SUBAGENT_KIND_GENERAL
-    assert whitelist_for_kind("media_prompt_write") == SUBAGENT_TOOL_WHITELIST
+    assert child_deny_set("") == SUBAGENT_TOOL_DENY
 
 
 def test_build_subagent_task_generic_no_kind_block():
-    """任务文本只含固定权限范围声明 + 任务书，不再前置【子代理类型】块。"""
+    """任务文本只含固定权限范围声明 + 一句目标（2026-09-15 1111 批对齐 flova
+    精简：待建清单/幂等锚包装退役），不再前置【子代理类型】块。"""
     msg = build_subagent_task("把这段工作做完")
     assert "被委派的子代理" in msg
     assert "不要原地重试" in msg
     assert "【子代理类型" not in msg
+    assert "待建清单" not in msg and "task_id" not in msg  # 精简：只留目标
     assert msg.rstrip().endswith("把这段工作做完")
 
 
@@ -412,9 +460,9 @@ def test_subagent_section_injected_only_for_top_level():
         object.__setattr__(settings, "subagent_enabled", True)
         top = pb._sec_subagent(None, PlannerContext(use_studio_context=True))
         assert top and "run_subagent" in top
-        # 子级（白名单模式）不注入委派策略（子级无 run_subagent，防递归）
+        # 子级（deny 模式）不注入委派策略（子级无 run_subagent，防递归）
         child = pb._sec_subagent(
-            None, PlannerContext(subagent_whitelist=frozenset({"read_skill"})))
+            None, PlannerContext(subagent_deny=SUBAGENT_TOOL_DENY))
         assert child == ""
         # 开关关 → 不注入
         object.__setattr__(settings, "subagent_enabled", False)
@@ -423,8 +471,8 @@ def test_subagent_section_injected_only_for_top_level():
         object.__setattr__(settings, "subagent_enabled", old)
 
 
-async def test_launch_subagent_uses_generic_whitelist(svc, monkeypatch):
-    """子级拿通用白名单（含建组与写提示词），任务文本无类型块。"""
+async def test_launch_subagent_uses_generic_deny(svc, monkeypatch):
+    """子级拿通用 deny（继承父面−硬约束），任务文本无类型块。"""
     seen = {}
 
     class _FakeResp:
@@ -439,6 +487,6 @@ async def test_launch_subagent_uses_generic_whitelist(svc, monkeypatch):
     parent = Planner(state_manager=svc, llm_adapter=None)
     await parent._launch_subagent("为已建好的卡写提示词",
                                   PlannerContext(subagent_depth=0))
-    from src.video_agent.core.subagent import SUBAGENT_TOOL_WHITELIST
-    assert seen["ctx"].subagent_whitelist == SUBAGENT_TOOL_WHITELIST
+    from src.video_agent.core.subagent import SUBAGENT_TOOL_DENY
+    assert seen["ctx"].subagent_deny == SUBAGENT_TOOL_DENY
     assert "【子代理类型" not in seen["msg"]

@@ -16,8 +16,8 @@ import src.video_agent.tools.document_tools  # noqa: F401  触发工具注册
 from src.video_agent.core import planner as pmod
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.subagent import (
-    PIPELINE_STAGE_KINDS, STAGE_TOOL_WHITELIST, SUBAGENT_TOOL_WHITELIST,
-    build_subagent_task, resolve_stage, whitelist_for_kind,
+    PIPELINE_STAGE_KINDS, STAGE_TOOL_DENY_EXTRA, SUBAGENT_TOOL_DENY,
+    build_subagent_task, child_deny_set, resolve_stage,
 )
 from src.video_agent.state.manager import StateManager
 
@@ -81,18 +81,20 @@ def test_resolve_stage_enum_and_fallback():
     assert PIPELINE_STAGE_KINDS == frozenset({"script_analyze", "storyboard_shots"})
 
 
-def test_stage_whitelist_drops_read_skill_only():
-    """stage 面 = 通用面 − read_skill；硬约束（防递归/花钱/确认）两面均保留。"""
-    assert STAGE_TOOL_WHITELIST == SUBAGENT_TOOL_WHITELIST - {"read_skill"}
-    assert "storyboard_create_group" in STAGE_TOOL_WHITELIST  # 落账工具保留
-    for wl in (SUBAGENT_TOOL_WHITELIST, STAGE_TOOL_WHITELIST):
-        assert "run_subagent" not in wl
-        assert "image_generate" not in wl and "generate_video" not in wl
-        assert "workflow_pause" not in wl
-    # 路由：带 stage → 收紧面；不带/未知 → 通用面
-    assert whitelist_for_kind("general", "storyboard_shots") == STAGE_TOOL_WHITELIST
-    assert whitelist_for_kind("general", "") == SUBAGENT_TOOL_WHITELIST
-    assert whitelist_for_kind("general", "未知阶段") == SUBAGENT_TOOL_WHITELIST
+def test_stage_deny_drops_read_skill_only():
+    """2026-09-15 1111 批（对齐 dsh inherit∩restrict）：子级面 = 主代理面 − deny。
+    stage 仅额外 deny read_skill（断跨阶段预读）；四条硬约束两面均 deny；
+    阶段落点工具（script_analysis_report 等）不在 deny ⇒ 子代理拿得到。"""
+    assert child_deny_set("storyboard_shots") == SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
+    assert child_deny_set("") == SUBAGENT_TOOL_DENY
+    assert child_deny_set("未知阶段") == SUBAGENT_TOOL_DENY
+    for deny in (child_deny_set(""), child_deny_set("storyboard_shots")):
+        assert "run_subagent" in deny            # 防递归
+        assert "image_generate" in deny and "generate_video" in deny  # 花钱留主线程
+        assert "workflow_pause" in deny          # 子级不确认
+    # 阶段落点工具必须授予子代理（1111 实证 script_analysis_report 未授予断链）
+    assert "script_analysis_report" not in child_deny_set("script_analyze")
+    assert "storyboard_create_group" not in child_deny_set("storyboard_shots")
 
 
 def test_build_subagent_task_stage_header():
@@ -129,8 +131,8 @@ async def test_launch_stage_injects_section_precisely(svc, monkeypatch):
     assert "本次委派阶段：分镜设计" in msg              # 阶段标注行
     assert sd.calls == 0                              # 未走全文截断回落
     assert "章节内容截断" not in msg
-    # 工具面收紧 + 子会话 meta 记 stage
-    assert captured["ctx"].subagent_whitelist == STAGE_TOOL_WHITELIST
+    # 工具面 deny + 子会话 meta 记 stage
+    assert captured["ctx"].subagent_deny == child_deny_set("storyboard_shots")
     child_cid = captured["ctx"].session_conversation_id
     assert svc.get_conversation_scope(child_cid).get("subagent_kind") \
         == "stage:storyboard_shots"
@@ -170,6 +172,6 @@ async def test_launch_without_stage_keeps_current_behavior(svc, monkeypatch):
     assert f"注入 Skill 章节（{SKILL}）" in msg       # 现状标注（无 · stage 后缀）
     assert "章节内容截断" in msg
     assert "本次委派阶段" not in msg
-    assert captured["ctx"].subagent_whitelist == SUBAGENT_TOOL_WHITELIST
+    assert captured["ctx"].subagent_deny == SUBAGENT_TOOL_DENY
     child_cid = captured["ctx"].session_conversation_id
     assert svc.get_conversation_scope(child_cid).get("subagent_kind") == "general"
