@@ -429,6 +429,31 @@ class FCToolRunner:
             result_summary="已被用户取消", args=c.args_preview,
         )
 
+    async def _record_interrupted_call(self, c: _CallCtx, exc: BaseException, *,
+                                       on_event=None, tracer=None) -> None:
+        """中断留痕（8888 委派失踪批·批 C，与 _record_cancelled_call 同形）：
+        非取消异常穿透前先把本工具 SSE/trace 以失败态记账，使中断的调用
+        在 trace 留痕（事故里 run_subagent 派发抛异常 → _commit_call 未执行
+        → trace 零痕迹）。只留痕、不吞异常：调用方留痕后原样 raise
+        （错误信封必须抛错，GOVERNANCE §五；upstream 类 escalate 策略不变）。"""
+        _interrupt_desc = describe_fc_tool(c.name, c.args)
+        _msg = " ".join(str(exc).split())
+        _summary = (f"{type(exc).__name__}: {_msg}" if _msg else type(exc).__name__)[:200]
+        if on_event is not None:
+            await on_event({
+                "type": SSE_TOOL_FINISHED,
+                "id": c.tool_event_id,
+                "ok": False,
+                "elapsed_ms": round((time.monotonic() - c.tool_t0) * 1000, 1),
+                "result_summary": _summary,
+            })
+        tracer.record_action(
+            name=c.name, summary=_interrupt_desc,
+            elapsed_ms=(time.monotonic() - c.tool_t0) * 1000, ok=False,
+            stage=stage_label_for_tool(c.name),
+            result_summary=_summary, args=c.args_preview,
+        )
+
     def _record_cancel_ledger(self, c: _CallCtx, st: _BatchState) -> None:
         """取消穿透前的生成族账本登记（保持原记账顺序：先账本后留痕）。"""
         if provider_injection.is_provider_tool(c.name):
@@ -749,7 +774,11 @@ class FCToolRunner:
                                 _first_cancel_member = m
                             continue
                         if isinstance(_out, BaseException):
-                            # invoke_tool 兜底之外的非取消异常：记首例，提交完其余成员后上抛
+                            # invoke_tool 兜底之外的非取消异常（8888 委派失踪批·批 C，
+                            # G4 同类路径）：并行桶成员也不得零留痕——每个中断
+                            # 成员先记账，提交完其余成员后上抛首例。
+                            await self._record_interrupted_call(
+                                m, _out, on_event=on_event, tracer=tracer)
                             if _first_exc is None:
                                 _first_exc = _out
                             continue
@@ -875,6 +904,13 @@ class FCToolRunner:
                             ledger=st.ledger, tool_names=st.batch_tools,
                             tool_manager=self.tool_manager):
                         self._idempotency.reset()
+                    raise
+                except Exception as exc:
+                    # 8888 委派失踪批·批 C：非取消异常（如 run_subagent 派发因上游
+                    # 崩）穿透前先以失败态留痕，使中断的委派在 trace 有据可查；
+                    # 不吞为 ToolResult(success=False)——原样上抛保持错误信封与 escalate 策略。
+                    await self._record_interrupted_call(
+                        c, exc, on_event=on_event, tracer=tracer)
                     raise
             _signal = await self._commit_call(
                 c, st, on_event=on_event, on_status=on_status, tracer=tracer)
