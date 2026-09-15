@@ -36,6 +36,23 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-15 · 8888 委派失踪批（子代理线程落盘 + 委派失败可见性）
+- **背景（8888 项目 proj-1789413853-5c6e867f 实测）**：用户报「子代理直接没派出去」，左栏「还没有子任务」。四路交叉取证（traces / logs / sqlite / 隐藏线程事件流）定案：**子代理确实派出去了**——主 trace `a672dce96031` step4 reasoning 明写「委派分镜拆解给子代理」，子 trace `ce3beb8da396`（parent=主 trace）事件流 `conv-1789414081-48c32230.jsonl` 27,952 字节 / 19 事件，子代理干完两步（读原著 + 10 组设定全文），死于上游 504。四项缺陷 + 一项非缺陷：
+  - **A（状态层）**：`create_scoped_conversation` 忽略 `save()` 返回值 → 版本闸命中时线程元信息只活内存（log 03:28:01.717「磁盘账本 35 新于本实例已知 34」），盘上 `conversations` 只剩 `conv-main` → `GET /conversations/subagents` 返空 → 左栏空。
+  - **B（状态层）**：`save()` 成功仅 DEBUG、冲突不报写入方身份 → 两次版号递增在 INFO 级日志零痕迹，事后无法指名对手方实例。
+  - **C（core 层）**：`run_subagent` 派发不兜异常 → 委派中断在 trace 零留痕（主 trace step4 只有 `model_reasoning`，无 `run_subagent` action）。
+  - **D（core + 前端）**：`agent_loop` finally 的 `append_turn_end` 不传 reason → 恒 `"done"`；`thread_status`「有 turn/end 即 completed」→ 子代理崩死仍显示「已完成」。
+  - **E（非缺陷，不改码）**：三次尝试各约 60s 整 = 上游 ALB 网关 60s 掐断（低于本项目 `llm_timeout=120`/`llm_stream_timeout=180`），属「首字节 >60s」型。
+- **改动（5 批独立 commit，全落平台层，不改 Skill、不改 `prompts/`、不新增门禁）**：
+  - 批 A `state/conversation_ops.py`：落 `_persist_new_conversation` 单点（`create_conversation` / `create_scoped_conversation` 同策略，G4）——追加前 `flush_save` 冲刷在途增量；`save()` 被拒则 `_replay_conversation` 以磁盘为基、按 id 幂等并入 `conversations`（append-only 注册表，语义可交换）再写一次为限（防活锁）；仍失败抛 `StateConflictError`。调用点既有语义不变（`planner._launch_subagent` `except Exception` 降级不落流、`routes/conversations.py` 微调线程走 409）。**否决**内存整板覆盖（抹对手方新内容）与直接再 save（`save()` 拒绝时已同步 `_known_version`，二次必放行 = 调用方全赢、回退用户 1 秒前整板编辑）。
+  - 批 B `state/manager.py` + `state/save_ops.py`：`_instance_tag`（global / `task:<pid>`），`save()` 拒绝 WARNING 追加「本实例=」、成功 DEBUG 升 INFO（项目 id / 版号 / 标签）；不改返回值契约。
+  - 批 C `core/fc_tool_runner.py`：`_record_interrupted_call`（与 `_record_cancelled_call` 同形）——独占派发段 `except GenerationCancelled` 后加 `except Exception`、并行桶 `_first_exc` 成员，非取消异常先记 SSE/trace（ok=False）后**原样上抛**（不吞为 `ToolResult(success=False)`，GOVERNANCE §五「错误信封必须抛错」+ `kind=upstream` escalate 不变）。
+  - 批 D `core/agent_loop.py` + `core/session_log.py` + 前端：轮内 `_turn_end_reason`（done/stopped/cancelled/error 四出口真值）随 finally 落 `turn/end`；`thread_status` 看最后一条 reason≠done → `failed`；前端 `SubagentThread.status` 补 `'failed'`、`SubagentRail` 文案「已中断」、`middle-panel.css` 用 `--color-danger` 语义色。
+  - 批 E：本条留痕 + 债务登记 **D-20**（同项目双 StateManager 实例并发整板写：批 A 只保 conversations 注册表、批 B 补取证，`documents`/`interaction`/`flowEvents` 等无合并语义的整板并发覆盖根治待写权/合并专项）。
+- **上游 504 不改码裁决（E-1）**：既有机制已覆盖——`adapters/retry.with_retry` 2 次指数退避 + `notify_stream` 前端可视 + `agent_loop` escalate + SSE 错误信封；可用杠杆是既有配置而非代码：`model_policy` 的 `subagent` 档可换到无 60s 网关限制的供应商（`planner._launch_subagent` 已支持按档接管子级模型/思考档）。单次委派范围切批（按场）归 Skill/委派策略层引导，不硬编码进代码/工具描述（G1：不以降低 Skill 要求迁就系统缺陷）。
+- **验证**：新增 test_conversation_registry_persist（批 A 5 契约）+ test_subagent_run_subagent 委派降级 / test_save_conflict_forensics（批 B）/ test_fc_interrupted_trace（批 C 独占+并行）/ test_agent_loop_turn_end_reason（批 D 四出口）+ test_session_log thread_status + SubagentRail.test.tsx failed 渲染；批末全量 `acceptance.py` 三阶段绿；UI 变更 `npm run build` 干净（首屏 361.97 kB < 400 kB），待用户目测确认（宪法 §3.1）。
+- **假设**：8888 现场不再复现（服务 03:36:46 重启后无新请求）；对手方写入者定性为「全局单例路径并发整板写」，但批 B 前无法从 INFO 级日志指名具体路由——批 B 即消除该取证盲区，本批不据未证实假设改写权模型。
+
 ### 2026-09-15 · 分镜 roughDesc 双通道退役批：分镜正文唯一载体 = desc（6666 实测「分镜设计不完整」驱动）
 - **触发（6666 项目 proj-1789396735 实测）**：阶段子代理批实测「重新拆解分镜」后用户报「分镜设计不完整」。dump 建组入参 + trace 铁证（ts=1789407494「重新拆解分镜」，35 actions / 9 llm_calls）：主会话先 delete_group×17 再 create_group shot×16，**16 张全部 `desc_len=0 / rough_desc_len≈314`**——完整分镜内容全落进 roughDesc、desc 空；而前端展示唯一认 desc（上一批已移除 roughDesc 简介行），内容落进盲区 → 用户看到 16 张空壳卡。
 - **根因**：`CreateGroupInput` 有 `rough_desc`（"粗略描述 shot 用"）+ `desc` 双写口，建组落库 `new_group["roughDesc"]=params.rough_desc or params.desc` 而 `desc` 恒取 `params.desc`；skill_docs 默认 Skill 又写矛盾句「shot 只写 title+sceneRefs+roughDesc+duration，完整镜头格式写在 desc」——既点名 roughDesc 又说完整格式写 desc，模型把全文塞进 rough_desc。与 write_media_prompt 跨阶段污染（阶段子代理批）不同源，是 desc/roughDesc 双通道歧义。
