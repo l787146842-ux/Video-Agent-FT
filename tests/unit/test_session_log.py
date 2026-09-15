@@ -450,6 +450,33 @@ def test_turn_events_open_close_and_derive_skip(svc):
     assert [m["content"] for m in msgs] == ["第一轮", "第二轮"]  # turn/* 不入推导
 
 
+def test_thread_status_reflects_turn_end_reason(svc):
+    # 8888 委派失踪批·批 D：thread_status 看最后一条 turn/end 的 reason。
+    # 无 turn/end → running
+    session_log.append_turn_start(svc, "")
+    session_log.append_assistant_message(svc, "", 1, "干活中")
+    assert session_log.thread_status(svc, "")["status"] == "running"
+
+    # 最后一条 reason=done → completed
+    session_log.append_turn_end(svc, "", reason="done")
+    st = session_log.thread_status(svc, "")
+    assert st["status"] == "completed" and st["reason"] == "done"
+
+    # 最后一条 reason=error → failed（子代理 504 崩死不再误报「已完成」）
+    session_log.append_turn_start(svc, "")
+    session_log.append_turn_end(svc, "", reason="error")
+    st = session_log.thread_status(svc, "")
+    assert st["status"] == "failed" and st["reason"] == "error"
+
+
+def test_thread_status_unknown_on_read_failure(svc, monkeypatch):
+    # 读不到事件流 → unknown（静默回落，语义不变）
+    def _boom(*a, **k):
+        raise IOError("read fail")
+    monkeypatch.setattr(session_log, "load_events", _boom)
+    assert session_log.thread_status(svc, "")["status"] == "unknown"
+
+
 # ---------- 二期 G1：B（rewind × 检查点）+ C（mirror 同步 + 指纹缓存） ----------
 
 

@@ -488,8 +488,9 @@ export interface SubagentThread {
   /** 任务摘要（scope.label，截断后的委派文本） */
   label: string;
   parent_conversation: string;
-  /** running=事件流未闭合；completed=已落 turn/end；unknown=读不到事件流 */
-  status: 'running' | 'completed' | 'unknown' | string;
+  /** running=事件流未闭合；completed=已落 turn/end 且 reason=done；
+   *  failed=轮末 reason≠done（停止/取消/异常，子代理崩死）；unknown=读不到事件流 */
+  status: 'running' | 'completed' | 'failed' | 'unknown' | string;
   /** 子级 assistant 响应步数 */
   steps: number;
 }

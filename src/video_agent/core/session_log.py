@@ -626,17 +626,27 @@ def append_turn_end(svc: Any, conversation_id: str, reason: str = "done") -> Non
 
 
 def thread_status(svc: Any, conversation_id: str = "") -> Dict[str, Any]:
-    """隐藏线程运行态概览（供子任务卡）：turn/end 存在 = completed（子级
-    在父本轮内联跑完，落流后即终结）；否则 running。steps = assistant 响应数。
-    读不到事件流静默回落 unknown。"""
+    """隐藏线程运行态概览（供子任务卡）：看最后一条 turn/end 的 reason——
+    reason != "done"（stopped/cancelled/error）→ failed（子代理崩死不再误报
+    已完成）；reason == "done" → completed；无 turn/end → running。
+    steps = assistant 响应数；读不到事件流静默回落 unknown。"""
     try:
         events = load_events(svc, conversation_id)
     except Exception:
         return {"status": "unknown", "steps": 0, "events": 0}
-    done = any(str(e.get("type") or "") == EV_TURN_END for e in events)
+    last_reason = ""
+    done = False
+    for e in events:
+        if str(e.get("type") or "") == EV_TURN_END:
+            done = True
+            last_reason = str(e.get("reason") or "done")
     steps = sum(1 for e in events if str(e.get("type") or "") == EV_ASSISTANT)
-    return {"status": "completed" if done else "running", "steps": steps,
-            "events": len(events)}
+    if not done:
+        status = "running"
+    else:
+        status = "completed" if last_reason == "done" else "failed"
+    return {"status": status, "steps": steps,
+            "events": len(events), "reason": last_reason or "done"}
 
 
 def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[str, Any]]:

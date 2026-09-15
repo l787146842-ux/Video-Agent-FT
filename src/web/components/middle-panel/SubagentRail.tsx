@@ -9,10 +9,12 @@ import { MarkdownBubble } from '../right-panel/MarkdownBubble';
 const POLL_MS = 4000;
 
 function statusClass(s: string): string {
-  return s === 'running' ? 'running' : s === 'completed' ? 'completed' : 'unknown';
+  return s === 'running' ? 'running' : s === 'completed' ? 'completed'
+    : s === 'failed' ? 'failed' : 'unknown';
 }
 function statusText(s: string): string {
-  return s === 'running' ? '执行中' : s === 'completed' ? '已完成' : '未知';
+  return s === 'running' ? '执行中' : s === 'completed' ? '已完成'
+    : s === 'failed' ? '已中断' : '未知';
 }
 /** epoch ms → HH:MM（记录条目时间戳；无值返回空串不显示） */
 function formatHHMM(ts?: number): string {

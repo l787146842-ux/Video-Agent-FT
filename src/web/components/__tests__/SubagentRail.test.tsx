@@ -48,6 +48,20 @@ describe('SubagentRail', () => {
     expect(getByText('写提示词')).toBeTruthy();
   });
 
+  it('8888 批 D：status=failed → 渲染「已中断」+ class failed', async () => {
+    apiMock.getSubagentThreads.mockResolvedValue({
+      subagents: [
+        { conversation_id: 'cf', title: '子代理', label: '拆镜', parent_conversation: '', status: 'failed', steps: 2 },
+      ],
+    });
+    const { findByTestId, getByText } = render(() => <SubagentRail />);
+    const card = await findByTestId('subagent-card');
+    expect(getByText('已中断')).toBeTruthy();
+    const statusEl = card.querySelector('.subagent-status.failed');
+    expect(statusEl).toBeTruthy();
+    expect(statusEl?.textContent).toContain('已中断');
+  });
+
   it('点卡片进只读记录，返回回清单', async () => {
     apiMock.getSubagentThreads.mockResolvedValue({
       subagents: [

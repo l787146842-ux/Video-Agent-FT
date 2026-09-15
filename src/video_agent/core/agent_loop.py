@@ -281,6 +281,11 @@ async def run_agent_loop(
     cancel_token = CancellationToken(scope=stop_scope)
     _cancel_bind = bind_cancel_token(cancel_token)
     _progress_token = None
+    # 轮末 turn/end 真值（8888 委派失踪批·批 D）：finally 统一落 turn/end 时
+    # 携带本轮真实出口——done 正常 / stopped 用户停止 / cancelled 硬取消 /
+    # error 失败上抛。此前恒传缺省 "done"，子代理 504 崩死其 turn/end 仍记
+    # done → thread_status 误判 completed → 左栏「已完成」（批 A 修好后仍错）。
+    _turn_end_reason = "done"
     # 统一解绑：bind 之后主逻辑全部包在 try/finally 内，任何出口
     #（正常/stopped/异常/取消穿透）都经 finally 幂等解绑，不再分散收尾
     try:
@@ -322,6 +327,8 @@ async def run_agent_loop(
             不变式：任何中断都有痕迹（stopped 事件 + result.stopped）、都有出口
             （前端据终态事件落停止气泡并挂「继续刚才的任务」）；
             进度通道/取消令牌解绑统一在 finally。"""
+            nonlocal _turn_end_reason
+            _turn_end_reason = "stopped"  # 批 D：干净停止出口真值
             # 取消令牌先行触发：尚在执行中的 adapters 长任务（轮询/下载）
             # 在下一检查点协作退出，不等 task.cancel() 硬取消先落
             cancel_token.cancel()
@@ -750,6 +757,7 @@ async def run_agent_loop(
         # 收敛 _finalize_stop 同款收尾：end_step + stopped 事件 + finish_trace；
         # 解绑统一在 finally
         # 代际快照：收尾期间若已有新停止请求（快速重连场景），不误清
+        _turn_end_reason = "cancelled"  # 批 D：协作取消出口真值
         sid = current_stop_id(stop_scope)
         cancel_token.cancel()
         result.stopped = True
@@ -766,10 +774,16 @@ async def run_agent_loop(
             total_actions=result.applied_actions)
         # 与 _finalize_stop 同语义直接返回：不再落空文本兜底文案
         return result
+    except asyncio.CancelledError:
+        # 8888 委派失踪批·批 D：硬取消（task.cancel）穿透——CancelledError 是
+        # BaseException，不被下面 except Exception 捕获，单立一支只记真值后原样上抛。
+        _turn_end_reason = "cancelled"
+        raise
     except Exception as _failure_exc:
         # 失败现场 trace 归档（审计 §2.5 闭环）：异常上抛前把已完成步与
         # 失败摘要落账，重试带上下文续跑（web/chat_retry_context）据此
         # 还原进度；归档失败不掩盖原异常，原样上抛由上层错误路径承接。
+        _turn_end_reason = "error"  # 批 D：失败上抛出口真值
         try:
             _t = AgentTracer.get_instance()
             _t.record_error(str(_failure_exc))
@@ -795,7 +809,8 @@ async def run_agent_loop(
         # 都落 turn/end；非 studio（无会话绑定）与落流失败静默（D4）
         if session_conversation_id:
             session_log.append_turn_end(
-                StateManager.get_instance(), session_conversation_id)
+                StateManager.get_instance(), session_conversation_id,
+                reason=_turn_end_reason)
     if not result.text:
         if result.confirmation:
             # 暂停轮无正文兜底：用暂停说明作为可见回复，

@@ -142,6 +142,8 @@
   .subagent-status.running .subagent-status-dot { background: var(--accent-emerald); animation: status-pulse 1.2s infinite; }
   .subagent-status.completed { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 45%, transparent); }
   .subagent-status.completed .subagent-status-dot { background: var(--color-success); }
+  .subagent-status.failed { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger-strong) 45%, transparent); }
+  .subagent-status.failed .subagent-status-dot { background: var(--color-danger-strong); }
   .subagent-empty { font-size: var(--font-sm); color: var(--text-dim); padding: 12px; line-height: 1.5; }
   /* 记录态：只读回看（无输入框），复用右栏 .chat-msg / .chat-bubble 气泡语言 */
   .subagent-record { display: flex; flex-direction: column; }
