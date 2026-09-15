@@ -147,6 +147,7 @@ class StateManager(UndoRedoMixin):
         worker 内所有 StateManager.get_instance 都命中本实例，不串写。
         """
         svc = cls(workspace_dir)
+        svc._instance_tag = f"task:{project_id}"  # 批 B 取证：标识任务专属实例
         if svc.active_project_id != project_id:
             svc.switch_project(project_id)
         token = _task_state_var.set(svc)
@@ -183,6 +184,11 @@ class StateManager(UndoRedoMixin):
         # 本实例已知的项目落盘版本号（版本闸：磁盘账本比它新
         # 说明别的实例写过更新数据，本实例的保存必须放弃，防旧盖新）
         self._known_version: Optional[int] = None
+
+        # 实例标签（8888 委派失踪批·批 B 取证）：全局单例为 "global"，
+        # 任务专属实例为 "task:<project_id>"。save() 落盘冲突/成功日志带上
+        # 它，事后可指名是哪一路实例在并发整板写（消此前 INFO 级零痕迹盲区）。
+        self._instance_tag: str = "global"
 
         # 任务级会话绑定（批 6-1 多会话并行）：非空时本实例的聊天写入/
         # 快照挂载定向到该对话而非活跃对话；实例内存态、不落盘，

@@ -65,6 +65,7 @@ def save(svc: "StateManager") -> bool:
             logger.warning(
                 f"[StateManager] 放弃过期写入：项目 {pid} 磁盘账本 {disk_v} "
                 f"新于本实例已知 {svc._known_version}（别的实例写过更新数据）"
+                f" 本实例={getattr(svc, '_instance_tag', '?')}"
             )
             svc._known_version = disk_v
             return False
@@ -85,7 +86,12 @@ def save(svc: "StateManager") -> bool:
         board_merge.record_board(pid, v, svc._raw_state)
         # 状态变更时失效上下文缓存
         svc._context_cache.clear()
-        logger.debug("[StateManager] Saved")
+        # 8888 委派失踪批·批 B：成功路径由 DEBUG 升为 INFO，带项目/版号/实例
+        # 标签，使每一次整板写入可在日志取证（此前对手方推高版号零痕迹）。
+        logger.info(
+            f"[StateManager] 落盘：项目 {pid} 账本 {v} "
+            f"本实例={getattr(svc, '_instance_tag', '?')}"
+        )
         return True
     except Exception as e:
         logger.error(f"[StateManager] Save failed: {e}")
