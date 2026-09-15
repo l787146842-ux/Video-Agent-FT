@@ -154,6 +154,35 @@ async def test_launch_subagent_builds_isolated_child(svc, monkeypatch):
     assert "被委派的子代理" in captured["msg"]      # 固定范围声明注入
 
 
+async def test_launch_subagent_degrades_on_state_conflict(svc, monkeypatch):
+    # 8888 委派失踪批·批 A：隐藏线程落盘被版本闸拒绝且重放失败 → 抛
+    # StateConflictError；委派不得因此中断，降级为不落流（child_cid=""）仍跑完子级。
+    from src.video_agent.exceptions import StateConflictError
+    from src.video_agent.state import conversation_ops as conv_ops
+
+    called = {"hit": False}
+
+    class _FakeResp:
+        text = "子代理仍跑完"
+
+    async def _fake_handle(self, user_message, context, stream_hook=None,
+                           on_event=None, **kwargs):
+        called["hit"] = True
+        return _FakeResp()
+
+    def _boom(*a, **k):
+        raise StateConflictError("版本闸拒绝且重放失败")
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    monkeypatch.setattr(conv_ops, "create_scoped_conversation", _boom)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    out = await parent._launch_subagent(
+        "拆解剧本为分镜", PlannerContext(subagent_depth=0))
+
+    assert out == "子代理仍跑完"
+    assert called["hit"] is True   # 落流失败不阻断委派，子级照跑
+
+
 async def test_launch_subagent_depth_guard_no_recursion(svc, monkeypatch):
     # 父已在 depth=1 → 再委派越限，直接返回提示，不构建子级
     called = {"hit": False}

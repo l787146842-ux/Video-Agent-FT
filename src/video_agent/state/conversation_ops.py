@@ -10,10 +10,13 @@
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from loguru import logger
+
 from src.video_agent.config import settings
+from src.video_agent.exceptions import StateConflictError
 from src.video_agent.utils import gen_id
 
-from . import chat_tail_ops
+from . import chat_tail_ops, save_ops
 
 if TYPE_CHECKING:  # 仅类型标注用，运行期不 import manager（防循环）
     from .manager import StateManager
@@ -104,6 +107,71 @@ def find_scoped_conversation(
     return None
 
 
+# ---------- 对话注册表落盘单点（8888 委派失踪批） ----------
+# save() 契约明写「版本闸放弃写入时返回 False，调用方据此判冲突，破坏性写入
+# 路径不得静默放行」。新建对话是注册表追加（append-only、按 id 幂等 ⇒ 语义
+# 可交换），忽略返回值会让新建的线程只活在内存：8888 实证子代理已跑出 27KB
+# 事件流，state.conversations 却只剩 conv-main ⇒ 左栏「还没有子任务」。
+
+
+def _flush_pending(svc: "StateManager") -> None:
+    """注册表写入前冲刷在途防抖写（既有机制 save_ops.flush_save）：使未落盘
+    增量先进磁盘，重放路径整板重载时不丢它们。无挂起变更时为 no-op；
+    不做提前重载（reload_if_stale）——那会把调用方「改完未存」的内存变更冲掉。"""
+    save_ops.flush_save(svc)
+
+
+def _replay_conversation(
+    svc: "StateManager", conv: Dict[str, Any], activate: bool = False,
+) -> bool:
+    """版本闸拒绝后的重放落盘：以磁盘为基、只并入 conversations 注册表
+    （按 id 去重，幂等），再写一次（一次为限，防活锁）。磁盘态不可得返 False。
+
+    不采「内存整板覆盖」（抹掉对手方实例的新内容）；不采「直接再 save」
+    （save 拒绝时已把 _known_version 同步为磁盘号，二次必放行 = 调用方全赢，
+    会回退对手方刚做的整板编辑）。"""
+    pid = svc.active_project_id
+    loaded = svc._repo.load_project(pid) if pid else None
+    if loaded is None:
+        return False
+    convs = loaded.get("conversations")
+    if not isinstance(convs, list):
+        convs = []
+        loaded["conversations"] = convs
+    if not any(isinstance(c, dict) and c.get("id") == conv.get("id") for c in convs):
+        convs.append(conv)
+    if activate:
+        loaded["activeConversationId"] = conv.get("id")
+    svc._raw_state = loaded
+    svc._known_version = svc._disk_board_version(pid)
+    svc._context_cache.clear()
+    svc._clear_undo_redo()
+    ensure_conversations(svc)      # 重载后重建 chatMessages 同一引用不变式
+    return bool(svc.save())
+
+
+def _persist_new_conversation(
+    svc: "StateManager", conv: Dict[str, Any], activate: bool = False,
+) -> None:
+    """新建对话落盘单点（G4：create_conversation / create_scoped_conversation
+    同策略）。落盘被版本闸拒绝且重放仍失败 → 抛 StateConflictError，不静默放行
+    （子代理调用点既有 except 降级为不落流；路由侧走既有 409 通道）。"""
+    _flush_pending(svc)
+    ensure_conversations(svc).append(conv)
+    if activate:
+        svc._raw_state["activeConversationId"] = conv["id"]
+        svc._raw_state["chatMessages"] = conv["messages"]
+    svc._context_cache.clear()
+    if not svc.save() and not _replay_conversation(svc, conv, activate=activate):
+        logger.warning(
+            "[Conversations] 项目 {} 新建对话 {} 落盘被版本闸拒绝且重放失败",
+            svc.active_project_id, conv.get("id"))
+        raise StateConflictError(
+            f"项目 {svc.active_project_id} 新建对话落盘被版本闸拒绝"
+            "（磁盘账本新于本实例，别的实例写过更新数据；重放一次仍失败）"
+        )
+
+
 def create_scoped_conversation(
     svc: "StateManager", scope: Dict[str, Any], title: str = "",
 ) -> Dict[str, Any]:
@@ -112,17 +180,17 @@ def create_scoped_conversation(
     与 create_conversation 的两点本质区别：不设活跃对话、不重绑
     chatMessages（主对话写入目标不变，线程靠任务实例绑定定向）；
     对话元信息携带 scope（kind/cat/group_id/draft_id/label 等），
-    供 conversations_meta_payload 单点过滤与前端角标/浮窗重开识别。"""
-    convs = ensure_conversations(svc)
-    cid = gen_id("conv")
+    供 conversations_meta_payload 单点过滤与前端角标/浮窗重开识别。
+
+    落盘走 _persist_new_conversation 单点（不得静默放行，见该段注释）。"""
+    ensure_conversations(svc)
     conv = {
-        "id": cid,
+        "id": gen_id("conv"),
         "title": (title.strip() or "微调线程"),
         "messages": [],
         "scope": dict(scope or {}),
     }
-    convs.append(conv)
-    svc.save()
+    _persist_new_conversation(svc, conv)
     return conv
 
 
@@ -332,14 +400,16 @@ def get_conversation_messages(svc: "StateManager", conversation_id: str) -> Opti
 
 
 def create_conversation(svc: "StateManager", title: str = "") -> Dict[str, Any]:
-    """新建对话并设为活跃（chatMessages 重新绑定到空列表）"""
+    """新建对话并设为活跃（chatMessages 重新绑定到空列表）。
+
+    落盘走 _persist_new_conversation 单点（与隐藏线程同策略，G4）。"""
     convs = ensure_conversations(svc)
-    cid = gen_id("conv")
-    conv = {"id": cid, "title": title.strip() or f"新会话 {len(convs) + 1}", "messages": []}
-    convs.append(conv)
-    svc._raw_state["activeConversationId"] = cid
-    svc._raw_state["chatMessages"] = conv["messages"]
-    svc.save()
+    conv = {
+        "id": gen_id("conv"),
+        "title": title.strip() or f"新会话 {len(convs) + 1}",
+        "messages": [],
+    }
+    _persist_new_conversation(svc, conv, activate=True)
     return conversations_payload(svc)
 
 
