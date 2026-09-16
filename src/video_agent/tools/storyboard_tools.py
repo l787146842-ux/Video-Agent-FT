@@ -101,11 +101,8 @@ class StoryboardCreateGroupTool(BaseTool):
     risk = "medium"  # §2.7：写内部状态（可删除撤销）
     detail_tier = "expand"  # 产出类：建组展开可见输入
     description = (
-        "创建新的故事板分组（关键元素/分镜/音频），可附带草稿。"
-        "建组规范：关键元素——每个元素单独一组，组名=元素名，"
-        "元素设定全文写在分组描述 desc 上；分镜——每个镜头单独一组，组名=镜头名，"
-        "完整镜头描述写在 desc 上，引用到的元素用 [元素名] 令牌写在描述里"
-        "（系统会自动解析为引用并挂参考），也可用 scene_refs 显式指定。"
+        "创建新的故事板分组，可附带草稿。"
+        "desc 中 [元素名] 令牌由系统自动解析为引用；也可用 scene_refs 显式指定。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -462,10 +459,9 @@ class StoryboardReadDraftTool(BaseTool):
     parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需读取指定故事板草稿卡的提示词全文。上下文里草稿只有目录信息（编号/label/字数），"
-        "审阅、修改或参考其写法时才需要调用本工具读取全文；触发生成时系统会自动取提示词，无需先读。"
-        "draft_id 支持「组号-卡序号」编号（如 '1-2'），编号在关键元素/分镜/音频各类别独立从 1 计数，"
-        "调用时建议同时带上 draft_type（keyElement/shot/audio）。"
+        "读取指定故事板草稿卡的提示词全文。"
+        "draft_id 支持「组号-卡序号」编号（如 '1-2'），"
+        "建议同时带 draft_type（keyElement/shot/audio）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -496,9 +492,7 @@ class StoryboardReadStateGroupTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需读回工作台状态中某个分组的全文（完整描述/粗描述/引用与草稿目录；"
-        "草稿提示词全文仍用 read_draft）。状态 JSON 以摘要或截断形态注入时"
-        "（带 read_state_group 指针提示），用本工具读回目标分组全文。"
+        "读回工作台状态中某个分组的全文（完整描述/粗描述/引用与草稿目录）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -552,9 +546,8 @@ class ViewStoryboardMediaTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "把故事板草稿卡的图片加载进你的上下文（服务端转 base64 内联，可直接看到画面）。"
-        "draft_ids 支持真实 ID 与「组号-卡序号」编号（如 '1-2'），"
-        "单次数量有上限，超限部分下轮再调。"
+        "把故事板草稿卡的图片加载进上下文（服务端转 base64 内联）。"
+        "draft_ids 支持真实 ID 与「组号-卡序号」编号（如 '1-2'），单次数量有上限。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

@@ -241,7 +241,12 @@ def test_fc_gen_gate_exec_preference_generate_directly(monkeypatch, set_global_s
 # 正确性由第二层兜底（工具自身校验 + gen_confirm/tool_risk 闸）。
 
 def test_generate_video_always_resident(svc, monkeypatch):
-    """generate_video 全量常驻：故事板为空时也不裁剪（skill 激活 + strict 同口径）。"""
+    """generate_video 全量常驻：故事板为空时也不裁剪（skill 激活 + strict 同口径）。
+
+    2026-09-15 铺满批更新：本测钉的是「无状态基裁剪」——故事板为空不触发
+    额外裁剪；主线程工具（generate_video / image_generate）仍全量常驻。
+    可委派阶段生产工具（storyboard_create_group 等）由 PRODUCTION_MAIN_PRUNE
+    裁剪（skill 激活的顶级生产轮），属分工重设计新架构、非状态基裁剪。"""
     from src.video_agent.core.planner import Planner, PlannerContext
 
     planner = Planner.__new__(Planner)  # 绕过重量级构造，只测裁剪逻辑
@@ -255,9 +260,11 @@ def test_generate_video_always_resident(svc, monkeypatch):
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
     excluded = planner._compute_excluded_tools(ctx)
+    # 主线程工具全量常驻（不受状态/生产裁剪影响）
     assert "generate_video" not in excluded
-    assert "storyboard_create_group" not in excluded
     assert "image_generate" not in excluded
+    # 可委派阶段生产工具被 PRODUCTION_MAIN_PRUNE 裁剪（分工重设计，非状态基）
+    assert "storyboard_create_group" in excluded
     # 阶段边界注释与裁剪解释已退役
     assert not getattr(ctx, "stage_note", "")
 

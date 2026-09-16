@@ -189,6 +189,8 @@ async def run_agent_loop(
     stop_scope_own: Optional[str] = None,
     session_conversation_id: str = "",
     state_event_content: str = "",
+    # 子代理深度（R6 fakestop 豁免）：> 0 时轮末 fakestop 闸机不触发续跑
+    subagent_depth: int = 0,
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
@@ -701,6 +703,8 @@ async def run_agent_loop(
                 # 假停机械续跑批（词表退役）：传本轮**之前**的连续纯文本轮数，
                 # 0 = 连续第 1 轮（嫌疑续跑）、≥1 = 连续第 2 轮（真完成放行）
                 text_round_streak=_text_round_streak,
+                # 子代理深度（R6 豁免）：透传至轮末策略层
+                subagent_depth=subagent_depth,
                 result_text=result.text,
 
             )

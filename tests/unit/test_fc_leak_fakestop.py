@@ -188,6 +188,34 @@ def test_resume_skips_at_cap(resume_on):
     assert not ctx.suggested_actions
 
 
+# ---------- R6 子代理结构豁免（subagent_depth > 0 不触发续跑） ----------
+
+
+def test_resume_exempted_when_subagent_depth_positive(resume_on):
+    """R6 豁免：subagent_depth=1 + Skill 模式 + streak=0 → 闸机不续跑。
+    子代理有自己的汇报结构，双重续跑会造成「子代理汇报 + 闸机续跑」冲突。"""
+    ctx = RoundEndContext(
+        step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="子代理完成了第一批。",
+        applied=0, resumes_used=0, text_round_streak=0,
+        subagent_depth=1,
+    )
+    _run_policies(ctx)
+    assert ctx.continue_turn is False, "子代理豁免：depth>0 不得续跑"
+
+
+def test_resume_fires_when_subagent_depth_zero(resume_on):
+    """R6 对照组：subagent_depth=0 + 相同条件 → 闸机续跑（确认主代理行为不变）。"""
+    ctx = RoundEndContext(
+        step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="主代理完成了第一批。",
+        applied=0, resumes_used=0, text_round_streak=0,
+        subagent_depth=0,
+    )
+    _run_policies(ctx)
+    assert ctx.continue_turn is True, "主代理（depth=0）应触发续跑"
+
+
 # ---------- agent_loop 级集成回归（生产构造点字段可达性） ----------
 
 

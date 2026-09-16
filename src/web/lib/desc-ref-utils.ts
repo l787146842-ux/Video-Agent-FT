@@ -15,28 +15,56 @@ export interface KeyElementLike {
   drafts?: Array<{ imgUrl?: string }>;
 }
 
-/** sceneRefs 存关键元素 id（ke-xxx）或标题；统一解析为标题（同 SceneRefsChips 口径） */
-export function resolveRefTitle(ref: string, keyElements: KeyElementLike[]): string {
-  const el = keyElements.find((k) => k.id === ref || k.title === ref);
-  return el?.title || String(ref);
+/**
+ * 前端归一单一事实源：剥离中文类别前缀（“角色：”/“场景:”/“道具1” 等），
+ * 使数据层的类别化标题与正文里的裸名对齐（如 “角色：程心” → “程心”）。
+ * 正则与中文集与后端 A1 契约完全一致（CN_CAT_PREFIX_RE / TITLE_CJK_RE）：
+ * 可选前缀 元素|关键元素 + 类别词 场景|道具|人物|角色|音频|载具 + 后缀（编号分支或冒号分支）。
+ * 三不变量：① 只剥不加；② 剥后为空则返原文；③ 剥后无中文字符则返原文。
+ */
+export function stripCategoryPrefix(title: string): string {
+  if (!title) return title;
+  const stripped = title.replace(
+    /^(?:元素|关键元素)?(?:场景|道具|人物|角色|音频|载具)(?:[_\-\s]?\d+\s*|\s*[：:]\s*)/,
+    '',
+  );
+  if (!stripped) return title;                          // 剥后为空 → 返原文
+  if (!/[\u4e00-\u9fff]/.test(stripped)) return title;  // 剥后无中文 → 返原文
+  return stripped;                                      // 只剥不加
 }
 
-/** 内联块候选名：sceneRefs 解析标题、去重、按长度降序（最长优先） */
+/** sceneRefs 存关键元素 id（ke-xxx）或标题；统一解析为归一标题（同 SceneRefsChips 口径） */
+export function resolveRefTitle(ref: string, keyElements: KeyElementLike[]): string {
+  const el = keyElements.find((k) => k.id === ref || k.title === ref);
+  return stripCategoryPrefix(el?.title || String(ref));
+}
+
+/**
+ * 内联块候选名：候选源 = keyElements 全集（不再局限本镜 sceneRefs）。
+ * 每个元素产两种形态——原全称 + 归一裸名（stripCategoryPrefix），Set 去重，
+ * ≥2 字符守卫（此处为唯一加守卫点），按长度降序（最长优先防重叠误切）。
+ * group 参数保留仅为调用点稳定，候选不再依赖 sceneRefs。
+ */
 export function descChipNames(
-  group: Pick<ShotGroup, 'sceneRefs'>,
+  _group: Pick<ShotGroup, 'sceneRefs'>,
   keyElements: KeyElementLike[],
 ): string[] {
   const titles = new Set<string>();
-  (group.sceneRefs || []).forEach((r) => {
-    const t = resolveRefTitle(String(r), keyElements);
-    if (t) titles.add(t);
+  keyElements.forEach((k) => {
+    const raw = k.title;
+    if (!raw) return;
+    if (raw.length >= 2) titles.add(raw);            // 原全称
+    const bare = stripCategoryPrefix(raw);
+    if (bare.length >= 2) titles.add(bare);          // 归一裸名
   });
   return [...titles].sort((a, b) => b.length - a.length);
 }
 
-/** 元素首张概念图（块缩略图）；无图返回 ''（渲染为纯名块，对齐 Flova pill） */
+/** 元素首张概念图（块缩略图）；无图返回 ''（渲染为纯名块，对齐 Flova pill）。
+ *  查表按归一标题比对：块名可能是裸名（“程心”），元素标题可能是类别全称（“角色：程心”）。 */
 function elementThumb(title: string, keyElements: KeyElementLike[]): string {
-  const el = keyElements.find((k) => k.title === title);
+  const norm = stripCategoryPrefix(title);
+  const el = keyElements.find((k) => stripCategoryPrefix(k.title || '') === norm);
   return (el?.drafts || []).map((d) => d.imgUrl || '').find(Boolean) || '';
 }
 

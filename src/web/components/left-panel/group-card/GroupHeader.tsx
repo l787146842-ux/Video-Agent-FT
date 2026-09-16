@@ -22,7 +22,9 @@ export function GroupHeader(props: {
   const [badgeVal, setBadgeVal] = createSignal('');
 
   /** 左上角标题：剥离 Element_/Shot_ 等英文前缀与非中文字符，纯中文展示（无中文时回退原文）；
-   * 仅显示层剥离，数据层标题（如新建组的 `Element_未命名`）原样存储（台账 #10，口径同 b6011a5） */
+   * 仅显示层剥离，数据层标题（如新建组的 `Element_未命名`）原样存储（台账 #10，口径同 b6011a5）。
+   * 归一来源指向 lib/desc-ref-utils 的 stripCategoryPrefix（中文类别前缀剥离），
+   * 本处仅处理英文前缀，与它的详细合并留给 P2-J，本处不改逻辑 */
   const displayTitle = () => {
     const raw = props.title() || '';
     const stripped = raw.replace(/^[A-Za-z]+[_\-\s]?/, '').trim();

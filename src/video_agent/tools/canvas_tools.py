@@ -170,9 +170,7 @@ class CanvasAddNodeTool(BaseTool):
     detail_tier = "expand"  # 产出类
     description = (
         "在画布中新增一个节点（支持 smart-image/smart-prompt/text/image 类型）。"
-        "新增图片节点时，若有参考图 URL 则填入 image_url；"
-        "故事板分镜推送到画布：为每个分镜创建 smart-image 节点，"
-        "按网格排列（x 递增 400，y 递增 300）。"
+        "新增图片节点时，若有参考图 URL 则填入 image_url。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

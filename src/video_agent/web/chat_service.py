@@ -670,6 +670,14 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
             # 视频卡同构持久化（独立消息条目，同轮 turnId 聚合）
             if video_items:
                 ctx.svc.add_chat_message("agent", "", video_items=video_items, turn_id=turn_id)
+            # R9 analysis 对话可见：本轮成功产出剧本分析（done payload 携非空
+            # analysis_digest）时追加一条对话摘要，使用户在对话框直接看到分析结论
+            # （不再仅右侧时间线事件卡）；无 digest 不追加。正文≤ 3 行，同轮 turnId 聚合。
+            _analysis_digest = str(ctx.final_payload.get("analysis_digest") or "").strip()
+            if _analysis_digest:
+                ctx.svc.add_chat_message(
+                    "agent", f"剧本分析已完成，摘要：{_analysis_digest}",
+                    meta="剧本分析", turn_id=turn_id)
             # E1 消息级快照：轮末打快照挂最后一条 agent 消息（指针化：
             # 消息存 snapshotId，本体存 stateSnapshots；媒体只有 URL 指针）
             snap_id = ctx.svc.attach_snapshot_to_last_agent_message(label=f"轮次完成 {turn_id}")

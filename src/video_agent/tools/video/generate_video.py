@@ -28,8 +28,7 @@ class GenerateVideoTool(BaseTool):
     provider_kind = "video"  # I-3 裁决 2026-09-03：provider 注入声明轴
     description = (
         "根据传入的首帧图片和提示词生成视频并返回视频地址。"
-        "生成渠道优先级：用户当前消息显式指定 > 目标草稿卡自身的视频配置 > 全局设置默认渠道，"
-        "系统自动注入供应商，规格文档与 Skill 不承载渠道参数。"
+        "生成渠道由系统按优先级自动注入供应商。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

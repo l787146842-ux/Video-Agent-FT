@@ -13,7 +13,9 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
   const [refPickerOpen, setRefPickerOpen] = createSignal(false);
 
   /** sceneRefs 存储的是关键元素 id（ke-xxx）或标题；展示时解析为元素标题，
-   * 解析不到才显示原值（卡片上直接显示 ke-xxx 看不懂） */
+   * 解析不到才显示原值（卡片上直接显示 ke-xxx 看不懂）。
+   * 归一来源指向 lib/desc-ref-utils 的 stripCategoryPrefix（此处仅按 id/标题直查，
+   * 类别前缀剥离的详细合并留给 P2-J，本处不改逻辑） */
   const refLabel = (ref: string) => {
     const el = state.keyElements.find((k) => k.id === ref || k.title === ref);
     return el?.title || String(ref);

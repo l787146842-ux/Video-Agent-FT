@@ -52,6 +52,8 @@ jobs:
         run: python scripts/check_consent_copy.py
       - name: Skill anchor lint (批 4 漂移 lint，V3-3 收窄口径：章节锚点存在性——planner 必备/锚点合法/开闭配对)
         run: python scripts/check_skill_anchor_lint.py
+      - name: Tool descriptions gate (铺满批 2026-09-15：工具描述卫生闸——class 级 description 只留正面契约，命中禁令/流程纪律/他层阶段名单即 FAIL)
+        run: python scripts/check_tool_descriptions.py
       - name: Reference integrity gate (文档指针漂移与宪法锚点合并为一条引用完整性闸)
         run: python scripts/check_doc_pointers.py
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）

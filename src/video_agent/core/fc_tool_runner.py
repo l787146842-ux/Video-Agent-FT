@@ -32,6 +32,7 @@ from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import batch_checkpoint
 from src.video_agent.core import ports
 from src.video_agent.core import provider_injection
+from src.video_agent.core import subagent as subagent_mod
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core import tool_args_preview
@@ -165,6 +166,15 @@ class FCToolRunner:
         # 注入捕获本轮 context 的回调（依赖注入，本文件绝不 import planner/agent_loop，
         # 不成环）；None = 未装配/子级内（防递归），命中即明确不可用。
         self.subagent_launcher = None
+        # 轮内工具裁剪集（one visibility = one permission，dsh subagent.md L90-97）：
+        # 由 planner 轮始下发（= _compute_excluded_tools 结果）；被裁工具即便被模型
+        # 误调也在此拒绝执行，不止从 FC schema 消失（可见性即权限，单点强制）。
+        self.turn_excluded: frozenset = frozenset()
+        # R9 analysis 对话可见：本轮 script_analysis_report 成功产出的分析摘要
+        # （只成功路径写入）；planner 轮末透传进 done payload，web 层据此在
+        # 对话框追加「剧本分析」摘要消息。chat 持久化归 web 层，本层不调
+        # add_chat_message；随轮生命周期（reset_turn_tracking 轮始清空）。
+        self.analysis_digest: str = ""
 
     # ---------- 闸机上下文组装（判定实现体 = core/fc_gates.py） ----------
 
@@ -241,6 +251,19 @@ class FCToolRunner:
         run_subagent 属控制流伪工具（同 workflow_pause 在派发/提交段被 core 拦截）：
         经 planner 注入的 `subagent_launcher` 在隔离上下文跑完子循环、只回摘要，
         不走 `invoke_tool`（模型经 FC 发起、走同一闸机链，非机械执行器）。"""
+        # one visibility = one permission（dsh subagent.md L90-97）：轮内被裁工具
+        # 即便被模型误调也拒绝执行（可见性即权限，执行期单点强制）。
+        if name in getattr(self, "turn_excluded", frozenset()):
+            # R11 裁剪可见性：拒收信封带单一替代路由（类别词，不硬编码具体工具名）
+            _route = ("经委派（run_subagent）执行对应阶段"
+                      if name in subagent_mod.PRODUCTION_MAIN_PRUNE
+                      else "该工具本轮不在可见面，请改用当前可用工具")
+            return ToolResult(
+                success=False,
+                error=(f"工具 {name} 在当前上下文不可用（本轮已裁剪），拒绝执行；"
+                       f"替代路由：{_route}。"),
+                error_code="validation",
+            )
         if name == "run_subagent":
             launcher = getattr(self, "subagent_launcher", None)
             if launcher is None:
@@ -249,6 +272,18 @@ class FCToolRunner:
                     error="子代理当前不可用（未装配或已达深度上限）。",
                     error_code="validation",
                 )
+            # fail-loud（dsh tool-subagent L316-350）：非空但非法的 stage 不静默
+            # 回落通用委派（否则章节注入静默丢失）；明确拒收并告知两桶分工。
+            _stage_raw = str((args or {}).get("stage") or "").strip()
+            if _stage_raw:
+                if not subagent_mod.resolve_stage(_stage_raw):
+                    return ToolResult(
+                        success=False,
+                        error=(f"未知委派阶段 {_stage_raw!r}（fail-loud，不静默回落"
+                               f"通用委派）。可委派阶段：{sorted(subagent_mod.PIPELINE_STAGE_KINDS)}；"
+                               "主线程阶段（规格/生成/暂停/核对）请直接调用对应工具，不要委派。"),
+                        error_code="validation",
+                    )
             summary = await launcher(
                 str((args or {}).get("task") or ""),
                 stage=str((args or {}).get("stage") or ""),
@@ -297,6 +332,7 @@ class FCToolRunner:
         """
         self._turn_tool_names = set()
         self._turn_stage_label = ""
+        self.analysis_digest = ""  # R9：分析摘要随轮生命周期，轮始清空
         self._idempotency.reset()  # T4：幂等键账本随轮生命周期，轮始清空
 
     async def _prepare_call(
@@ -503,6 +539,17 @@ class FCToolRunner:
         if result.success:
             st.applied += 1
             self._record_presented(name, args)
+            # R9 analysis 对话可见：script_analysis_report 成功即摘取刚写入的分析
+            # 摘要（只成功路径；工具已落 state.analysis），存本实例供 planner 轮末
+            # 透传进 done payload。chat 持久化归 web 层，本层不调 add_chat_message。
+            if name == "script_analysis_report":
+                try:
+                    _an = self._raw_state().get("analysis") or {}
+                    _an_sum = str(_an.get("summary") or "").strip()
+                    if _an_sum:
+                        self.analysis_digest = _an_sum
+                except Exception:  # 摘取失败不阻断主链（降级为对话不可见）
+                    pass
             if name in ("storyboard_create_group", "storyboard_add_draft"):
                 st.structure_created = True
                 kind = prompt_gates.normalize_structure_kind(args.get("group_type") or "")

@@ -71,14 +71,20 @@ def _fake_child(captured: dict):
 # ---------- 纯契约 ----------
 
 def test_resolve_stage_enum_and_fallback():
+    # 铺满批（2026-09-15）：5 阶段全部可委派
     assert resolve_stage("script_analyze") == "script_analyze"
     assert resolve_stage("storyboard_shots") == "storyboard_shots"
+    assert resolve_stage("storyboard_key_elements") == "storyboard_key_elements"
+    assert resolve_stage("storyboard_audio") == "storyboard_audio"
+    assert resolve_stage("write_media_prompt") == "write_media_prompt"
     assert resolve_stage(" storyboard_shots ") == "storyboard_shots"  # 归一化
-    # 未知/空/铺开批未开的阶段 → 回落通用（不阻断委派）
-    assert resolve_stage("write_media_prompt") == ""
+    # 未知/空 → 回落通用（不阻断委派）
     assert resolve_stage("不存在") == ""
     assert resolve_stage("") == ""
-    assert PIPELINE_STAGE_KINDS == frozenset({"script_analyze", "storyboard_shots"})
+    assert PIPELINE_STAGE_KINDS == frozenset({
+        "script_analyze", "storyboard_key_elements", "storyboard_shots",
+        "storyboard_audio", "write_media_prompt",
+    })
 
 
 def test_stage_deny_drops_read_skill_only():
@@ -100,12 +106,27 @@ def test_stage_deny_drops_read_skill_only():
 def test_build_subagent_task_stage_header():
     msg = build_subagent_task("拆解剧本为分镜", stage="storyboard_shots")
     assert "本次委派阶段：分镜设计" in msg      # STAGE_LABELS 展示标签
-    assert "章节即产出规范的全部依据" in msg
+    # P1-D/R3（2026-09-16）：阶段标注只留事实行，旧解释性括号措辞退役
+    assert "章节即产出规范的全部依据" not in msg
+    assert "（系统已注入该阶段 Skill 章节全文" not in msg
+    # 定位语改为消化性指令（措辞唯一源 = subagent.md DELEGATION_CONTEXT）
+    assert "方法参考" in msg
+    assert "不得照抄章节字段小标题或清单骨架" in msg
+    # 旧事实错误子句退役（工作台状态实为经读工具按需获取）
+    assert "你能看到与主代理相同的工作台状态" not in msg
+    # L24-27 汇报格式四行逐字保留（唯一源，不得被定位语改写波及）
+    assert "完成后用以下格式汇报：" in msg
+    for line in ("已创建：[类别] N 组（ID 列表）",
+                 "已修改：[类别] M 处",
+                 "已移除：[类别] K 处",
+                 "未完成：[事项清单]（无则写空）"):
+        assert line in msg, f"汇报格式行被改动：{line}"
     assert msg.rstrip().endswith("拆解剧本为分镜")
     # 通用形态零变化：无阶段标注行
     plain = build_subagent_task("拆解剧本为分镜")
     assert "本次委派阶段" not in plain
     assert "被委派的子代理" in plain            # 固定范围声明仍在
+    assert "章节即产出规范的全部依据" not in plain
 
 
 # ---------- _launch_subagent 装配 ----------

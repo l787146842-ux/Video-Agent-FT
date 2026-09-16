@@ -52,9 +52,8 @@ class ScriptAnalyzeTool(BaseTool):
     risk = "medium"  # §2.7：写状态但可整体重写（分析结论可再次提交覆盖）
     detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
     description = (
-        "提交剧本/素材分析结论（分析阶段的完成落点，调用成功即视为完成）："
-        "summary 一句话总结 + 按所用 Skill 的 script_analyze 章节要求写 Markdown 报告"
-        "（Skill 未声明分析路径时格式自定）；重复提交以最后一次为准。"
+        "提交剧本/素材分析结论：summary 一句话总结 + report_markdown 分析报告全文。"
+        "调用成功即视为分析完成；重复提交以最后一次为准。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

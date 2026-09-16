@@ -27,6 +27,8 @@ _EXPECTED_GATE_NAMES = [
     "consent_copy",
     # 批 4 · 漂移 lint（V3-3 收窄口径）：Skill 章节锚点存在性
     "skill_anchor_lint",
+    # 2026-09-15 铺满批（dsh 对齐）：工具描述卫生闸
+    "tool_descriptions",
 ]
 
 # I-4 修复：覆盖率关卡从 GATES 移到 RATCHETS（后置断言，读 SUITES 本轮新鲜产物）
@@ -1059,3 +1061,82 @@ def test_canary_skill_scan_clean_passes(tmp_path, monkeypatch):
         "# 干净\n> 调用规则：测试\n正文遵守强制基线式表述。\n"
         "优先级最高、提示词一律英文等句式不再被扫描。\n")
     assert gate.run_gate() == 0
+
+
+# ---------- 14) tool_descriptions（铺满批 2026-09-15：工具描述卫生闸） ----------
+
+def _tool_descriptions_scaffold(tmp_path, monkeypatch, class_body: str):
+    """在 tmp_path 镜像一个最小扫描面：一个 BaseTool 子类文件。
+    class_body 为类体内需插入的 description 赋值语句。"""
+    import scripts.check_tool_descriptions as gate
+    scan_dir = tmp_path / "src" / "video_agent" / "tools"
+    scan_dir.mkdir(parents=True)
+    (scan_dir / "sample_tools.py").write_text(
+        "class BaseTool: pass\n"
+        "class SampleTool(BaseTool):\n"
+        "    name = 'sample'\n"
+        f"{class_body}\n",
+        encoding="utf-8")
+    monkeypatch.setattr(gate, "SCAN_DIR", scan_dir)
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    return gate
+
+
+def test_canary_tool_descriptions_clean_passes(tmp_path, monkeypatch):
+    """PASS 侧：正面契约描述 → 0（不反噬）。"""
+    gate = _tool_descriptions_scaffold(
+        tmp_path, monkeypatch,
+        "    description = '读取项目文档全文。'")
+    assert gate.main() == 0
+
+
+def test_canary_tool_descriptions_prohibition_fails(tmp_path, monkeypatch):
+    """违规侧：禁令句（不得）→ 1（门禁会咬人）。"""
+    gate = _tool_descriptions_scaffold(
+        tmp_path, monkeypatch,
+        "    description = '读取文档。模型不得跨阶段预读。'")
+    assert gate.main() == 1
+
+
+def test_canary_tool_descriptions_flow_discipline_fails(tmp_path, monkeypatch):
+    """违规侧：流程纪律句（本轮立即结束）→ 1。"""
+    gate = _tool_descriptions_scaffold(
+        tmp_path, monkeypatch,
+        "    description = '暂停工作流，成功发行后本轮立即结束。'")
+    assert gate.main() == 1
+
+
+def test_canary_tool_descriptions_stage_roster_fails(tmp_path, monkeypatch):
+    """违规侧：他层阶段名单（≥2 个 PIPELINE_STAGE_KINDS 成员）→ 1。"""
+    gate = _tool_descriptions_scaffold(
+        tmp_path, monkeypatch,
+        "    description = '推进 script_analyze / storyboard_shots 阶段。'")
+    assert gate.main() == 1
+
+
+def test_canary_tool_descriptions_single_stage_ref_passes(tmp_path, monkeypatch):
+    """PASS 侧：单个阶段名引用（工具自身阶段章节指针）→ 0。"""
+    gate = _tool_descriptions_scaffold(
+        tmp_path, monkeypatch,
+        "    description = '提交分析结论，按 script_analyze 章节要求写报告。'")
+    assert gate.main() == 0
+
+
+def test_canary_tool_descriptions_syntax_error_fail_closed(tmp_path, monkeypatch):
+    """fail-closed：语法解析失败必须计违规（不得静默跳过）。"""
+    import scripts.check_tool_descriptions as gate
+    scan_dir = tmp_path / "src" / "video_agent" / "tools"
+    scan_dir.mkdir(parents=True)
+    (scan_dir / "broken.py").write_text(
+        "class Broken(BaseTool:\n    pass\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "SCAN_DIR", scan_dir)
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    assert gate.main() == 1
+
+
+def test_canary_tool_descriptions_missing_scan_dir_fail_closed(tmp_path, monkeypatch):
+    """fail-closed：声明的扫描目录不存在 → 1（不得静默 continue）。"""
+    import scripts.check_tool_descriptions as gate
+    monkeypatch.setattr(gate, "SCAN_DIR", tmp_path / "ghost_scan_dir")
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    assert gate.main() == 1

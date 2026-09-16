@@ -110,6 +110,25 @@ def test_normalize_group_title_strips_prefixes():
     assert ops.normalize_group_title("元素场景_01") == "元素场景_01"
 
 
+def test_normalize_group_title_strips_category_colon_prefix():
+    """P0-A1（2026-09-16）：中文类别词 + 全角/半角冒号前缀同样剥除，
+    与前端 stripCategoryPrefix 保持同集合（场景|道具|人物|角色|音频|载具）。
+    三不变量：只剥不加 / 剥后非空 / 剥后须含中文主体。"""
+    from src.video_agent.state import storyboard_ops as ops
+    # 全角冒号
+    assert ops.normalize_group_title("角色：张三") == "张三"
+    assert ops.normalize_group_title("元素场景：木星轨道") == "木星轨道"
+    # 半角冒号
+    assert ops.normalize_group_title("场景:客厅") == "客厅"
+    assert ops.normalize_group_title("道具 : 白色薄膜") == "白色薄膜"
+    # 剥后无主体（纯冒号无内容）→ 原样返回（剥后非空不变量）
+    assert ops.normalize_group_title("角色：") == "角色："
+    assert ops.normalize_group_title("场景:") == "场景:"
+    # 纯 ASCII 原样返回（无中文主体 → 剥后须含中文不变量）
+    assert ops.normalize_group_title("Character: John") == "Character: John"
+    assert ops.normalize_group_title("Scene: Bridge") == "Scene: Bridge"
+
+
 # test_add_group_title_normalized_on_write 已随 Q2 裁决 2026-09-01 退役删除：
 # 文本轨建组入口（executor.execute add_group）随执行器家族整体退役，
 # 归一语义由下方 FC 轨同覆盖用例钉死（G4 同类路径）。

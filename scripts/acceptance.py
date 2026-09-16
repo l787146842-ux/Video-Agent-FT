@@ -70,6 +70,10 @@ GATES: List[Tuple[str, List[str]]] = [
     # 批 4 · 漂移 lint（V3-3 收窄口径）：Skill 章节锚点存在性——
     # 只查 planner 必备 / 锚点合法 / 开闭配对；暂停行与依赖行不查（必误报）。
     ("skill_anchor_lint", [sys.executable, "scripts/check_skill_anchor_lint.py"]),
+    # 2026-09-15 铺满批（dsh 对齐）：工具描述卫生闸——class 级 description
+    # 只留正面契约，命中禁令句/流程纪律句/他层阶段名单即 FAIL
+    # （阶段名单唯一源 = core/subagent.py::PIPELINE_STAGE_KINDS）。
+    ("tool_descriptions", [sys.executable, "scripts/check_tool_descriptions.py"]),
 ]
 # ===== Phase 2: SUITES — 测试四件套（生成覆盖率产物供 RATCHETS 消费） =====
 SUITES: List[Tuple[str, List[str]]] = [

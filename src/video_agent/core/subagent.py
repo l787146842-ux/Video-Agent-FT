@@ -23,11 +23,13 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 的通用委派全现状不动。仍是模型经 FC 自主发起、同一循环同一闸机链，
 非机械执行器（FORBIDDEN 符号零触碰）。
 """
-from typing import FrozenSet
+from typing import Dict, FrozenSet
 
 from src.video_agent.utils.prompts import load_prompt_section
 # 阶段标注取展示标签（顶层导入：core→skill_runtime 无环，prompt_builder 同构先例）
-from src.video_agent.skill_runtime.registry import STAGE_LABELS
+from src.video_agent.skill_runtime.registry import (
+    CAPABILITY_TOOL_STAGES, STAGE_LABELS,
+)
 
 # 模型可见的子代理工具名（无 provider_kind，可在 fc_tool_runner 按名拦截，
 # 同 workflow_pause 一类控制流伪工具；不受 check_fc_tool_name_literals 约束）。
@@ -55,13 +57,63 @@ SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
 # 结构上关闭跨阶段预读通道（分镜子代理物理看不到其它章节，等效 Flova 隔离）。
 STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({"read_skill"})
 
-# 阶段执行器试点（2026-09-15）：委派可选的生产阶段枚举（与
-# registry.CAPABILITY_TOOL_STAGES 键同名）；试点只开两个最吃上下文的阶段，
-# 铺开批照模子加其余五个（storyboard_key_elements / storyboard_audio /
-# write_media_prompt / audio_generate / video_assembler）。
+# 阶段执行器（2026-09-15 试点、同日铺满）：委派可选的生产阶段枚举（与
+# registry.CAPABILITY_TOOL_STAGES 键同名）。设计/分析类阶段全部可委派
+# （章节随委派注入子级）；生成/组装类阶段（image_generate/generate_video/
+# audio_generate/video_assembler）确认闸留主线程，不进本枚举。
 PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
-    "script_analyze", "storyboard_shots",
+    "script_analyze", "storyboard_key_elements", "storyboard_shots",
+    "storyboard_audio", "write_media_prompt",
 })
+
+# 两桶分工（正向设计单一事实源）：可委派阶段 → 阶段执行器在其上下文内调用的
+# 生产工具（主代理面在顶级生产轮裁掉这些，只能经委派触达）；主线程阶段工具
+# （document_write/workflow_pause/read_state_group/image_generate/generate_video）
+# 不在此表，主代理直调。本表是「主代理面裁剪」与「阶段执行器必备工具」的唯一源。
+_STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
+    "script_analyze": frozenset({"read_uploaded_doc", "script_analysis_report"}),
+    "storyboard_key_elements": frozenset({"storyboard_create_group"}),
+    "storyboard_shots": frozenset({"storyboard_create_group"}),
+    "storyboard_audio": frozenset({"storyboard_create_group"}),
+    "write_media_prompt": frozenset(
+        {"storyboard_add_draft", "storyboard_patch_draft"}),
+}
+
+# 主代理在生产轮额外不持有的回读工具（章节/草稿全文/媒体画面）：这些是
+# 阶段执行器与前端面板的职责，主代理经摘要+事件卡获知（flova7「主代理读不到
+# 全文、用户去面板看」同理念）；保留则主代理会忍不住亲读亲做（3333 实证）。
+_MAIN_READBACK_DENY: FrozenSet[str] = frozenset({
+    "read_skill", "read_draft", "view_storyboard_media",
+})
+
+# 主代理面在顶级生产轮裁剪的生产工具集（= 各阶段工具并集 ∪ 回读三件套）：
+# 主代理物理上读不到剧本/章节、建不了组/草稿 → 执行可委派阶段的唯一方式=委派
+# （dsh 结构性剥夺 > 提示词恳求，workflow 沙箱 L137-149 同理念）。
+PRODUCTION_MAIN_PRUNE: FrozenSet[str] = (
+    frozenset().union(*_STAGE_TOOLS.values()) | _MAIN_READBACK_DENY)
+
+# 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
+# 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
+# （_STAGE_TOOLS），配置漂移在 import 期即报错，不带到运行时静默丢章节注入。
+for _stage in PIPELINE_STAGE_KINDS:
+    if _stage not in CAPABILITY_TOOL_STAGES:
+        raise ValueError(
+            f"[subagent] PIPELINE_STAGE_KINDS 漂移：阶段 {_stage!r} 缺 "
+            f"registry.CAPABILITY_TOOL_STAGES 章节映射（fail-loud）")
+    if _stage not in STAGE_LABELS:
+        raise ValueError(
+            f"[subagent] PIPELINE_STAGE_KINDS 漂移：阶段 {_stage!r} 缺 "
+            f"registry.STAGE_LABELS 展示标签（fail-loud）")
+    if _stage not in _STAGE_TOOLS:
+        raise ValueError(
+            f"[subagent] PIPELINE_STAGE_KINDS 漂移：阶段 {_stage!r} 缺 "
+            f"_STAGE_TOOLS 工具集（fail-loud）")
+del _stage
+
+
+def stage_tools(stage: str = "") -> FrozenSet[str]:
+    """阶段执行器必备工具集（空/未知阶段返回空集）。"""
+    return _STAGE_TOOLS.get(resolve_stage(stage), frozenset())
 
 
 def resolve_subagent_kind(kind: str = ""):
@@ -123,11 +175,14 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
     """子级任务文本 = 固定权限范围声明 + 阶段标注（带 stage 时）+ 一句目标。
 
     2026-09-15 1111 批（对齐 flova 精简）：任务书**只承载目标**。范围/源文档/
-    产出规范一律不复述——子代理与主代理同看工作台状态（child_ctx
-    use_studio_context），源文档/Skill 自己用读工具取，产出规范以系统注入的
-    阶段章节为准；父复述只会污染子任务 + 双份事实源 + 烧 token。
-    通用形态：不再前置分类型职责块；阶段形态：只加一行阶段标注
-    （取 registry.STAGE_LABELS），章节正文由 planner 装配层精准注入。
+    产出规范一律不复述——工作台状态经读工具按需获取，源文档/Skill 自己用
+    读工具取，系统注入的阶段章节是方法参考（须消化进产出，不照抄字段小标题/
+    清单骨架，措辞唯一源 = subagent.md DELEGATION_CONTEXT）；父复述只会污染
+    子任务 + 双份事实源 + 烧 token。
+    通用形态：不再前置分类型职责块；阶段形态：只加一行事实性阶段标注
+    （取 registry.STAGE_LABELS，不带解释性括号——2026-09-16 P1-D/R3：括号内
+    「章节即产出规范的全部依据」曾诱导子代理照抄章节骨架），章节正文由
+    planner 装配层精准注入。
     """
     clean = str(task or "").strip()
     ctx = subagent_delegation_context()
@@ -137,5 +192,5 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
     resolved = resolve_stage(stage)
     if resolved:
         label = STAGE_LABELS.get(resolved, resolved)
-        header += f"本次委派阶段：{label}（系统已注入该阶段 Skill 章节全文，章节即产出规范的全部依据）。\n\n"
+        header += f"本次委派阶段：{label}\n\n"
     return f"{header}===== 本次委派目标 =====\n{clean}"

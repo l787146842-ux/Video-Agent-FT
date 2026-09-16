@@ -97,6 +97,14 @@ _EXEC_MODE_NOTE_FILE = "planner/execution_mode.md"
 # 后台节点任务登记；drain 供测试/关停等待
 _BG_TASKS: set = set()
 
+# 子代理标题最大长度（含省略号）
+_SUBAGENT_LABEL_MAX = 40
+
+# R7 analysis 阶段化注入白名单：故事板设计阶段子代理承接前序剧本分析结论，
+# 但子级新建隔离上下文（history=[]）是零状态通道——不注入则看不到 analysis。
+# 仅白名单阶段注入（按预算截断），其余阶段零注入（防跨阶段污染 + 省 token）。
+_ANALYSIS_INJECT_STAGES = frozenset({"storyboard_key_elements", "storyboard_shots"})
+
 
 async def drain_background_tasks() -> None:
     """等待在途后台节点任务完成（幂等；测试与优雅关停钩子）。"""
@@ -182,6 +190,9 @@ class PlannerContext:
     subagent_depth: int = 0
     subagent_no_confirm: bool = False
     subagent_deny: Optional[frozenset] = None
+    # 轮内被裁剪工具集（R11 裁剪可见性）：轮始由 _compute_excluded_tools 签发，
+    # 供 build_state_tail_message 渲染 UNAVAILABLE 段（模型可见哪些工具本轮不可用）。
+    turn_excluded: Optional[frozenset] = None
     # （step_info 已随二期 G3 退役删除：状态尾部步数行每步必变是强制
     # 前缀失效源；轮次信息由 STEP_FEEDBACK「第 N 轮」承载）
     # 会话事件流归属（v4 主刀批 E1）：本请求的 conversation_id（可空=活跃会话，
@@ -234,6 +245,10 @@ class PlannerResponse:
     # 落停止痕迹消息并不再发 done（stopped 终态事件已由 agent_loop 先行下发）
     stopped: bool = False
     stop_phase: str = ""
+    # R9 analysis 对话可见：本轮 script_analysis_report 成功产出的分析摘要
+    # （fc_tool_runner 成功路径签发）；随 done payload 下发，web 层据此在
+    # 对话框追加一条「剧本分析」摘要消息（不再仅右侧时间线事件卡）。空串=本轮无分析。
+    analysis_digest: str = ""
 
 
 @dataclass
@@ -324,6 +339,15 @@ class Planner:
         deny = getattr(context, "subagent_deny", None)
         if deny:
             excluded |= set(deny)
+        # 生产轮主代理裁剪（分工重设计，2026-09-15）：仅顶级生产轮生效；
+        # 子级（depth≥1）/微调（adjust_scope）/自由对话（无 skill）不裁。
+        # 子级**不继承**本裁剪——否则阶段执行器会被饿死（script_analyze 需
+        # read_uploaded_doc、建组需 storyboard_create_group）；裁剪集 = 各可委派
+        # 阶段生产工具并集（subagent.PRODUCTION_MAIN_PRUNE 单一源）。
+        if (getattr(context, "skill_name", "")
+                and not getattr(context, "subagent_depth", 0)
+                and not getattr(context, "adjust_scope", None)):
+            excluded |= subagent_mod.PRODUCTION_MAIN_PRUNE
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:
@@ -374,7 +398,7 @@ class Planner:
                 self.state_manager,
                 {"kind": "subagent", "parent_conversation": parent_cid,
                  "subagent_kind": meta_kind,
-                 "label": (task or "")[:24]},
+                 "label": (lambda t: t[:_SUBAGENT_LABEL_MAX - 1] + "\u2026" if len(t) > _SUBAGENT_LABEL_MAX else t)((task or ""))},
                 title="子代理")
             child_cid = str((conv or {}).get("id") or "")
         except Exception as _e:  # 子会话创建失败不阻断委派（降级为不落流）
@@ -463,6 +487,21 @@ class Planner:
                             base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
                 except Exception as _e:
                     logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
+        # R7 analysis 阶段化注入：故事板设计阶段（白名单）子代理需承接前序剧本
+        # 分析结论——子级隔离上下文（history=[]）看不到主线程的 analysis 状态通道。
+        # 命中白名单才注入，按预算截断（summary≤500 / report≤2500）；analysis 为空
+        # 守卫跳过；其余阶段零注入（防跨阶段污染 + 省 token）。
+        if resolved_stage in _ANALYSIS_INJECT_STAGES:
+            try:
+                _analysis = (self.state_manager.state_dict or {}).get("analysis") or {}
+            except Exception:  # 状态读取失败不阻断委派（降级为零注入）
+                _analysis = {}
+            _a_summary = str(_analysis.get("summary") or "").strip()
+            _a_report = str(_analysis.get("report") or "").strip()
+            if _a_summary or _a_report:
+                base_task += (
+                    "\n\n===== 前序分析摘要（系统注入）=====\n"
+                    f"{_a_summary[:500]}\n{_a_report[:2500]}")
         # 子在同一 asyncio task/同一 context 内联跑：包一层追踪隔离带（D1），
         # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
         # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。
@@ -629,6 +668,11 @@ class Planner:
 
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
+        # one visibility = one permission（dsh subagent.md L90-97）：轮内裁剪集
+        # 同步下发执行器，被裁工具即便被模型误调也拒绝执行（不止从 schema 消失）。
+        self._fc_runner.turn_excluded = self._excluded_tools
+        # R11 裁剪可见性：同步写入 context，供 build_state_tail_message 渲染 UNAVAILABLE 段
+        context.turn_excluded = self._excluded_tools
         self._system_degrader = self._make_system_degrader(context)
         # 批 10 · 执行偏好注入：轮始按档位签发（文案唯一源外置，见
         # prompts/planner/execution_preference.md；闸机兜底见批 9 同意账本）
@@ -791,6 +835,8 @@ class Planner:
             # 轮首状态事件正文（二期 G3）：组装时追加在 user 消息后
             # （与日志 seq 同序，回放=请求逐字节）
             state_event_content=str(getattr(context, "state_event_content", "") or ""),
+            # 子代理深度（R6 fakestop 豁免）：透传至 agent_loop 轮末策略
+            subagent_depth=context.subagent_depth,
         )
 
         # Q22 裁决 2026-09-01：花钱生成失败不静默——轮末机械附一键重试选项卡（实现体 planner_output）
@@ -818,6 +864,9 @@ class Planner:
         # 只把循环的 stopped/stop_phase 随响应下发（web 层据此落痕迹）
         response.stopped = bool(loop_result.stopped)
         response.stop_phase = str(loop_result.stop_phase or "")
+        # R9 analysis 对话可见：透传 fc_runner 本轮成功路径签发的分析摘要
+        # （chat 持久化归 web 层，core 层不调 add_chat_message）
+        response.analysis_digest = str(getattr(self._fc_runner, "analysis_digest", "") or "")
         # 问即停：发行点签发的 pause_id 透传，供 _issue_pause 幂等
         response.pause_id = str(getattr(loop_result, "pause_id", "") or "")
 
@@ -955,6 +1004,8 @@ class Planner:
             # 协作式停止标记：web 透传层据此落停止痕迹、不再发 done
             "stopped": bool(result.stopped),
             "stop_phase": result.stop_phase,
+            # R9 analysis 对话可见：本轮分析摘要（非空时 web 层追加对话消息）
+            "analysis_digest": result.analysis_digest,
         }
         # 推理模型思考内容（五项修法批 4）：default-off——闸门开且非空才随
         # done payload 下发（web 层据此持久化，供下轮历史回传）

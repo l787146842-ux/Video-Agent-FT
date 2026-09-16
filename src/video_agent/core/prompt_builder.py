@@ -211,6 +211,15 @@ class PromptBuilder:
                 "shared/selected_draft.md", "POINTER",
                 draft_id=context.selected_draft_id,
                 draft_type=context.selected_type or "未知"))
+        # R11 裁剪可见性：轮内被裁工具非空时渲染 UNAVAILABLE 段，模型可见
+        # 哪些工具本轮不可用及替代路由（消除“思考打架”）
+        _turn_excl = getattr(context, "turn_excluded", None)
+        if _turn_excl:
+            _excl_names = ", ".join(sorted(_turn_excl))
+            _excl_route = "经委派（run_subagent）执行对应阶段"
+            parts.append(render_prompt(
+                "shared/turn_excluded.md",
+                names=_excl_names, route=_excl_route))
         # （步数行已随二期 G3 退役删除：每步必变 = 强制每步前缀失效的
         # 元凶之一；STEP_FEEDBACK 已带「第 N 轮」，信息不丢）
         return "\n\n".join(parts)
@@ -576,6 +585,8 @@ def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """Skill 目录（渐进式披露：名称+摘要常驻，全文按需 read_skill）。
     scope 任务（微调真子对话）不注入：子对话只看对应目标元素，
     目录清单属非目标面（对齐外部标杆，连指针清单也不给）。"""
+    if getattr(context, "subagent_depth", 0):
+        return ""
     if getattr(context, "adjust_scope", None):
         return ""
     return pb.build_skill_catalog(context)
@@ -584,6 +595,8 @@ def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
 def _sec_mcp_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """MCP 外部工具目录（两段式注入段 1）：仅名称+摘要常驻，
     完整 schema 等 mcp_tool_catalog enable 后次回合进 FC tools。"""
+    if getattr(context, "subagent_depth", 0):
+        return ""
     try:
         return mcp_catalog.catalog_block(
             pb._get_raw_state() if pb._get_raw_state else None) or ""
@@ -622,6 +635,8 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     批 B3 改无条件注入：阶段门控（planning 不注入）会在首组建组后于
     system 中段凭空出现整段，击穿前缀缓存——本段内容极小且极少变化，
     常驻的字节稳定性收益大于 context rot 代价。"""
+    if getattr(context, "subagent_depth", 0):
+        return ""
     if not context.use_studio_context:
         return ""
     # 会话级压缩 compaction 是创作设定的唯一软性保护，

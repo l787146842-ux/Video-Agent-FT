@@ -156,11 +156,7 @@ class DocumentWriteTool(BaseTool):
     risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（文档带修订记录），写入不设逐次确认闸
     detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
     description = (
-        "写入/更新项目文档工件（如制片规格、脚本大纲）。已存在同名文档则整篇覆盖"
-        "（规格是活的：改分辨率/时长/声音方向等先更新规格再继续，系统自动留更新痕迹）。"
-        "规格文档定位：写提示词、拆关键元素、拆分镜时按需自取的输入参照。"
-        "文档内容以调用时所属流程步骤的定义为准：只写该步骤定义的内容，"
-        "把其他步骤的产物（分析细节、设计规划等）并入本文档是错误的。"
+        "写入/更新项目文档工件。已存在同名文档则整篇覆盖，系统自动留更新痕迹。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -218,9 +214,7 @@ class ReadUploadedDocTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "读取用户上传的素材文档（故事/剧本等）全文。"
-        "上传文档正文不自动注入上下文，清单里只有名称/字数/预览，"
-        "需要全文时按 name 调用本工具；超长文档传 start 分段续读。"
+        "读取用户上传的素材文档全文。按 name 指定文档；超长文档传 start 分段续读。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -303,10 +297,8 @@ class ReadSkillTool(BaseTool):
     parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "Skill 正文/章节/附属资源按需读取。"
-        "选中 Skill 已注入流程段全文与章节目录，其余章节传 section 读取，"
-        "超长章节传 start 续读；未选中的 Skill 经本工具读全文；"
-        "目录包附属资料（主文标注「按需加载」处）传 resource（如 references/…）读取。"
+        "Skill 正文/章节/附属资源读取。传 section 读取指定章节，"
+        "超长章节传 start 续读；传 resource 读取附属资料（如 references/…）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -433,9 +425,7 @@ class ListSkillsTool(BaseTool):
     parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "列出当前全部启用的 Skill（名称+摘要，只读）。经开关停用的 Skill 不在此列；"
-        "目录段因预算截断未列全时，或需核对可用 Skill 名单时调用本工具；"
-        "具体 Skill 全文仍经 read_skill 按需读取。"
+        "列出当前全部启用的 Skill（名称+摘要，只读）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -465,9 +455,7 @@ class GetSkillAssetTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "取 Skill 目录包 assets/ 下素材资源的描述符（路径/名/大小/类型）："
-        "把其中 path 传给生成类工具（image_generate/generate_video 等）作参考素材；"
-        "二进制内容不进对话上下文，文本参考资料经 read_skill(resource=…) 读取。"
+        "取 Skill 目录包 assets/ 下素材资源的描述符（路径/名/大小/类型）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -518,9 +506,7 @@ class ReadProjectDocTool(BaseTool):
     parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "读取项目规格文档（document_write 产出，如 制片规格.md）全文。"
-        "工作台状态 JSON 的 documents 节只有清单（名称/摘要），全文经本工具读取；"
-        "超长文档传 start 分段续读。"
+        "读取项目文档全文。超长文档传 start 分段续读。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -576,12 +562,9 @@ class ImageGenerateTool(BaseTool):
     detail_tier = "expand"  # 产出类
     provider_kind = "image"  # I-3 裁决 2026-09-03：provider 注入声明轴（single/batch 形态在 apply_provider_defaults 内消化）
     description = (
-        "生图统一工具。mode='batch'（默认）：面向故事板草稿批量出图，"
-        "target 传 all_keyElements / all_shots / 具体 draft_id，"
-        "系统自动把草稿 sceneRefs 引用的元素概念图注入为参考图；"
+        "生图工具。mode='batch'（默认）：按 target 批量出图，系统自动注入参考图；"
         "mode='single'：按 prompt 生成单张图片并返回图片地址，每轮限一次。"
-        "生成渠道优先级：用户当前消息显式指定 > 草稿自身参数 > 全局设置默认渠道，"
-        "系统自动注入，规格文档与 Skill 不承载渠道参数。"
+        "生成渠道由系统按优先级自动注入。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -836,10 +819,8 @@ class WorkflowPauseTool(BaseTool):
     risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
     detail_tier = "expand"  # 关键交互：暂停请求展开可见输入
     description = (
-        "暂停工作流并请求用户确认——真正的停 = 调用本工具（只在正文里写「请确认」不算暂停），"
-        "成功发行后本轮立即结束。用于所用 Skill 声明的暂停点，或需向用户问询/确认时。"
-        "同阶段收尾类工具（落账/写档）可与之同批提交（先收尾后暂停），无需为暂停单独跑一轮。"
-        "message 是给用户的补充说明（卡片问句由系统按阶段自动生成，阶段成果由系统挂事件卡展示）。"
+        "暂停工作流并请求用户确认——真正的停 = 调用本工具（只在正文里写「请确认」不算暂停）。"
+        "message 是给用户的补充说明（确认卡片由系统自动生成）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -863,13 +844,13 @@ class RunSubagentInput(BaseModel):
         description="交给子代理的目标：一句话写清要产出什么即可；"
         "范围/源文档/产出规范不用写（子代理自看工作台、自读文档、章节已注入）。",
     )
-    # 阶段执行器试点（2026-09-15，对齐 Flova 章节隔离）：可选生产阶段，
-    # 带 stage 时平台精准注入该阶段 Skill 章节全文并适配工具面。
+    # 阶段执行器铺满批（2026-09-15）：可选生产阶段名，成员唯一枚举 =
+    # core/subagent.py::PIPELINE_STAGE_KINDS；描述不硬编码阶段名单（单一事实源）。
     stage: str = Field(
         "",
-        description="本次委派推进的生产阶段：script_analyze=剧本分析 / "
-        "storyboard_shots=分镜拆解。填写后系统自动把所选 Skill 对应阶段的章节全文"
-        "注入子代理（章节即产出规范），任务书里不用复述规范；其它工作留空即可。",
+        description="本次委派推进的生产阶段名（可委派阶段名单由系统枚举，"
+        "非法值将被拒收并列白名单）。填写后系统自动把所选 Skill 对应阶段的章节全文"
+        "注入子代理（章节即产出规范），任务书里不用复述规范；非阶段委派留空即可。",
     )
 
 
@@ -885,12 +866,9 @@ class RunSubagentTool(BaseTool):
     # 删「不要用于确认类/花钱生成」禁令句——子级白名单无确认工具、无生成工具，
     # 结构上已锁死；说明层禁令经 3333 项目实证会吓退模型不敢委派。
     description = (
-        "把一段可独立完成的批量工作委派给子代理：它在自己的上下文里"
-        "连续执行到完成，不占用本对话的上下文，只回结果摘要、不回中间步骤。"
-        "任务书只写要做什么、范围到哪即可——子代理与你共享工作台、平台随任务自动"
-        "注入所选 Skill 正文，剧本/文档/规范它都能自己 read_* 取读，不必复述。"
-        "推进生产线阶段（剧本分析/分镜拆解）时带上 stage 参数，系统会把该阶段"
-        "章节全文精准注入子代理，更省往返、产出更贴规范。"
+        "把一段工作委派给子代理：它在独立上下文里连续执行到完成，只回结果摘要。"
+        "task 写要做什么即可（子代理共享工作台、自读文档）。"
+        "stage 填生产阶段名时，系统自动注入该阶段 Skill 章节全文。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

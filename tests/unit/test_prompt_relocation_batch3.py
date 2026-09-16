@@ -58,17 +58,22 @@ def test_b3_prompt_builder_no_inline_instructions():
 
 
 def test_b3_pause_discipline_single_home():
-    """暂停纪律唯一家 = workflow_pause 工具描述（P1 规则单家；
-    2026-09-12 指令体量治理批：原 skill_runtime 纪律2/4 停机判定与收尾批
-    合并条款迁入工具描述，protocol 暂停段同步删除。
-    （同日 3333 事故批：description 改 dsh 式正面契约——回应三态条款
-    随说明层减负退役，三态消费语义归平台 reducer 行为，不再模型可见。）"""
+    """暂停纪律唯一家演进：
+    - 2026-09-12 指令体量治理批：原 skill_runtime 纪律2/4 停机判定与收尾批
+      合并条款迁入工具描述，protocol 暂停段同步删除。
+    - 2026-09-15 铺满批（dsh 正面契约）：工具描述只留正面契约，停轮/批次
+      纪律句迁回 iron_rules_header/skill_runtime（tool_descriptions 闸强制）；
+      工具描述保留「真正的停 = 调用本工具」正面契约 + 阶段收集限定。
+    """
     from src.video_agent.tools.document_tools import WorkflowPauseTool
 
     wd = WorkflowPauseTool().description or ""
+    # 正面契约保留
     assert "真正的停 = 调用本工具" in wd, "假停无效条款（工具描述）丢失"
-    assert "先收尾后暂停" in wd, "收尾批合并条款（工具描述）丢失"
-    assert "本轮立即结束" in wd, "问即停结束本轮条款（工具描述）丢失"
+    # 2026-09-15 铺满批：工具描述只留机械契约，业务纪律归 prompts 层
+    assert "本轮立即结束" not in wd, "停轮句应迁回 iron_rules/skill_runtime"
+    assert "先收尾后暂停" not in wd, "批次纪律句应迁回 skill_runtime DISCIPLINE"
+    assert "启动协议项归启动轮" not in wd, "阶段收集纪律属业务层，不应在工具描述"
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
     assert "何时停（唯一判定）" not in sd, "停机判定式已在纪律2 退役，不得回潮"
     ir = load_prompt("planner/protocol.md")

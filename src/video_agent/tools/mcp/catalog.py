@@ -48,7 +48,7 @@ class McpToolCatalogTool(BaseTool):
     description = (
         "MCP 外部工具目录：action=list 查看可用外部工具；action=detail 查看"
         "指定工具完整参数；action=enable 启用工具（次回合其 schema 才可用）；"
-        "action=disable 停用。外部工具默认拒绝，必须先 enable 再调用。")
+        "action=disable 停用。")
     risk = "low"
     detail_tier = "output"  # 平台闸口：仅输出留痕
 

@@ -41,8 +41,10 @@ def test_s2_stream_and_nonstream_paths_carry_turn_id():
     #  收尾抽至 web/stop_manager.py（行数棘轮清偿），故指纹改为两文件合计）
     # （影响面修复批 +1：视频内联预览卡持久化——videoCard 与 imageCard 对称，
     #  done 结算独立条目带同轮 turn_id）
+    # （P1-G R9 +1：analysis 对话可见——本轮成功产出剧本分析时追加一条
+    #  meta=剧本分析 的对话摘要，同轮 turn_id 聚合，与既有各处同语义）
     sm = (ROOT / "src/video_agent/web/stop_manager.py").read_text(encoding="utf-8")
-    assert cs.count("turn_id=turn_id") + sm.count("turn_id=turn_id") == 6
+    assert cs.count("turn_id=turn_id") + sm.count("turn_id=turn_id") == 7
     assert '"turn_id": turn_id' in cs
     # 非流式路径同样携带
     assert "turn_id=ns_turn_id" in cs

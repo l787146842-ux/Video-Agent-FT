@@ -490,3 +490,57 @@ async def test_launch_subagent_uses_generic_deny(svc, monkeypatch):
     from src.video_agent.core.subagent import SUBAGENT_TOOL_DENY
     assert seen["ctx"].subagent_deny == SUBAGENT_TOOL_DENY
     assert "【子代理类型" not in seen["msg"]
+
+
+# ---------- P0-C label 截断修复（R5） ----------
+
+async def test_subagent_label_truncation(svc, monkeypatch):
+    """子代理标题截断：超过 40 字符取前 39 + …，否则原样。"""
+    from src.video_agent.core.planner import _SUBAGENT_LABEL_MAX
+    from src.video_agent.state import conversation_ops
+
+    labels_seen: list = []
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+
+    # 拦截 conversation_ops.create_scoped_conversation 记录实际传入的 label
+    _orig_create = conversation_ops.create_scoped_conversation
+
+    def _spy_create(state_manager, scope, **kw):
+        labels_seen.append(scope.get("label", ""))
+        return _orig_create(state_manager, scope, **kw)
+
+    monkeypatch.setattr(conversation_ops, "create_scoped_conversation", _spy_create)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+
+    # Case 1: 短于 40 字符——原样保留
+    short_task = "拆解任务"
+    await parent._launch_subagent(short_task, PlannerContext(subagent_depth=0))
+    assert labels_seen[-1] == short_task
+
+    # Case 2: 恰好 40 字符——不截断
+    exact_task = "a" * _SUBAGENT_LABEL_MAX
+    await parent._launch_subagent(exact_task, PlannerContext(subagent_depth=0))
+    assert labels_seen[-1] == exact_task
+    assert len(labels_seen[-1]) == _SUBAGENT_LABEL_MAX
+
+    # Case 3: 超过 40 字符——截断为 39 + "…"
+    long_task = "把这段工作做完" * 20  # 远超 40
+    await parent._launch_subagent(long_task, PlannerContext(subagent_depth=0))
+    label = labels_seen[-1]
+    assert len(label) == _SUBAGENT_LABEL_MAX  # 39 + 1 = 40
+    assert label.endswith("\u2026")
+    assert label == long_task[:_SUBAGENT_LABEL_MAX - 1] + "\u2026"
+
+    # Case 4: 41 字符（刚好超 1）
+    over_by_one = "b" * (_SUBAGENT_LABEL_MAX + 1)
+    await parent._launch_subagent(over_by_one, PlannerContext(subagent_depth=0))
+    label = labels_seen[-1]
+    assert len(label) == _SUBAGENT_LABEL_MAX
+    assert label == "b" * (_SUBAGENT_LABEL_MAX - 1) + "\u2026"

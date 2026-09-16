@@ -207,7 +207,13 @@ def _run_skill_smoke(slug: str) -> None:
         svc, ["platform.tool_risk", "platform.gen_confirm"], flush=True)
 
     # --- 消息 1：标准产物序列（末步 workflow_pause 问即停）---
-    ctx = PlannerContext(use_studio_context=False, skill_name=slug)
+    # 2026-09-15 铺满批更新：本测试钉的是平台事实落盘（state 记录），非路由架构。
+    # 可委派阶段生产工具（script_analysis_report / storyboard_create_group 等）
+    # 在顶级生产轮由 PRODUCTION_MAIN_PRUNE 裁剪，主代理直调会被 turn_excluded
+    # 拒执行（one visibility = one permission）。
+    # 本测试经 subagent_depth=1 模拟阶段执行器上下文（子级不继承顶级生产裁剪），
+    # 工具面完整可用；路由改造（主代理经 run_subagent 委派）由 test_subagent_delegation 覆盖。
+    ctx = PlannerContext(use_studio_context=True, skill_name=slug, subagent_depth=1)
     result = asyncio.run(planner.handle_message("请按 Skill 流程开始", ctx))
     assert not result.warnings or all("上限" not in w for w in result.warnings), \
         f"[{slug}] 意外警告: {result.warnings}"
@@ -484,8 +490,13 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         planner = Planner(state_manager=svc,
                           llm_adapter=ScriptedAdapter(script1),
                           tool_manager=ToolManager)
-        ctx1 = PlannerContext(use_studio_context=False,
-                              skill_name="未来科幻真人电影")
+        # 2026-09-15 铺满批更新：本测试钉的是规格写入落盘 + 暂停卡发行链路，
+        # 非路由架构。read_skill / document_write 在顶级生产轮被裁剪
+        # （PRODUCTION_MAIN_PRUNE + _STUDIO_STATE_TOOLS），经 subagent_depth=1
+        # 模拟阶段执行器上下文（子级不继承顶级生产裁剪），工具面完整可用。
+        ctx1 = PlannerContext(use_studio_context=True,
+                              skill_name="未来科幻真人电影",
+                              subagent_depth=1)
         result1 = asyncio.run(planner.handle_message("开始", ctx1))
         # 规格写入（medium）直执行：无确认闸拦截告警，草稿已落盘
         assert not any("高风险工具确认闸拦截" in w
@@ -517,8 +528,9 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         ]
         planner.llm_adapter = ScriptedAdapter(script2)
         AgentTracer.reset()
-        ctx2 = PlannerContext(use_studio_context=False,
-                              skill_name="未来科幻真人电影")
+        ctx2 = PlannerContext(use_studio_context=True,
+                              skill_name="未来科幻真人电影",
+                              subagent_depth=1)
         result2 = asyncio.run(planner.handle_message("硬核深空探索 / 3分钟 / 5段式", ctx2))
         assert result2.applied_actions >= 1, \
             f"[1000] 确认后写规格未执行: {result2.warnings}"
