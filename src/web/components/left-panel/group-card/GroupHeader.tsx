@@ -11,7 +11,7 @@ export function GroupHeader(props: {
   groupId: string;
   /** 以下均为 accessor（store 字段可变：改名/换徽标后须响应式刷新） */
   title: () => string;
-  titleSuffix: () => string;
+  durationBadge: () => string;
   index: () => number;
   badge: () => string;
   badgeStyle: () => Record<string, string> | undefined;
@@ -84,7 +84,6 @@ export function GroupHeader(props: {
             onDblClick={() => { setTitleVal(props.title()); setEditingTitle(true); }}
           >
             {displayTitle()}
-            {props.titleSuffix()}
           </span>
         }>
           <input
@@ -95,6 +94,9 @@ export function GroupHeader(props: {
             onBlur={() => { const v = titleVal().trim() || props.title(); if (v !== props.title()) studioActions.renameGroupLocal(props.type, props.groupId, { title: v }); setEditingTitle(false); }}
             onKeyDown={(e) => { if (e.key === 'Enter') { const v = titleVal().trim() || props.title(); if (v !== props.title()) studioActions.renameGroupLocal(props.type, props.groupId, { title: v }); setEditingTitle(false); } if (e.key === 'Escape') setEditingTitle(false); }}
           />
+        </Show>
+        <Show when={props.durationBadge()}>
+          <span class="sb-duration">{props.durationBadge()}</span>
         </Show>
       </div>
       <Show when={props.badge()}>

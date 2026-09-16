@@ -129,9 +129,9 @@ export function GroupCard(props: {
     }
   };
 
-  const titleSuffix = () =>
+  const durationBadge = () =>
     props.type === 'shot' && (props.group as ShotGroup).duration
-      ? ` (${(props.group as ShotGroup).duration})`
+      ? String((props.group as ShotGroup).duration)
       : '';
 
   return (
@@ -152,7 +152,7 @@ export function GroupCard(props: {
         type={props.type}
         groupId={props.group.id}
         title={() => props.group.title}
-        titleSuffix={titleSuffix}
+        durationBadge={durationBadge}
         index={() => props.index}
         badge={() => meta().badge}
         badgeStyle={() => meta().badgeStyle}
