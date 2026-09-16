@@ -72,70 +72,17 @@ async def first_available_image_provider_async() -> Tuple[str, str]:
 
 # ---------- 规格文档媒体偏好 ----------
 
-_MEDIA_PREF_PATTERNS: Dict[str, re.Pattern] = {
-    "image": re.compile(r"(?:图像生成|生图|图片生成)[:：]?\s*([^，,。;；\n]+)"),
-    "video": re.compile(r"(?:视频生成|生成视频)[:：]?\s*([^，,。;；\n]+)"),
-}
-_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*")
-
-
-def extract_media_preference(text: str, kind: str = "image") -> Tuple[str, str]:
-    """从规格文档正文（如「制作偏好」字段）解析媒体生成偏好。
-
-    例：「图像生成 Antigravity CLI auto 模型」→ ('gemini-cli', 'auto')。
-    供应商按配置中的显示名包含匹配（忽略大小写，最长名优先防短名误命中）；
-    模型在该供应商的模型列表中匹配（容忍一个字符的笔误，如 aotu→auto），
-    未命中返回空模型由下层回退链解决。
-    """
-    pat = _MEDIA_PREF_PATTERNS.get(kind)
-    if not pat or not text:
-        return "", ""
-    m = pat.search(text)
-    if not m:
-        return "", ""
-    seg = m.group(1).strip()
-    if not seg:
-        return "", ""
-    low = seg.lower()
-    best_pid, best_name_len = "", 0
-    for p in load_merged_providers():
-        name = str(p.get("name") or "").strip()
-        pid = str(p.get("id") or "")
-        if not name or not pid:
-            continue
-        if name.lower() in low and len(name) > best_name_len:
-            best_pid, best_name_len = pid, len(name)
-    if not best_pid:
-        return "", ""
-    cfg = get_provider_config(best_pid) or {}
-    models = [x for x in (cfg.get("image_models" if kind == "image" else "video_models") or []) if x]
-    model = ""
-    for md in models:
-        mdl = md.lower()
-        if mdl in low:
-            model = md
-            break
-    if not model:  # 笔误容忍：编辑距离≤1 或字符重排（aotu↔auto）
-        for token in _TOKEN_RE.findall(low):
-            for md in models:
-                mdl = md.lower()
-                if abs(len(token) - len(mdl)) > 1 or len(mdl) < 3:
-                    continue
-                diffs = sum(1 for a, b in zip(token, mdl) if a != b)
-                if diffs + abs(len(token) - len(mdl)) <= 1 or sorted(token) == sorted(mdl):
-                    model = md
-                    break
-            if model:
-                break
-    return best_pid, model
-
 
 def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tuple[str, str]:
-    """生成渠道单一事实源（顶部「全局设置」，不再扫描规格文档）。
+    """生成渠道唯一事实源（顶部「全局设置」/runtime_settings，不再扫描规格文档）。
 
     出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由全局设置唯一
     提供，规格文档不再承载这些硬参数；旧规格文档里的残留行也不参与决策。
     未配置返回 ("", "")，调用方提示用户在顶部「全局设置」配置。
+
+    R13 退役说明：extract_media_preference（从规格正文反解渠道偏好）已删除，
+    规格正文不再被反解；新增渠道类字段须先入全局设置（settings/runtime_settings）
+    而非规格正文。
     """
     if kind == "video":
         return str(settings.default_video_provider_id or ""), str(settings.default_video_model or "")

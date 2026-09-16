@@ -12,7 +12,10 @@
   图片分辨率/视频分辨率/分镜最大时长/其它；
 - 渠道识别只认「出图/出视频/渠道/API」类明确字样与本项目**真实已配置**的
   供应商/模型名，不拿「图像生成/视频生成」这类动词短语猜渠道；
-- 归出 ≥2 个维度才启用分组（否则保持普通选项卡，避免无意义的单页向导）。
+- 系统注入维度（出图/出视频渠道、图片/视频分辨率）由全局设置注入、不入规格
+  文档，归组时并成单一「系统注入（不入规格文档）」组标签（R12）；
+- 归出 ≥2 个组标签才启用分组（否则保持普通选项卡，避免无意义的单页向导）；
+- 本模块不定义分页顺序，向导分页顺序由前端决定（R12 删除 DIMENSION_ORDER）。
 """
 import re
 from typing import Any, Dict, List, Tuple
@@ -25,11 +28,10 @@ from src.video_agent.core.ports import provider_config_port
 # 不得被误造成向导；规格向导场景恒为 ≥5 个选项（多维度×候选）
 MIN_OPTIONS_FOR_WIZARD = 5
 
-# 维度顺序 = 向导分页顺序（与规格向导收集顺序一致）
-DIMENSION_ORDER = (
-    "画幅", "时长", "视觉风格", "声音与语言", "出图API与模型", "出视频API与模型",
-    "图片分辨率", "视频分辨率", "分镜最大时长", "其它",
-)
+# 系统注入维度：渠道/分辨率硬参数由全局设置注入、不入规格文档（R12），
+# 归组时并入单一组标签，与承载全局决策参数的规格维度区分开
+SYSTEM_INJECTED_DIMENSIONS = frozenset({"出图API与模型", "出视频API与模型", "图片分辨率", "视频分辨率"})
+SYSTEM_INJECTED_GROUP = "系统注入（不入规格文档）"
 
 _ASPECT_RE = re.compile(r"\b\d{1,2}\s*:\s*\d{1,2}\b")
 _DURATION_RE = re.compile(r"\d+\s*(秒|min|mins|minutes?|小时|分钟)")
@@ -136,7 +138,9 @@ def fill_option_groups(options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """确认选项兜底归组：全部无 group 时按维度启发式补分组；否则原样返回。
 
     选项数低于 MIN_OPTIONS_FOR_WIZARD 时一律不归组：阶段确认卡片（2~4 项）
-    绝不能被误造成分页向导。归出的维度不足 2 个时同样保持普通选项卡形态。
+    绝不能被误造成分页向导。系统注入维度（SYSTEM_INJECTED_DIMENSIONS）并入
+    单一组标签「系统注入（不入规格文档）」；归出的组标签不足 2 个时同样
+    保持普通选项卡形态。
     """
     if not options or any(str(o.get("group") or "").strip() for o in options):
         return options
@@ -144,20 +148,23 @@ def fill_option_groups(options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return options
     image_names = _configured_names("image")
     video_names = _configured_names("video")
-    dims = set()
+    groups = set()
     for o in options:
         dim = classify_option(
             str(o.get("label") or ""), str(o.get("description") or ""),
             image_names, video_names,
         )
-        o["group"] = dim
-        dims.add(dim)
-    if len(dims) < 2:
+        # R12：系统注入维度并成同一组标签（不入规格文档的硬参数单独成页）
+        group = SYSTEM_INJECTED_GROUP if dim in SYSTEM_INJECTED_DIMENSIONS else dim
+        o["group"] = group
+        groups.add(group)
+    # 撤回判定按写入后的组标签计数：多维度场景仍归组、单一标签场景仍撤回
+    if len(groups) < 2:
         for o in options:
             o.pop("group", None)
         return options
     logger.info(
         f"[ConfirmOptions] 选项未携带 group 标签，已按维度兜底归组："
-        f"{len(options)} 个选项 → {len(dims)} 个维度"
+        f"{len(options)} 个选项 → {len(groups)} 个维度"
     )
     return options

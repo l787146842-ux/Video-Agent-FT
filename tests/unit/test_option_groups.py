@@ -57,13 +57,46 @@ def test_fill_groups_qwen_6666_case():
     ]
     result = fill_option_groups(options)
     groups = {o["group"] for o in result}
-    assert len(groups) >= 4  # 画幅/视觉风格/时长/声音与语言/出视频渠道
+    assert len(groups) >= 4  # 画幅/视觉风格/时长/声音与语言/系统注入
     assert all(o.get("group") for o in result)
     by_group = {}
     for o in result:
         by_group.setdefault(o["group"], []).append(o["label"])
     assert set(by_group["画幅"]) == {"横版16:9", "竖版9:16"}
     assert set(by_group["时长"]) == {"10分钟", "15分钟"}
+    # R12：系统注入维度（渠道/分辨率）不再以原维度名成组，并入单一组标签
+    assert "出视频API与模型" not in groups
+    assert set(by_group["系统注入（不入规格文档）"]) == {"火山引擎Seedance2.0", "APIMART Doubao"}
+
+
+def test_system_injected_dimensions_merge_into_single_group():
+    """R12：出图/出视频渠道 + 图片/视频分辨率四个系统注入维度并成同一组标签；
+    与规格维度（画幅）共存时仍归组（≥2 个组标签）"""
+    options = [
+        {"label": "横版16:9"},
+        {"label": "竖版9:16"},
+        {"label": "APIMART midjourney", "description": "图像生成渠道"},
+        {"label": "火山引擎Seedance2.0", "description": "视频生成渠道"},
+        {"label": "2K", "description": "图片分辨率档位"},
+        {"label": "1080p", "description": "视频分辨率档位"},
+    ]
+    result = fill_option_groups(options)
+    groups = {o["group"] for o in result}
+    assert groups == {"画幅", "系统注入（不入规格文档）"}
+
+
+def test_only_system_injected_single_label_stays_plain():
+    """R12 撤回判定按写入后的组标签计数：多个系统注入维度并入同一标签后
+    只剩单一组标签 → 仍撤回归组（不造单页向导）"""
+    options = [
+        {"label": "APIMART midjourney", "description": "图像生成渠道"},
+        {"label": "火山引擎Seedance2.0", "description": "视频生成渠道"},
+        {"label": "2K", "description": "图片分辨率档位"},
+        {"label": "720p", "description": "视频分辨率档位"},
+        {"label": "1080p", "description": "视频分辨率档位"},
+    ]
+    result = fill_option_groups(options)
+    assert all("group" not in o for o in result)
 
 
 def test_existing_groups_not_touched():

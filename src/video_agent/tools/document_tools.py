@@ -151,6 +151,40 @@ def _fuzzy_pick(items: List[Dict[str, Any]], wanted: str, keys: List[str]) -> Op
                     return item
     return None
 
+
+def _merge_sections(old: str, new: str) -> str:
+    """规格文档节级合并（R14，纯函数）：按 `## ` 标题切块后合并 old/new。
+
+    同名节用 new 替换、new 独有节追加、old 独有节保留（用户手改的节不被
+    模型重写盖掉）；old 不含任何 `## ` 标题时无节可保，回落整篇覆盖返回 new。
+    """
+    if not re.search(r"(?m)^## ", old):
+        return new
+
+    def _split(text: str) -> List[tuple]:
+        blocks: List[tuple] = []
+        head, *sections = re.split(r"(?m)^(?=## )", text)
+        if head.strip():
+            blocks.append(("", head))
+        for sec in sections:
+            title = sec.split("\n", 1)[0].strip()
+            blocks.append((title, sec))
+        return blocks
+
+    old_blocks = _split(old)
+    new_map = {t: s for t, s in _split(new) if t}
+    out: List[str] = []
+    for title, sec in old_blocks:
+        if title and title in new_map:
+            out.append(new_map.pop(title))  # 同名节：new 替换
+        else:
+            out.append(sec)  # old 独有节（含无标题头块）：保留
+    for sec in new_map.values():
+        out.append(sec)  # new 独有节：追加
+    merged = "".join(out)
+    return merged if merged.endswith("\n") else merged + "\n"
+
+
 class DocumentWriteTool(BaseTool):
     name = "document_write"
     risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（文档带修订记录），写入不设逐次确认闸
@@ -182,7 +216,12 @@ class DocumentWriteTool(BaseTool):
 
             for d in docs:
                 if d.get("name") == params.name:
-                    d["content"] = content
+                    # R14：规格文档按 `## ` 节级合并写入（用户手改的节不被盖掉）；
+                    # 非规格文档行为零变更（整篇覆盖）
+                    d["content"] = (
+                        _merge_sections(str(d.get("content") or ""), content)
+                        if is_spec else content
+                    )
                     d["updated_at"] = now
                     # 批 1 · A4：可更新留痕——覆盖式更新也留下修订次数
                     d["revisions"] = int(d.get("revisions") or 0) + 1

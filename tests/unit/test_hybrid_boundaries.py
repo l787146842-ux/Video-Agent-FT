@@ -481,11 +481,19 @@ _SPEC_PREF_DOC = (
 )
 
 
-def test_extract_media_preference_antigravity_with_typo():
-    """规格「图像生成 Antigravity CLI aotu 模型」解析为 gemini-cli/auto（含笔误容忍）"""
-    from src.video_agent.core.provider_config import extract_media_preference
-    pid, model = extract_media_preference(_SPEC_PREF_DOC, "image")
-    assert pid == "gemini-cli" and model == "auto"
+def test_channel_preference_settings_only_spec_text_not_parsed(set_global_setting):
+    """R13 退役替换：extract_media_preference（规格正文反解，含笔误容忍）已删除；
+    渠道偏好只来自全局设置，规格正文残留的偏好行不影响结果"""
+    from src.video_agent.core import provider_config
+    from src.video_agent.core.provider_config import spec_media_preference
+
+    assert not hasattr(provider_config, "extract_media_preference")
+    set_global_setting("default_image_provider_id", "grsai")
+    set_global_setting("default_image_model", "gpt-image-2")
+    state = {"documents": [{"name": "制片规格.md", "content": _SPEC_PREF_DOC}]}
+    # 规格正文仍写着 Antigravity CLI aotu，但结果只反映全局设置
+    pid, model = spec_media_preference(state, "image")
+    assert pid == "grsai" and model == "gpt-image-2"
 
 
 def test_spec_media_preference_global_settings_sole_source(set_global_setting):
