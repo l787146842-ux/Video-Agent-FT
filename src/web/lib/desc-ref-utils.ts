@@ -40,6 +40,28 @@ export function resolveRefTitle(ref: string, keyElements: KeyElementLike[]): str
 }
 
 /**
+ * K7 批（2026-09-16）：显示标题归一单一事实源——GroupHeader / SceneRefsChips
+ * 本地副本收敛到本函数：① 剥英文标识前缀（Element_/Shot_ 等：字母组+必需
+ * 分隔符，防误剥 S1 星环号球形舱 类混合标题）；② 剥中文类别前缀（同
+ * stripCategoryPrefix 正则与三不变量）；③ 去非中文字符（下划线/字母数字
+ * 噪声，口径同 b6011a5：月球_基地 → 月球基地），但无下划线且无英文前缀的
+ * 混合标题（AA（双A））原样保留；结果为空回退原文。仅显示层归一，
+ * 数据层标题原样存储（台账 #10）。
+ */
+export function normalizeDisplayTitle(title: string): string {
+  const raw = String(title || '');
+  if (!raw) return raw;
+  const en = raw.replace(/^[A-Za-z]+[_\-\s]+/, '').trim();
+  const cat = stripCategoryPrefix(en);
+  const ident = cat
+    .split('_')
+    .filter((seg) => /[\u4e00-\u9fff]/.test(seg))
+    .join('')
+    .trim();
+  return ident || cat || raw;
+}
+
+/**
  * 内联块候选名：候选源 = keyElements 全集（不再局限本镜 sceneRefs）。
  * 每个元素产两种形态——原全称 + 归一裸名（stripCategoryPrefix），Set 去重，
  * ≥2 字符守卫（此处为唯一加守卫点），按长度降序（最长优先防重叠误切）。
@@ -132,7 +154,8 @@ export function serializeDescDOM(root: HTMLElement): string {
   return out;
 }
 
-/** 编辑保存时 sceneRefs 同步：新 = 旧 − 正文已消失提及的引用 + @ 插入的标题。
+/** 编辑保存时 sceneRefs 同步：新 = 旧 − 正文已消失提及的引用 + @ 插入的标题
+ *  + 裸名提及 auto 源（K4 批 2026-09-16 对齐 flova：提及即绑定）。
  *  无增删返回 null（调用方不必写库）。 */
 export function syncSceneRefsAfterEdit(
   prevRefs: string[],
@@ -144,6 +167,22 @@ export function syncSceneRefsAfterEdit(
     serializedText.includes(resolveRefTitle(String(r), keyElements)));
   const keptTitles = new Set(kept.map((r) => resolveRefTitle(String(r), keyElements)));
   const added = insertedTitles.filter((t) => !keptTitles.has(t));
-  if (kept.length === prevRefs.length && !added.length) return null;
-  return [...kept, ...added];
+  // auto 源：正文里提及的元素名（原全称/归一裸名）不在 kept/added 时自动补绑；
+  // 存储口径归一到元素原标题（与后端 scan_bare_name_mentions 同口径）
+  const boundNorm = new Set([
+    ...kept.map((r) => resolveRefTitle(String(r), keyElements)),
+    ...added.map((t) => stripCategoryPrefix(String(t))),
+  ]);
+  const auto: string[] = [];
+  descChipNames({ sceneRefs: [] }, keyElements).forEach((n) => {
+    if (!serializedText.includes(n)) return;
+    const el = keyElements.find(
+      (k) => k.title === n || stripCategoryPrefix(k.title || '') === n);
+    const canon = el?.title || n;
+    if (!canon) return;
+    if (boundNorm.has(stripCategoryPrefix(canon))) return;
+    if (!auto.includes(canon)) auto.push(canon);
+  });
+  if (kept.length === prevRefs.length && !added.length && !auto.length) return null;
+  return [...kept, ...added, ...auto];
 }

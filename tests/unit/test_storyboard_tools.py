@@ -26,6 +26,48 @@ def _reset_tools():
     ToolManager.reset()
 
 
+class TestK4ThreeSourceRefMerge:
+    """K4 批（2026-09-16 对齐 flova）：sceneRefs 三源合并 =
+    显式 scene_refs ∪ [元素名] 令牌 ∪ 裸名提及（去重保序）；
+    未匹配令牌回喂不变。"""
+
+    @pytest.fixture
+    def svc(self, tmp_path):
+        StateManager.reset_instance()
+        instance = StateManager(str(tmp_path))
+        StateManager._instance = instance
+        instance.state_dict["keyElements"] = [
+            {"id": "ke-1", "title": "角色：程心", "desc": "", "drafts": []},
+            {"id": "ke-2", "title": "S1 星环号球形舱", "desc": "", "drafts": []},
+        ]
+        instance.state_dict["analysis"] = {"summary": "一句话总结"}
+        instance.state_dict["documents"] = [
+            {"name": "制片规格.md", "content": "规格"}]
+        yield instance
+        StateManager.reset_instance()
+
+    async def test_three_source_merge_dedup_order(self, svc):
+        result = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "shot", "title": "S01",
+             "scene_refs": ["S1 星环号球形舱"],
+             "desc": "程心 苏醒于 [S1 星环号球形舱] 内。"})
+        assert result.success is True, result.error
+        group = svc.state_dict["shots"][-1]
+        # 显式 ∪ 令牌 ∪ 裸名提及，去重保序（显式在前）
+        assert group["sceneRefs"] == ["S1 星环号球形舱", "角色：程心"]
+
+    async def test_unmatched_token_still_reported(self, svc):
+        result = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "shot", "title": "S02",
+             "desc": "程心 望着 [白色薄膜]。"})
+        assert result.success is True
+        group = svc.state_dict["shots"][-1]
+        assert group["sceneRefs"] == ["角色：程心"]
+        assert "白色薄膜" in (result.data.get("detail") or "")
+
+
 class TestCreateGroupTypeEnumClosedSet:
     """group_type 闭集枚举：keyElement | shot | audio，集外值拒收"""
 
@@ -241,8 +283,9 @@ class TestFailureShoutAndAtomicityBatch3:
         assert "太空艇" in (group.get("sceneRefs") or []), \
             f"令牌未解析进 sceneRefs: {group.get('sceneRefs')}"
 
-    async def test_shot_explicit_scene_refs_win_over_tokens(self, svc):
-        """显式传 scene_refs 以显式为准（令牌只在缺省时解析）。"""
+    async def test_shot_explicit_scene_refs_merge_with_tokens(self, svc):
+        """K4 批（2026-09-16）：显式 scene_refs 与令牌/裸名提及合并（去重保序，
+        显式在前）——取代旧「显式为准、令牌只在缺省时解析」口径。"""
         await ToolManager.invoke_tool("storyboard_create_group", {
             "group_type": "keyElement", "title": "太空艇"})
         shot = await ToolManager.invoke_tool("storyboard_create_group", {
@@ -252,7 +295,7 @@ class TestFailureShoutAndAtomicityBatch3:
         })
         assert shot.success is True, shot.error
         group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])
-        assert group.get("sceneRefs") == ["显式引用"]
+        assert group.get("sceneRefs") == ["显式引用", "太空艇"]
 
     async def test_unknown_token_dropped_not_rejected(self, svc):
         """匹配不到元素的令牌静默丢弃（令牌是引导不是闸，不锁死）。"""

@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { FiPlus, FiX } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
+import { normalizeDisplayTitle } from '@/lib/desc-ref-utils';
 import type { ShotGroup } from '@/types';
 
 /**
@@ -12,18 +13,18 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
   const sceneRefs = () => props.group.sceneRefs || [];
   const [refPickerOpen, setRefPickerOpen] = createSignal(false);
 
-  /** sceneRefs 存储的是关键元素 id（ke-xxx）或标题；展示时解析为元素标题，
-   * 解析不到才显示原值（卡片上直接显示 ke-xxx 看不懂）。
-   * 归一来源指向 lib/desc-ref-utils 的 stripCategoryPrefix（此处仅按 id/标题直查，
-   * 类别前缀剥离的详细合并留给 P2-J，本处不改逻辑） */
-  const refLabel = (ref: string) => {
+  /** sceneRefs 存储的是关键元素 id（ke-xxx）或标题；展示时解析为元素标题
+   * （解析不到才显示原值），再经显示层归一单一事实源 normalizeDisplayTitle
+   * （K7 批收敛，与 GroupHeader/desc chips 同口径）。 */
+  const rawResolve = (ref: string) => {
     const el = state.keyElements.find((k) => k.id === ref || k.title === ref);
     return el?.title || String(ref);
   };
+  const refLabel = (ref: string) => normalizeDisplayTitle(rawResolve(ref));
 
-  /** 尚未引用的关键元素标题（添加候选） */
+  /** 尚未引用的关键元素标题（添加候选；按原始标题去重，不受显示归一影响） */
   const availableElements = () => {
-    const have = new Set(sceneRefs().map((r) => refLabel(String(r))));
+    const have = new Set(sceneRefs().map((r) => rawResolve(String(r))));
     return state.keyElements
       .map((k) => k.title)
       .filter((t): t is string => !!t && !have.has(t));

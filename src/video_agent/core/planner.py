@@ -100,11 +100,6 @@ _BG_TASKS: set = set()
 # 子代理标题最大长度（含省略号）
 _SUBAGENT_LABEL_MAX = 40
 
-# R7 analysis 阶段化注入白名单：故事板设计阶段子代理承接前序剧本分析结论，
-# 但子级新建隔离上下文（history=[]）是零状态通道——不注入则看不到 analysis。
-# 仅白名单阶段注入（按预算截断），其余阶段零注入（防跨阶段污染 + 省 token）。
-_ANALYSIS_INJECT_STAGES = frozenset({"storyboard_key_elements", "storyboard_shots"})
-
 
 async def drain_background_tasks() -> None:
     """等待在途后台节点任务完成（幂等；测试与优雅关停钩子）。"""
@@ -331,6 +326,11 @@ class Planner:
         仅保留轮界级裁剪源（canvas 探针 / MCP 白名单 / 非 studio 上下文）。
         """
         excluded = set()
+        # K6 批（2026-09-16 对齐 dsh）：structured_output 为子代理专属完工
+        # 打卡工具——主代理面（含自由对话）裁剪；prompt_builder 的
+        # UNAVAILABLE 段不渲染 CHILD_ONLY_TOOLS（主代理不感知打卡工具）。
+        if not getattr(context, "subagent_depth", 0):
+            excluded |= subagent_mod.CHILD_ONLY_TOOLS
         # 子代理 deny 模式（2026-09-15 1111 批，对齐 dsh inherit∩restrict）：
         # 子级继承主代理整面工具，仅剔除 deny 集（run_subagent 防递归 / 花钱
         # 生成 / workflow_pause / stage 去 read_skill）。不再用硬编码 allowlist
@@ -445,6 +445,11 @@ class Planner:
             subagent_depth=child_depth,
             subagent_no_confirm=True,
             subagent_deny=subagent_mod.child_deny_set(resolved_stage),
+            # K5 批（2026-09-16 对齐 flova）：子代理工作台状态通道——子级与父
+            # 共享同一 StateManager 缓存（同键命中），状态尾每轮刷新；flova
+            # 实证不裁剪，故不引入裁剪表（体量由既有预算压缩兜底）。
+            state_builder=lambda: self.state_manager.build_agent_context(
+                getattr(parent_ctx, "asset_mode", "bound") or "bound"),
         )
         child = Planner(
             state_manager=self.state_manager,
@@ -459,6 +464,13 @@ class Planner:
         # 构建子级任务文本（通用：固定范围声明 + 幂等锚 + 任务书；
         # 带 stage：另加一行阶段标注）
         base_task = subagent_mod.build_subagent_task(task, stage=resolved_stage)
+        # K6 批（2026-09-16 对齐 dsh scoped prompt section）：打卡指令随委派
+        # 任务下发（唯一源 = shared/structured_output.md::BRIEF；subagent.md
+        # 逐字锁零触碰）——子代理收尾必须 structured_output 打卡一次。
+        _brief = (load_prompt_section("shared/structured_output.md", "BRIEF")
+                  or "").strip()
+        if _brief:
+            base_task += f"\n\n{_brief}"
         # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）：
         # 带 stage → 精准注入该阶段章节全文（不截断；章节缺失回落全文截断）；
         # 不带 stage → 现状全文前 8000 字截断（通用委派零改动）。
@@ -487,21 +499,6 @@ class Planner:
                             base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
                 except Exception as _e:
                     logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
-        # R7 analysis 阶段化注入：故事板设计阶段（白名单）子代理需承接前序剧本
-        # 分析结论——子级隔离上下文（history=[]）看不到主线程的 analysis 状态通道。
-        # 命中白名单才注入，按预算截断（summary≤500 / report≤2500）；analysis 为空
-        # 守卫跳过；其余阶段零注入（防跨阶段污染 + 省 token）。
-        if resolved_stage in _ANALYSIS_INJECT_STAGES:
-            try:
-                _analysis = (self.state_manager.state_dict or {}).get("analysis") or {}
-            except Exception:  # 状态读取失败不阻断委派（降级为零注入）
-                _analysis = {}
-            _a_summary = str(_analysis.get("summary") or "").strip()
-            _a_report = str(_analysis.get("report") or "").strip()
-            if _a_summary or _a_report:
-                base_task += (
-                    "\n\n===== 前序分析摘要（系统注入）=====\n"
-                    f"{_a_summary[:500]}\n{_a_report[:2500]}")
         # 子在同一 asyncio task/同一 context 内联跑：包一层追踪隔离带（D1），
         # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
         # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。

@@ -129,6 +129,11 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
                 "title": g.get("title", ""),
                 "duration": g.get("duration", ""),
                 "sceneRefs": g.get("sceneRefs", []),
+                # R4/K3 批（2026-09-16 对齐 flova）：desc=分镜正文唯一载体入状态——
+                # 故事板翻回主代理亲做后，每轮看见先前分镜正文是合规自检前提；
+                # 单 shot ≤200 字预算截断（B 档压缩另经 _compact_snapshot 句柄保留）；
+                # roughDesc 保留只读注入（存量数据兼容，新建卡不再产）
+                "desc": (g.get("desc", "") or "")[:200],
                 "roughDesc": g.get("roughDesc", ""),
                 "drafts": [
                     {

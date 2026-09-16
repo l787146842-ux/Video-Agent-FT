@@ -474,13 +474,15 @@ def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
     # 调用）。确定性三问全中（状态可算、机器可判、无创作空间），收归系统。
     # 连续第 2 轮纯文本（streak≥1）= 模型已按 note 重申完成 → 真完成放行；
     # cap 封死「文本↔工具」交替拉锯；开关关 = 无检测（dsh 默认不配 hook）。
+    # K6 批（2026-09-16）：R6 子代理结构豁免退役——子代理收尾改由
+    # structured_output 打卡判定（完成=一次工具调用），纯文本收尾轮同受
+    # 机械续跑口径（cap=2 封死拉锯）。
     return (
         settings.fakestop_auto_resume_enabled
         and bool(ctx.skill)
         and ctx.text_round_streak == 0
         and not ctx.confirmation
         and ctx.resumes_used < FAKESTOP_AUTO_RESUME_MAX
-        and ctx.subagent_depth == 0
     )
 
 
@@ -513,7 +515,7 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
     RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,
                    _cond_aborted_continuation_audit, _apply_aborted_continuation_audit,
                    requires=("skill", "text_round_streak", "confirmation",
-                             "resumes_used", "subagent_depth")),
+                             "resumes_used")),
 ]
 
 # 登记期依赖自检（模块加载即执行；引用不存在字段的死策略在 import 期报错）

@@ -450,6 +450,52 @@ def parse_element_tokens(text: str) -> List[str]:
     return tokens
 
 
+def _strip_cn_cat_prefix(title: str) -> str:
+    """中文类别前缀剥离（与前端 stripCategoryPrefix 同正则同三不变量）：
+    只剥不加；剥后为空返原文；剥后无中文返原文。"""
+    t = str(title or "")
+    s = _CN_CAT_PREFIX_RE.sub("", t)
+    if not s:
+        return t
+    if not _TITLE_CJK_RE.search(s):
+        return t
+    return s
+
+
+def scan_bare_name_mentions(
+    desc: str, key_elements: List[Dict[str, Any]],
+) -> List[str]:
+    """K4 批（2026-09-16 对齐 flova）：裸名提及自动绑定——分镜正文里
+    提到元素名（原全称/归一裸名）即自动挂引用（提及即绑定）。
+
+    镜像前端 desc-ref-utils.ts descChipNames 语义：候选源 = keyElements
+    全集（原全称 + 归一裸名两形态，Set 去重、≥2 字符守卫、最长优先防重叠）；
+    命中规则 = 候选名在 desc 子串出现；返回 = 命中的关键元素组标题
+    （sceneRefs 存储口径，去重保序）。纯函数，不改状态。"""
+    text = str(desc or "")
+    if not text:
+        return []
+    candidates: List[Tuple[str, str]] = []
+    seen: set = set()
+    for ke in key_elements or []:
+        if not isinstance(ke, dict):
+            continue
+        title = str(ke.get("title") or "").strip()
+        if not title:
+            continue
+        bare = _strip_cn_cat_prefix(title)
+        for cand in (title, bare):
+            if len(cand) >= 2 and cand not in seen:
+                seen.add(cand)
+                candidates.append((cand, title))
+    candidates.sort(key=lambda pair: len(pair[0]), reverse=True)
+    hits: List[str] = []
+    for cand, title in candidates:
+        if cand in text and title not in hits:
+            hits.append(title)
+    return hits
+
+
 def match_element_titles_report(
     state: Dict[str, Any], tokens: List[str],
 ) -> Tuple[List[str], List[str]]:

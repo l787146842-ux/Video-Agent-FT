@@ -93,11 +93,11 @@ class TestFcToolRunnerRejection:
         return runner
 
     def test_rejection_contains_route(self):
-        """拒收信封包含替代路由信息。"""
+        """拒收信封包含替代路由信息（R4 批后取仍可委派阶段工具为例）。"""
         runner = self._make_runner()
-        runner.turn_excluded = frozenset({"storyboard_create_group"})
+        runner.turn_excluded = frozenset({"storyboard_add_draft"})
         result = asyncio.run(
-            runner._dispatch_tool("storyboard_create_group", {})
+            runner._dispatch_tool("storyboard_add_draft", {})
         )
         assert not result.success
         assert "替代路由" in (result.error or "")

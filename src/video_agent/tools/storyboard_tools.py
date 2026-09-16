@@ -40,7 +40,7 @@ class CreateGroupInput(StrictToolInput):
     title: str = Field(..., description="分组标题")
     desc: str = Field("", description="分组描述（shot 类型：完整镜头设计写这里，唯一载体）")
     duration: str = Field("", description="时长（shot 类型用；整镜总时长）")
-    scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌解析")
+    scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
@@ -102,7 +102,7 @@ class StoryboardCreateGroupTool(BaseTool):
     detail_tier = "expand"  # 产出类：建组展开可见输入
     description = (
         "创建新的故事板分组，可附带草稿。"
-        "desc 中 [元素名] 令牌由系统自动解析为引用；也可用 scene_refs 显式指定。"
+        "desc 中 [元素名] 令牌与裸名提及由系统自动解析为引用；也可用 scene_refs 显式指定。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -168,16 +168,20 @@ class StoryboardCreateGroupTool(BaseTool):
             new_group["duration"] = params.duration or "5s"
             # shotType 已摘除（2026-09-14 裁决）：单值「镜头语言」字段与 Skill 声明的
             # 多内切镜格式抢方向盘，致分镜时出内切镜时不出——分镜格式唯一载体 = desc。
-            # 批 6 · A3：分镜描述里的 [元素名] 令牌自动解析为元素引用
-            # （显式传 scene_refs 则以显式为准；匹配不到的令牌丢弃不拒收，
-            # 但必须回喂告知——3333 批裁决：静默丢弃=模型以为挂上了引用）
-            if params.scene_refs:
-                new_group["sceneRefs"] = params.scene_refs
-            else:
-                tokens = ops.parse_element_tokens(params.desc or "")
-                matched_titles, unmatched_tokens = ops.match_element_titles_report(
-                    svc.state_dict, tokens)
-                new_group["sceneRefs"] = matched_titles
+            # 批 6 · A3 + K4 批（2026-09-16 对齐 flova）：引用三源合并——
+            # 显式 scene_refs ∪ [元素名] 令牌 ∪ 裸名提及（去重保序）；
+            # 匹配不到的令牌丢弃不拒收，但必须回喂告知——3333 批裁决：
+            # 静默丢弃=模型以为挂上了引用
+            tokens = ops.parse_element_tokens(params.desc or "")
+            matched_titles, unmatched_tokens = ops.match_element_titles_report(
+                svc.state_dict, tokens)
+            bare_hits = ops.scan_bare_name_mentions(
+                params.desc or "", svc.state_dict.get(CAT_KEY_ELEMENTS, []))
+            merged_refs: List[str] = []
+            for ref in list(params.scene_refs or []) + matched_titles + bare_hits:
+                if ref not in merged_refs:
+                    merged_refs.append(ref)
+            new_group["sceneRefs"] = merged_refs
 
         async with svc.lock:
             svc.state_dict.setdefault(cat_key, []).append(new_group)

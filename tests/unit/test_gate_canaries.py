@@ -1110,7 +1110,7 @@ def test_canary_tool_descriptions_stage_roster_fails(tmp_path, monkeypatch):
     """违规侧：他层阶段名单（≥2 个 PIPELINE_STAGE_KINDS 成员）→ 1。"""
     gate = _tool_descriptions_scaffold(
         tmp_path, monkeypatch,
-        "    description = '推进 script_analyze / storyboard_shots 阶段。'")
+        "    description = '推进 script_analyze / write_media_prompt 阶段。'")
     assert gate.main() == 1
 
 

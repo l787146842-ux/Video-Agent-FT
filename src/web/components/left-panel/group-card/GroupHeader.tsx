@@ -1,6 +1,7 @@
 import { createSignal, createEffect, onCleanup, Show, Switch, Match } from 'solid-js';
 import { FiImage, FiMusic, FiVideo } from 'solid-icons/fi';
 import { studioActions } from '@/stores/studio';
+import { normalizeDisplayTitle } from '@/lib/desc-ref-utils';
 import type { DraftType } from '@/types';
 
 /**
@@ -21,16 +22,10 @@ export function GroupHeader(props: {
   const [titleVal, setTitleVal] = createSignal('');
   const [badgeVal, setBadgeVal] = createSignal('');
 
-  /** 左上角标题：剥离 Element_/Shot_ 等英文前缀与非中文字符，纯中文展示（无中文时回退原文）；
-   * 仅显示层剥离，数据层标题（如新建组的 `Element_未命名`）原样存储（台账 #10，口径同 b6011a5）。
-   * 归一来源指向 lib/desc-ref-utils 的 stripCategoryPrefix（中文类别前缀剥离），
-   * 本处仅处理英文前缀，与它的详细合并留给 P2-J，本处不改逻辑 */
-  const displayTitle = () => {
-    const raw = props.title() || '';
-    const stripped = raw.replace(/^[A-Za-z]+[_\-\s]?/, '').trim();
-    const chineseOnly = stripped.replace(/[A-Za-z0-9_\-.\s]+/g, '').trim();
-    return chineseOnly || stripped || raw;
-  };
+  /** 左上角标题：显示层归一单一事实源 = lib/desc-ref-utils normalizeDisplayTitle
+   * （K7 批收敛，本地副本删除）；数据层标题（如新建组的 `Element_未命名`）
+   * 原样存储（台账 #10）。 */
+  const displayTitle = () => normalizeDisplayTitle(props.title());
 
   /** 编辑退出兼容（Q3）：任一编辑态下点击输入框以外的任何地方 → 强制失焦
    *  （部分浏览器点 draggable 区域不会自然移焦，onBlur 不触发导致退不出编辑） */

@@ -5,9 +5,10 @@
 - 任务#12 批次A：planner._compute_excluded_tools 不再以「选中 Skill 全文直注」为由
   剔除 read_skill——任何 Skill 激活下 read_skill 全程可见可调用。
 - 2026-09-15 铺满批（dsh 对齐）：顶级生产轮（skill_name 非空 + depth==0 +
-  非 adjust_scope）read_skill 进 PRODUCTION_MAIN_PRUNE 裁剪集（回读三件套之一）——
-  章节随委派注入阶段执行器，主代理不持有章节正文（flova7「主代理读不到全文」同理念）。
-  子级/微调/自由对话仍保留 read_skill 可见。
+  非 adjust_scope）read_skill 曾进 PRODUCTION_MAIN_PRUNE 裁剪集（回读三件套之一）。
+- 2026-09-16 R4 批（对齐 flova）：read_skill 解禁——故事板翻回主代理直做，
+  主代理须在设计前 read_skill 读全对应章节并消化进产出散文；顶级生产轮
+  不再裁 read_skill。子级/微调/自由对话仍保留 read_skill 可见。
 """
 import pytest
 
@@ -40,14 +41,15 @@ def _make_ctx(skill, depth=0, adjust_scope=None):
 
 
 @pytest.mark.parametrize("skill", ["任意Skill", "AI-短剧一站式生成"])
-def test_production_turn_prunes_read_skill(svc, monkeypatch, skill):
-    """2026-09-15 铺满批：顶级生产轮 read_skill 进裁剪集（回读三件套之一）。
-    章节随委派注入阶段执行器，主代理不持有章节正文。"""
+def test_production_turn_keeps_read_skill(svc, monkeypatch, skill):
+    """2026-09-16 R4 批（对齐 flova）：顶级生产轮 read_skill 解禁——
+    故事板翻回主代理直做，主代理须在设计前 read_skill 读全对应章节
+    并消化进产出散文（flova 式合规杠杆=上下文在场）。"""
     monkeypatch.setattr(
         "src.video_agent.core.prompt_gates.gate_mode", lambda: "off")
     excluded = _make_planner(svc)._compute_excluded_tools(_make_ctx(skill))
-    assert "read_skill" in excluded
-    assert "read_skill" in PRODUCTION_MAIN_PRUNE
+    assert "read_skill" not in excluded
+    assert "read_skill" not in PRODUCTION_MAIN_PRUNE
 
 
 def test_free_chat_keeps_read_skill(svc, monkeypatch):
@@ -76,12 +78,12 @@ def test_adjust_scope_keeps_read_skill(svc, monkeypatch):
     assert "read_skill" not in excluded
 
 
-def test_oversized_real_skills_prune_read_skill_in_production(svc, monkeypatch):
+def test_oversized_real_skills_keep_read_skill_in_production(svc, monkeypatch):
     """真实数据链路：三个超长分级注入 Skill 激活时，
-    顶级生产轮 read_skill 进裁剪集（铺满批新架构）。"""
+    顶级生产轮 read_skill 仍可见（R4 批解禁：主代理亲做故事板须读章节）。"""
     monkeypatch.setattr(
         "src.video_agent.core.prompt_gates.gate_mode", lambda: "off")
     planner = _make_planner(svc)
     for stem in ("水墨风格武侠短片", "3D国漫古装精品短剧", "李安美学风格短片"):
-        assert "read_skill" in planner._compute_excluded_tools(
-            _make_ctx(stem)), f"{stem} 生产轮未裁剪 read_skill"
+        assert "read_skill" not in planner._compute_excluded_tools(
+            _make_ctx(stem)), f"{stem} 生产轮不应裁剪 read_skill"

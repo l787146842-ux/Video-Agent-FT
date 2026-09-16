@@ -245,8 +245,9 @@ def test_generate_video_always_resident(svc, monkeypatch):
 
     2026-09-15 铺满批更新：本测钉的是「无状态基裁剪」——故事板为空不触发
     额外裁剪；主线程工具（generate_video / image_generate）仍全量常驻。
-    可委派阶段生产工具（storyboard_create_group 等）由 PRODUCTION_MAIN_PRUNE
-    裁剪（skill 激活的顶级生产轮），属分工重设计新架构、非状态基裁剪。"""
+    2026-09-16 R4 批更新：故事板三阶段翻回主代理直做，建组工具不再裁；
+    可委派阶段（script_analyze / write_media_prompt）生产工具仍由
+    PRODUCTION_MAIN_PRUNE 裁剪，属分工重设计新架构、非状态基裁剪。"""
     from src.video_agent.core.planner import Planner, PlannerContext
 
     planner = Planner.__new__(Planner)  # 绕过重量级构造，只测裁剪逻辑
@@ -263,8 +264,10 @@ def test_generate_video_always_resident(svc, monkeypatch):
     # 主线程工具全量常驻（不受状态/生产裁剪影响）
     assert "generate_video" not in excluded
     assert "image_generate" not in excluded
-    # 可委派阶段生产工具被 PRODUCTION_MAIN_PRUNE 裁剪（分工重设计，非状态基）
-    assert "storyboard_create_group" in excluded
+    # R4（2026-09-16）：故事板翻回主代理直做 → 建组工具不裁；
+    # 仍可委派阶段（write_media_prompt）的生产工具仍被 PRODUCTION_MAIN_PRUNE 裁剪
+    assert "storyboard_create_group" not in excluded
+    assert "storyboard_add_draft" in excluded
     # 阶段边界注释与裁剪解释已退役
     assert not getattr(ctx, "stage_note", "")
 

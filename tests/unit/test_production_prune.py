@@ -20,7 +20,7 @@ from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.subagent import (
     PIPELINE_STAGE_KINDS, PRODUCTION_MAIN_PRUNE, _MAIN_READBACK_DENY,
-    _STAGE_TOOLS, child_deny_set, stage_tools,
+    _STAGE_TOOLS, SUBAGENT_TOOL_DENY, child_deny_set, stage_tools,
 )
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
@@ -62,9 +62,15 @@ def test_top_level_production_prune(svc):
     for stage, tools in _STAGE_TOOLS.items():
         for t in tools:
             assert t in excluded, f"{t} (stage={stage}) should be pruned"
-    # 回读三件套裁剪
+    # 回读两件套裁剪
     for t in _MAIN_READBACK_DENY:
         assert t in excluded, f"{t} should be pruned"
+    # R4（2026-09-16）：故事板三阶段翻回主代理直做——建组工具与 read_skill 不再裁
+    assert "storyboard_create_group" not in excluded
+    assert "read_skill" not in excluded
+    # write_media_prompt 阶段工具仍裁（委派边界不变）
+    assert "storyboard_add_draft" in excluded
+    assert "storyboard_patch_draft" in excluded
     # 主线程工具保留
     assert "run_subagent" not in excluded
     assert "workflow_pause" not in excluded
@@ -98,27 +104,46 @@ def test_child_does_not_inherit_production_prune(svc):
     assert "read_uploaded_doc" not in excluded_script
     assert "script_analysis_report" not in excluded_script
 
-    # key_elements 子级：deny 集不含 storyboard_create_group
+    # key_elements 子级：R4 后 storyboard 阶段已离委派集 → resolve 为通用形态
     ctx_key = PlannerContext(
         skill_name=SKILL, subagent_depth=1, use_studio_context=True,
         subagent_deny=child_deny_set("storyboard_key_elements"))
     excluded_key = planner._compute_excluded_tools(ctx_key)
     assert "storyboard_create_group" not in excluded_key
+    assert child_deny_set("storyboard_key_elements") == SUBAGENT_TOOL_DENY
 
 
 def test_stage_tools_mapping():
     """stage_tools 返回各阶段生产工具集（_STAGE_TOOLS 单一源）。"""
     assert stage_tools("script_analyze") == frozenset(
         {"read_uploaded_doc", "script_analysis_report"})
-    assert stage_tools("storyboard_key_elements") == frozenset(
-        {"storyboard_create_group"})
-    assert stage_tools("storyboard_shots") == frozenset({"storyboard_create_group"})
-    assert stage_tools("storyboard_audio") == frozenset({"storyboard_create_group"})
     assert stage_tools("write_media_prompt") == frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"})
+    # R4（2026-09-16）：storyboard 三阶段已离委派集 → 空集
+    assert stage_tools("storyboard_key_elements") == frozenset()
+    assert stage_tools("storyboard_shots") == frozenset()
+    assert stage_tools("storyboard_audio") == frozenset()
     # 未知/空阶段返回空集
     assert stage_tools("") == frozenset()
     assert stage_tools("不存在") == frozenset()
+
+
+def test_r4_storyboard_back_to_main_agent(svc):
+    """R4（2026-09-16 对齐 flova）：主代理生产轮持有 storyboard_create_group +
+    read_skill（故事板主代理直做）；script_analyze / write_media_prompt 仍委派
+    （其生产工具仍裁）；委派集只余两阶段。"""
+    planner = Planner(state_manager=svc, llm_adapter=None)
+    ctx = PlannerContext(
+        skill_name=SKILL, subagent_depth=0, use_studio_context=True)
+    excluded = planner._compute_excluded_tools(ctx)
+    assert "storyboard_create_group" not in excluded
+    assert "read_skill" not in excluded
+    assert "read_uploaded_doc" in excluded
+    assert "script_analysis_report" in excluded
+    assert "storyboard_add_draft" in excluded
+    assert "storyboard_patch_draft" in excluded
+    assert PIPELINE_STAGE_KINDS == frozenset(
+        {"script_analyze", "write_media_prompt"})
 
 
 # ---------- ③ adjust_scope 不裁剪 ----------

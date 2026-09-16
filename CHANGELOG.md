@@ -36,6 +36,12 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-16 · P2-J 修订裁决 R1-R6 留痕批（R4 故事板翻回主代理；#1 结构化字段废弃）
+- **裁决（用户，2026-09-16）**：R1 废弃 P2-J #1「结构化字段」路线（flova 不用结构化字段，分镜全为模型按 skill 自由发挥的散文；方案必须 skill 无关，核心=让模型遵守 skill 要求）；R2 #3 改「给子代理工作台状态、默认不裁剪」（flova 实证不裁剪）；R3 #5 维持裸名 auto-binding（对齐 flova 渲染期 chip 绑定）；R4 故事板设计从委派子代理翻回**主代理直做**（flova 唯一重大不一致=故事板设计在主代理，7 份转录一致）；R5 #2/#4/#7 维持原口径；R6 模型档位 UI（#6）不做、冻结。
+- **RC1 根因证据（4444 项目 proj-1789551900-6edffa00 取证）**：委派轨迹 f5aa924e9f93 step2 仅带 stage=storyboard_key_elements，系统只注入 `<storyboard_key_elements>` 章节（SKILL.md:60-67）；承载 shot 规则的 `<storyboard_shots>` 章节（SKILL.md:69-112：空间锚点卡/分镜语法三件套/内切镜/自检清单）**从未注入**，且 stage 模式 deny read_skill → 子代理物理读不到 shot 规则，只能回落委派任务文本的有损摘要（「含景别/运镜/时长」）产出 32 条「单行内联标签 blob」desc（零锚点卡、缺机位、无内切镜分段、尾部方括号令牌与 KE 标题失配）。根因性质=结构不可达而非缺字段 → 修复方向=执行主体与上下文连续性（主代理亲做 + read_skill 解禁 + desc 接地），非加 schema。
+- **改动范围（K1-K8 批，计划书见 .qoder/specs）**：K1 路由翻转（subagent.py 委派集=script_analyze/write_media_prompt；_MAIN_READBACK_DENY 去 read_skill；planner 退役 _ANALYSIS_INJECT_STAGES）；K2 skill_runtime.md DISCIPLINE 增通用纪律条；K3 context_builder CAT_SHOTS 补注 desc（≤200 字/shot）；K4 裸名 auto-binding；K5 child_ctx state_builder 通道（不建裁剪表）；K6 structured_output 打卡 + R6 豁免退役；K7 标题收敛；K8 规格脚手架。
+- **红线**：Skill 文件零改动；旧数据不迁移（读时兼容）；subagent.md/protocol.md 逐字锁零触碰；每批单 commit 可独立 revert。
+
 ### 2026-09-15 · 8888 委派失踪批（子代理线程落盘 + 委派失败可见性）
 - **背景（8888 项目 proj-1789413853-5c6e867f 实测）**：用户报「子代理直接没派出去」，左栏「还没有子任务」。四路交叉取证（traces / logs / sqlite / 隐藏线程事件流）定案：**子代理确实派出去了**——主 trace `a672dce96031` step4 reasoning 明写「委派分镜拆解给子代理」，子 trace `ce3beb8da396`（parent=主 trace）事件流 `conv-1789414081-48c32230.jsonl` 27,952 字节 / 19 事件，子代理干完两步（读原著 + 10 组设定全文），死于上游 504。四项缺陷 + 一项非缺陷：
   - **A（状态层）**：`create_scoped_conversation` 忽略 `save()` 返回值 → 版本闸命中时线程元信息只活内存（log 03:28:01.717「磁盘账本 35 新于本实例已知 34」），盘上 `conversations` 只剩 `conv-main` → `GET /conversations/subagents` 返空 → 左栏空。

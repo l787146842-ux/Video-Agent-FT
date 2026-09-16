@@ -22,6 +22,13 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 截断）并收紧工具面（去 read_skill，结构上关闭跨阶段预读污染）；不带 stage
 的通用委派全现状不动。仍是模型经 FC 自主发起、同一循环同一闸机链，
 非机械执行器（FORBIDDEN 符号零触碰）。
+
+2026-09-16 R4 批（用户裁决，对齐 flova）：故事板三阶段（key_elements/shots/
+audio）从委派子代理翻回**主代理直做**——flova 唯一重大不一致=故事板设计在
+主代理（7 份转录一致）；4444 取证证明 stage 隔离委派使 shot 规则章节结构性
+不可达（RC1，留痕见 CHANGELOG §二 2026-09-16 R1-R6 批）。委派集只保留
+script_analyze / write_media_prompt；同批 read_skill 自主代理生产轮解禁
+（主代理设计故事板前须 read_skill 读全对应章节并消化进产出散文）。
 """
 from typing import Dict, FrozenSet
 
@@ -37,6 +44,12 @@ SUBAGENT_TOOL_NAME = "run_subagent"
 
 # 子级委派深度上限（B1：只允许一层）。
 SUBAGENT_MAX_DEPTH = 1
+
+# K6 批（2026-09-16 对齐 dsh structured.ts）：子代理专属工具集——完工打卡
+# structured_output 仅子代理（depth≥1）可见；主代理面经
+# planner._compute_excluded_tools 裁剪，且 prompt_builder 的 UNAVAILABLE 段
+# 不渲染本集（主代理不感知打卡工具存在）。
+CHILD_ONLY_TOOLS: FrozenSet[str] = frozenset({"structured_output"})
 
 # 缺省类型名（历史兼容占位；通用形态下只有一个类型）。
 SUBAGENT_KIND_GENERAL = "general"
@@ -58,12 +71,14 @@ SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
 STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({"read_skill"})
 
 # 阶段执行器（2026-09-15 试点、同日铺满）：委派可选的生产阶段枚举（与
-# registry.CAPABILITY_TOOL_STAGES 键同名）。设计/分析类阶段全部可委派
-# （章节随委派注入子级）；生成/组装类阶段（image_generate/generate_video/
-# audio_generate/video_assembler）确认闸留主线程，不进本枚举。
+# registry.CAPABILITY_TOOL_STAGES 键同名）。生成/组装类阶段（image_generate/
+# generate_video/audio_generate/video_assembler）确认闸留主线程，不进本枚举。
+# 2026-09-16 R4 批（用户裁决，对齐 flova）：故事板三阶段翻回主代理直做
+# （flova 唯一重大不一致=故事板设计在主代理；4444 取证证明 stage 隔离委派
+# 使 shot 规则章节结构性不可达），委派集只保留 script_analyze /
+# write_media_prompt；章节映射与展示标签仍留 registry 供 read_skill/telemetry。
 PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
-    "script_analyze", "storyboard_key_elements", "storyboard_shots",
-    "storyboard_audio", "write_media_prompt",
+    "script_analyze", "write_media_prompt",
 })
 
 # 两桶分工（正向设计单一事实源）：可委派阶段 → 阶段执行器在其上下文内调用的
@@ -72,23 +87,24 @@ PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
 # 不在此表，主代理直调。本表是「主代理面裁剪」与「阶段执行器必备工具」的唯一源。
 _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
     "script_analyze": frozenset({"read_uploaded_doc", "script_analysis_report"}),
-    "storyboard_key_elements": frozenset({"storyboard_create_group"}),
-    "storyboard_shots": frozenset({"storyboard_create_group"}),
-    "storyboard_audio": frozenset({"storyboard_create_group"}),
     "write_media_prompt": frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
 
-# 主代理在生产轮额外不持有的回读工具（章节/草稿全文/媒体画面）：这些是
+# 主代理在生产轮额外不持有的回读工具（草稿全文/媒体画面）：这些是
 # 阶段执行器与前端面板的职责，主代理经摘要+事件卡获知（flova7「主代理读不到
-# 全文、用户去面板看」同理念）；保留则主代理会忍不住亲读亲做（3333 实证）。
+# 草稿全文、用户去面板看」同理念）；保留则主代理会忍不住亲读亲做（3333 实证）。
+# 2026-09-16 R4 批：read_skill 解禁——故事板翻回主代理直做后，主代理须在
+# 设计前 read_skill 读全对应章节并消化进产出散文（flova 式合规杠杆=上下文
+# 在场）；章节导航靠选中 Skill 块的章节目录。
 _MAIN_READBACK_DENY: FrozenSet[str] = frozenset({
-    "read_skill", "read_draft", "view_storyboard_media",
+    "read_draft", "view_storyboard_media",
 })
 
-# 主代理面在顶级生产轮裁剪的生产工具集（= 各阶段工具并集 ∪ 回读三件套）：
-# 主代理物理上读不到剧本/章节、建不了组/草稿 → 执行可委派阶段的唯一方式=委派
+# 主代理面在顶级生产轮裁剪的生产工具集（= 各可委派阶段工具并集 ∪ 回读两件套）：
+# 主代理物理上读不到剧本、建不了草稿 → 执行可委派阶段的唯一方式=委派
 # （dsh 结构性剥夺 > 提示词恳求，workflow 沙箱 L137-149 同理念）。
+# R4 批：故事板建组工具与 read_skill 回归主代理面（故事板主代理直做）。
 PRODUCTION_MAIN_PRUNE: FrozenSet[str] = (
     frozenset().union(*_STAGE_TOOLS.values()) | _MAIN_READBACK_DENY)
 

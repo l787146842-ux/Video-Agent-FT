@@ -5,6 +5,7 @@ from .storyboard_tools import register_storyboard_tools
 from .document_tools import register_document_tools
 from .analysis_tools import register_analysis_tools
 from .web_tools import register_web_tools
+from .structured_output import register_structured_output_tools
 
 # 原有 Tool（CLI/旧 Workflow 用）
 ToolManager.register(GenerateVideoTool())
@@ -14,6 +15,8 @@ register_storyboard_tools()
 register_document_tools()
 register_analysis_tools()
 register_web_tools()
+# K6 批（2026-09-16 对齐 flova/dsh）：子代理完工打卡工具（子代理专属可见）
+register_structured_output_tools()
 # （C1b 裁决 2026-08-31：skill_section_run/custom_sections 自定义章节通道退役，
 # 其专属注册入口 register_skill_tools 同批删除）
 

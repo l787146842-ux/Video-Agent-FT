@@ -62,6 +62,20 @@ def test_a_tier_small_state_full(svc):
     assert "note" not in parsed
 
 
+def test_shot_desc_injected_with_budget(svc):
+    """R4/K3 批（2026-09-16 对齐 flova）：shot desc（分镜正文唯一载体）入状态，
+    单 shot ≤200 字预算截断；roughDesc 只读注入不变（存量兼容）。"""
+    svc.state_dict[CAT_SHOTS] = [{
+        "id": "sh1", "title": "S01", "desc": "镜" * 500,
+        "roughDesc": "粗" * 50, "sceneRefs": ["主角"],
+        "drafts": [],
+    }]
+    parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
+    shot = parsed[CAT_SHOTS][0]
+    assert shot["desc"] == "镜" * 200
+    assert shot["roughDesc"] == "粗" * 50
+
+
 def test_b_tier_over_budget_truncates_with_pointer(svc):
     """超预算 = B 档：正文截断 + compacted 客观标志位，句柄（id/编号/标题）保留。"""
     _seed_big_state(svc)

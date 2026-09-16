@@ -212,14 +212,18 @@ class PromptBuilder:
                 draft_id=context.selected_draft_id,
                 draft_type=context.selected_type or "未知"))
         # R11 裁剪可见性：轮内被裁工具非空时渲染 UNAVAILABLE 段，模型可见
-        # 哪些工具本轮不可用及替代路由（消除“思考打架”）
+        # 哪些工具本轮不可用及替代路由（消除“思考打架”）；
+        # K6 批：CHILD_ONLY_TOOLS（子代理专属打卡工具）不渲染——主代理
+        # 不感知打卡工具存在（仅执行期裁剪，不进可见性说明）。
         _turn_excl = getattr(context, "turn_excluded", None)
         if _turn_excl:
-            _excl_names = ", ".join(sorted(_turn_excl))
-            _excl_route = "经委派（run_subagent）执行对应阶段"
-            parts.append(render_prompt(
-                "shared/turn_excluded.md",
-                names=_excl_names, route=_excl_route))
+            _render_excl = frozenset(_turn_excl) - subagent_mod.CHILD_ONLY_TOOLS
+            if _render_excl:
+                _excl_names = ", ".join(sorted(_render_excl))
+                _excl_route = "经委派（run_subagent）执行对应阶段"
+                parts.append(render_prompt(
+                    "shared/turn_excluded.md",
+                    names=_excl_names, route=_excl_route))
         # （步数行已随二期 G3 退役删除：每步必变 = 强制每步前缀失效的
         # 元凶之一；STEP_FEEDBACK 已带「第 N 轮」，信息不丢）
         return "\n\n".join(parts)

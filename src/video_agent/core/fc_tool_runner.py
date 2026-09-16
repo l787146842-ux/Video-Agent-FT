@@ -170,6 +170,10 @@ class FCToolRunner:
         # 由 planner 轮始下发（= _compute_excluded_tools 结果）；被裁工具即便被模型
         # 误调也在此拒绝执行，不止从 FC schema 消失（可见性即权限，单点强制）。
         self.turn_excluded: frozenset = frozenset()
+        # K6 批（2026-09-16 对齐 dsh structured.ts:109-111）：structured_output
+        # 打卡终局 guard（轮内）：打卡成功后本轮拒收任何后续工具调用
+        # （子代理收尾=一次打卡）；reset_turn_tracking 轮始重置。
+        self._structured_captured: bool = False
         # R9 analysis 对话可见：本轮 script_analysis_report 成功产出的分析摘要
         # （只成功路径写入）；planner 轮末透传进 done payload，web 层据此在
         # 对话框追加「剧本分析」摘要消息。chat 持久化归 web 层，本层不调
@@ -264,6 +268,22 @@ class FCToolRunner:
                        f"替代路由：{_route}。"),
                 error_code="validation",
             )
+        # K6 批（2026-09-16 对齐 dsh structured.ts:109-111）：打卡后终局 guard——
+        # structured_output 已 captured 则本轮进入终局：重复打卡拒收、
+        # 其它工具调用一律拒收（完成=一次工具调用，剩余事项经 unfinished 槽交回）。
+        if getattr(self, "_structured_captured", False):
+            if name == "structured_output":
+                return ToolResult(
+                    success=False,
+                    error="汇报已打卡（一次委派一次汇报），重复提交拒收。",
+                    error_code="validation",
+                )
+            return ToolResult(
+                success=False,
+                error=(f"工具 {name} 拒收：structured_output 汇报已打卡，本轮进入终局；"
+                       "剩余事项请写入 unfinished 槽交回主代理。"),
+                error_code="validation",
+            )
         if name == "run_subagent":
             launcher = getattr(self, "subagent_launcher", None)
             if launcher is None:
@@ -296,7 +316,11 @@ class FCToolRunner:
             # 「执行成功」一句话，委派信息全丢（委派本身失去意义）。
             return ToolResult(success=True, data={
                 "summary": text, "result": text, "detail": text})
-        return await self.tool_manager.invoke_tool(name, args)
+        result = await self.tool_manager.invoke_tool(name, args)
+        # K6 批：structured_output 打卡成功 → 终局 guard 生效（轮内后续工具拒收）
+        if name == "structured_output" and result.success:
+            self._structured_captured = True
+        return result
 
     def _record_presented(self, name: str, args: Dict[str, Any]) -> None:
         """FC 轨记录本轮写入过提示词的草稿：patch_draft 带非空 prompt 成功时，
@@ -334,6 +358,8 @@ class FCToolRunner:
         self._turn_stage_label = ""
         self.analysis_digest = ""  # R9：分析摘要随轮生命周期，轮始清空
         self._idempotency.reset()  # T4：幂等键账本随轮生命周期，轮始清空
+        # K6 批：打卡终局 guard 随轮生命周期，轮始清空（上轮打卡不泄漏到本轮）
+        self._structured_captured = False
 
     async def _prepare_call(
         self, call: Any, index: int, *, ctx: fc_gates.GateContext,

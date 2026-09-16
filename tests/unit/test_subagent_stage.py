@@ -71,19 +71,19 @@ def _fake_child(captured: dict):
 # ---------- 纯契约 ----------
 
 def test_resolve_stage_enum_and_fallback():
-    # 铺满批（2026-09-15）：5 阶段全部可委派
+    # R4 批（2026-09-16）：委派集只余两阶段（故事板三阶段翻回主代理直做）
     assert resolve_stage("script_analyze") == "script_analyze"
-    assert resolve_stage("storyboard_shots") == "storyboard_shots"
-    assert resolve_stage("storyboard_key_elements") == "storyboard_key_elements"
-    assert resolve_stage("storyboard_audio") == "storyboard_audio"
     assert resolve_stage("write_media_prompt") == "write_media_prompt"
-    assert resolve_stage(" storyboard_shots ") == "storyboard_shots"  # 归一化
+    # storyboard 三阶段已离委派集 → 回落通用（不阻断委派）
+    assert resolve_stage("storyboard_shots") == ""
+    assert resolve_stage("storyboard_key_elements") == ""
+    assert resolve_stage("storyboard_audio") == ""
+    assert resolve_stage(" storyboard_shots ") == ""
     # 未知/空 → 回落通用（不阻断委派）
     assert resolve_stage("不存在") == ""
     assert resolve_stage("") == ""
     assert PIPELINE_STAGE_KINDS == frozenset({
-        "script_analyze", "storyboard_key_elements", "storyboard_shots",
-        "storyboard_audio", "write_media_prompt",
+        "script_analyze", "write_media_prompt",
     })
 
 
@@ -91,21 +91,23 @@ def test_stage_deny_drops_read_skill_only():
     """2026-09-15 1111 批（对齐 dsh inherit∩restrict）：子级面 = 主代理面 − deny。
     stage 仅额外 deny read_skill（断跨阶段预读）；四条硬约束两面均 deny；
     阶段落点工具（script_analysis_report 等）不在 deny ⇒ 子代理拿得到。"""
-    assert child_deny_set("storyboard_shots") == SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
+    assert child_deny_set("write_media_prompt") == SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
     assert child_deny_set("") == SUBAGENT_TOOL_DENY
     assert child_deny_set("未知阶段") == SUBAGENT_TOOL_DENY
-    for deny in (child_deny_set(""), child_deny_set("storyboard_shots")):
+    # R4：storyboard 阶段 resolve 为通用 → 不再额外 deny read_skill
+    assert child_deny_set("storyboard_shots") == SUBAGENT_TOOL_DENY
+    for deny in (child_deny_set(""), child_deny_set("write_media_prompt")):
         assert "run_subagent" in deny            # 防递归
         assert "image_generate" in deny and "generate_video" in deny  # 花钱留主线程
         assert "workflow_pause" in deny          # 子级不确认
     # 阶段落点工具必须授予子代理（1111 实证 script_analysis_report 未授予断链）
     assert "script_analysis_report" not in child_deny_set("script_analyze")
-    assert "storyboard_create_group" not in child_deny_set("storyboard_shots")
+    assert "storyboard_create_group" not in child_deny_set("write_media_prompt")
 
 
 def test_build_subagent_task_stage_header():
-    msg = build_subagent_task("拆解剧本为分镜", stage="storyboard_shots")
-    assert "本次委派阶段：分镜设计" in msg      # STAGE_LABELS 展示标签
+    msg = build_subagent_task("拆解剧本为分镜", stage="write_media_prompt")
+    assert "本次委派阶段：媒体提示词编写" in msg      # STAGE_LABELS 展示标签
     # P1-D/R3（2026-09-16）：阶段标注只留事实行，旧解释性括号措辞退役
     assert "章节即产出规范的全部依据" not in msg
     assert "（系统已注入该阶段 Skill 章节全文" not in msg
@@ -143,20 +145,20 @@ async def test_launch_stage_injects_section_precisely(svc, monkeypatch):
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "拆解剧本为分镜", PlannerContext(subagent_depth=0, skill_name=SKILL),
-        stage="storyboard_shots")
+        stage="write_media_prompt")
 
-    assert seen == {"skill": SKILL, "tool": "storyboard_shots"}
+    assert seen == {"skill": SKILL, "tool": "write_media_prompt"}
     msg = captured["msg"]
     assert SHOTS_SECTION in msg                       # 章节全文在场
-    assert f"注入 Skill 章节（{SKILL} · storyboard_shots）" in msg
-    assert "本次委派阶段：分镜设计" in msg              # 阶段标注行
+    assert f"注入 Skill 章节（{SKILL} · write_media_prompt）" in msg
+    assert "本次委派阶段：媒体提示词编写" in msg              # 阶段标注行
     assert sd.calls == 0                              # 未走全文截断回落
     assert "章节内容截断" not in msg
     # 工具面 deny + 子会话 meta 记 stage
-    assert captured["ctx"].subagent_deny == child_deny_set("storyboard_shots")
+    assert captured["ctx"].subagent_deny == child_deny_set("write_media_prompt")
     child_cid = captured["ctx"].session_conversation_id
     assert svc.get_conversation_scope(child_cid).get("subagent_kind") \
-        == "stage:storyboard_shots"
+        == "stage:write_media_prompt"
 
 
 async def test_launch_stage_missing_section_falls_back(svc, monkeypatch):
@@ -168,7 +170,7 @@ async def test_launch_stage_missing_section_falls_back(svc, monkeypatch):
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "拆解", PlannerContext(subagent_depth=0, skill_name=SKILL),
-        stage="storyboard_shots")
+        stage="write_media_prompt")
     assert sd.calls == 1
     assert "章节内容截断" in captured["msg"]
 

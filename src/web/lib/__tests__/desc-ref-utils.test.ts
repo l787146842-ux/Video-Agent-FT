@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveRefTitle, descChipNames, renderDescToDOM, serializeDescDOM, syncSceneRefsAfterEdit,
-  stripCategoryPrefix,
+  stripCategoryPrefix, normalizeDisplayTitle,
 } from '@/lib/desc-ref-utils';
 
 const KES = [
@@ -79,6 +79,18 @@ describe('desc-ref-utils', () => {
     expect(syncSceneRefsAfterEdit(['ke-1'], '程心 与曹彬？', ['曹彬'], KES))
       .toEqual(['ke-1', '曹彬']);
   });
+
+  it('syncSceneRefsAfterEdit auto 源：正文裸名提及自动补绑（K4 批提及即绑定）', () => {
+    const kes = [
+      { id: 'ke-1', title: '角色：程心', drafts: [] },
+      { id: 'ke-2', title: 'S1 星环号球形舱', drafts: [] },
+    ];
+    // prevRefs 空且无 @ 插入：正文裸名提及自动补绑（存储口径 = 元素原标题，最长优先）
+    expect(syncSceneRefsAfterEdit([], '程心 在 S1 星环号球形舱 内苏醒', [], kes))
+      .toEqual(['S1 星环号球形舱', '角色：程心']);
+    // 已绑引用不重复补绑；无增删返回 null
+    expect(syncSceneRefsAfterEdit(['ke-1'], '程心 苏醒', [], kes)).toBeNull();
+  });
 });
 
 describe('stripCategoryPrefix（前端归一单一事实源，对齐后端契约）', () => {
@@ -121,5 +133,31 @@ describe('stripCategoryPrefix（前端归一单一事实源，对齐后端契约
 
   it('空串 → 返空串', () => {
     expect(stripCategoryPrefix('')).toBe('');
+  });
+});
+
+describe('normalizeDisplayTitle（K7 批显示标题归一单一事实源）', () => {
+  it('英文标识前缀剥离（字母组+必需分隔符）', () => {
+    expect(normalizeDisplayTitle('Element_程心')).toBe('程心');
+    expect(normalizeDisplayTitle('Shot_开场')).toBe('开场');
+    // 混合标题不误剥（字母后无分隔符）
+    expect(normalizeDisplayTitle('S1 星环号球形舱')).toBe('S1 星环号球形舱');
+  });
+
+  it('中文类别前缀剥离（旧数据「角色：程心」式统一裸名）', () => {
+    expect(normalizeDisplayTitle('角色：程心')).toBe('程心');
+    expect(normalizeDisplayTitle('场景1星环号')).toBe('星环号');
+  });
+
+  it('下划线纯英文段剥离；中文段间下划线去除（口径同 b6011a5）', () => {
+    expect(normalizeDisplayTitle('程心_img')).toBe('程心');
+    expect(normalizeDisplayTitle('Element_月球_基地')).toBe('月球基地');
+    // 无下划线混合标题语义字母数字保留
+    expect(normalizeDisplayTitle('AA（双A）')).toBe('AA（双A）');
+  });
+
+  it('空串/无归一空间 → 回退原文', () => {
+    expect(normalizeDisplayTitle('')).toBe('');
+    expect(normalizeDisplayTitle('程心')).toBe('程心');
   });
 });
