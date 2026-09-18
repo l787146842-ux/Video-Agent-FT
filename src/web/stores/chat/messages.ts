@@ -11,6 +11,7 @@ import type { StopPhase, StopInflightItem } from '@/lib/stream-finalize';
 import { setChatState } from '../chat-core';
 import { buildDoneMessage, isTurnSettled } from './done-message';
 import { queueActions } from './queue';
+import { subagentActorActions, SUBAGENT_DELEGATE_TOOL } from './subagent-actors';
 
 export const messageActions = {
   addMessage(msg: ChatMessage) {
@@ -95,6 +96,8 @@ export const messageActions = {
       }
       resetStreamFields(s);
     }));
+    // 流式二期：本轮 actor 绑 turn_id（切走切回/刷新后按轮次把卡挂回对应消息）
+    subagentActorActions.bindTurn(payload.turn_id || '');
   },
 
   /** 流式错误：输入为结构化 ErrorPayload，affordance 按完整负载解析
@@ -239,5 +242,12 @@ export const messageActions = {
     setChatState('currentTurnId', undefined);
     // 按当前项目+对话键恢复排队消息（刷新存活）
     queueActions.restoreQueue();
+    // 流式二期 actor 卡重建：同页面会话内按 turnId 把槽位挂回重拉的消息；
+    // 页面刷新过（内存 actor 清空）且历史含委派轮时，再拉服务端子线程清单重建
+    subagentActorActions.reattachToMessages();
+    const hasDelegateTurn = msgs.some((m) => m.sender === 'agent'
+      && (m.trace?.steps || []).some((st) => (st.actions || [])
+        .some((a) => a.name === SUBAGENT_DELEGATE_TOOL)));
+    if (hasDelegateTurn) void subagentActorActions.hydrateFromServer();
   },
 };

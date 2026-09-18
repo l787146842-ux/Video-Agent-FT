@@ -17,7 +17,7 @@ import { t } from '@/lib/locale';
 import { formatElapsed } from '@/lib/timeline';
 import { studioActions } from '@/stores/studio';
 import {
-  requestSubagentRecord, type SubagentActor,
+  requestSubagentRecord, subagentActorActions, type SubagentActor,
 } from '@/stores/chat/subagent-actors';
 
 /** 三态 → 药丸类名（与 SubagentRail 同口径；actor 域不产 unknown 态） */
@@ -64,13 +64,20 @@ export function SubagentActorCard(props: { actor: () => SubagentActor | undefine
             <span class="actor-card-steps">{t('rp.actor.steps', { count: actor().steps })}</span>
           </button>
 
-          {/* 子工具名单（折叠）：归组后父 Feed 不显子工具细节，此处保留全名单 */}
-          <Show when={actor().tools.length > 0}>
+          {/* 子工具名单（折叠）：归组后父 Feed 不显子工具细节，此处保留全名单；
+              刷新后重建的 static actor 名单懒加载（首次展开才拉只读记录） */}
+          <Show when={actor().tools.length > 0 || (!!actor().cid && !actor().toolsLoaded)}>
             <button
               type="button"
               class="actor-tools-toggle"
               aria-expanded={open()}
-              onClick={() => setOpen(!open())}
+              onClick={() => {
+                const cid = actor()?.cid || '';
+                if (!open() && cid && !actor()?.toolsLoaded) {
+                  void subagentActorActions.loadTools(cid);
+                }
+                setOpen(!open());
+              }}
             >
               {t('rp.actor.tools', { count: actor().tools.length })}
               <FiChevronDown size={11} class={`tl-item-toggle-arrow${open() ? ' expanded' : ''}`} />

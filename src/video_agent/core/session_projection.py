@@ -236,14 +236,16 @@ def snapshot(svc: Any, conversation_id: str = "") -> Dict[str, Any]:
     states = fold_events(events)
     values = view_states(states)
     as_of = int(events[-1].get("seq") or 0) if events else -1
-    _dual_run_pause(svc, values.get("interaction_pause") or {})
+    _dual_run_pause(svc, values.get("interaction_pause") or {}, conversation_id)
     return {"asOfSeq": as_of, "values": values}
 
 
-def _dual_run_pause(svc: Any, pause_view: Dict[str, Any]) -> None:
+def _dual_run_pause(svc: Any, pause_view: Dict[str, Any], cid: str = "") -> None:
     """双跑对比（计划书 §七风险 B）：投影暂停态 vs StateManager 权威三态。
 
-    只打日志不阻断、不修正——对比干净前前端不切消费方。权威侧读
+    每次 snapshot 都打一条 INFO 对拍留痕（D-21 清偿要件：「干净」必须可计数，
+    零调用 ≠ 干净）；不一致另打 WARNING，只打日志不阻断、不修正——
+    对比干净前前端不切消费方。权威侧读
     interaction.active_pause / awaiting_confirmation（workflow_runtime reducer 写）。
     """
     try:
@@ -251,6 +253,11 @@ def _dual_run_pause(svc: Any, pause_view: Dict[str, Any]) -> None:
         auth_active = bool(inter.get("active_pause")) or bool(
             inter.get("awaiting_confirmation"))
         proj_active = pause_view.get("active_pause") is not None
+        logger.info(
+            "[ProjDiff] 对拍 cid={} as_of_pause_count={} auth={} proj={} match={}",
+            cid, pause_view.get("pause_count"), auth_active, proj_active,
+            auth_active == proj_active,
+        )
         if auth_active != proj_active:
             logger.warning(
                 "[ProjDiff] pause 投影与权威不一致 auth={} proj={} pause_count={}",

@@ -16,10 +16,11 @@
  */
 import { createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import type { SseEvent, SseSubagentMeta } from '@/types';
-import { SUBAGENT_ACTOR } from '@/lib/turn-ledger';
+import type { ChatMessage, SseEvent, SseSubagentMeta, SubagentThread } from '@/types';
+import { SUBAGENT_ACTOR, settledLedgerForMessage, type LedgerItem } from '@/lib/turn-ledger';
+import { getSubagentRecord, getSubagentThreads } from '@/api/conversations';
 import { t } from '@/lib/locale';
-import { setChatState } from '../chat-core';
+import { chatState, setChatState } from '../chat-core';
 
 /** 父委派工具名（后端 core/subagent.py::SUBAGENT_TOOL_NAME 同字面）：
  * 只有它的起止帧决定 actor 的收尾时机 */
@@ -68,6 +69,12 @@ export interface SubagentActor {
   tools: SubagentActorTool[];
   startedAt: number;
   finishedAt?: number;
+  /** 收尾时绑定的轮次 id（切回/刷新后按轮次把卡重新挂回消息） */
+  turnId?: string;
+  /** 刷新后由服务端子线程清单重建（步数/状态取服务端口径，子工具名单懒加载） */
+  staticSource?: boolean;
+  /** 子工具名单是否已懒加载完成（防重复拉只读记录） */
+  toolsLoaded?: boolean;
 }
 
 const [actorsState, setActorsState] = createStore<{ list: SubagentActor[] }>({ list: [] });
@@ -110,6 +117,35 @@ function syncSlot(key: string, label: string, status: SubagentActor['status']): 
 /** 展示标签兜底（后端 label 空时不显空标题） */
 function labelOf(actor: { label: string }): string {
   return (actor.label || '').trim() || t('rp.actor.fallbackLabel');
+}
+
+/** 子会话 id 内嵌创建时刻（conv-<epoch秒>-<hex>）→ ms；解析失败返回 0 */
+export function cidCreatedAtMs(cid: string): number {
+  const m = /^conv-(\d{10,})-/.exec(cid || '');
+  return m ? Number(m[1]) * 1000 : 0;
+}
+
+/** 把 actors 的槽位插回消息账本（锚定父委派行之后；无委派行则追加尾部）。
+ * 已有槽位的消息（live 翻转入库者）不重复插。 */
+function insertSlots(m: ChatMessage, actors: SubagentActor[]): void {
+  const led = m.ledger || settledLedgerForMessage(m);
+  const missing = actors.filter((a) => !led.items.some((it) => it.id === actorSlotId(a.key)));
+  if (!missing.length) return;
+  const items = [...led.items];
+  const anchor = items.map((it) => it.name).lastIndexOf(SUBAGENT_DELEGATE_TOOL);
+  let at = anchor >= 0 ? anchor + 1 : items.length;
+  for (const a of missing) {
+    const slot: LedgerItem = {
+      id: actorSlotId(a.key),
+      name: SUBAGENT_ACTOR,
+      summary: labelOf(a),
+      status: a.status === 'running' ? 'running' : a.status === 'failed' ? 'failed' : 'done',
+      started_at_ms: a.startedAt,
+    };
+    items.splice(at, 0, slot);
+    at += 1;
+  }
+  m.ledger = { ...led, items, phase: 'settled' };
 }
 
 export const subagentActorActions = {
@@ -200,6 +236,100 @@ export const subagentActorActions = {
       }
     }));
     if (key) syncSlot(key, label, status);
+  },
+
+  /** done 收尾：把尚未绑定轮次的 actor 绑到本轮 turn_id
+   * （切走再切回 / 刷新后按轮次把卡重新挂回对应消息） */
+  bindTurn(turnId: string): void {
+    if (!turnId) return;
+    setActorsState(produce((s) => {
+      s.list.forEach((a) => { if (!a.turnId) a.turnId = turnId; });
+    }));
+  },
+
+  /** 切回对话/切项目后：消息从服务端重拉（不带前端账本），按 turnId 把 actor
+   *  槽位重新插回各消息的 settled 账本（同页面会话内全保真：步数/子工具名单都在） */
+  reattachToMessages(): void {
+    const byTurn = new Map<string, SubagentActor[]>();
+    for (const a of actorsState.list) {
+      if (!a.turnId) continue;
+      const arr = byTurn.get(a.turnId) || [];
+      arr.push(a);
+      byTurn.set(a.turnId, arr);
+    }
+    if (!byTurn.size) return;
+    setChatState(produce((s) => {
+      for (const m of s.messages) {
+        const actors = m.turnId ? byTurn.get(m.turnId) : undefined;
+        if (m.sender !== 'agent' || !actors || !actors.length) continue;
+        insertSlots(m, actors);
+      }
+    }));
+  },
+
+  /** 刷新后重建（页面内存已清空）：拉服务端子线程清单造 static actor，按子会话 id
+   *  内嵌创建时刻落到「首个 ts ≥ 创建时刻」的 agent 消息轮次；步数/状态取服务端口径，
+   *  子工具名单留空、展开时 loadTools 懒加载。失败静默（重建是增强腿非主链） */
+  async hydrateFromServer(): Promise<void> {
+    try {
+      const resp = await getSubagentThreads();
+      const threads: SubagentThread[] = resp.subagents || [];
+      if (!threads.length) return;
+      setActorsState(produce((s) => {
+        for (const th of threads) {
+          const cid = th.conversation_id || '';
+          if (!cid || s.list.some((a) => a.key === cid)) continue;
+          s.list.push({
+            key: cid,
+            cid,
+            stage: '',
+            label: th.label || th.title || '',
+            depth: 1,
+            status: th.status === 'running' ? 'running'
+              : th.status === 'failed' ? 'failed' : 'completed',
+            steps: Number(th.steps || 0) || 0,
+            tools: [],
+            startedAt: cidCreatedAtMs(cid) || Date.now(),
+            staticSource: true,
+          });
+        }
+      }));
+      const agents = chatState.messages.filter((m) => m.sender === 'agent' && m.turnId);
+      if (!agents.length) return;
+      setActorsState(produce((s) => {
+        for (const a of s.list) {
+          if (a.turnId || !a.cid) continue;
+          a.turnId = (agents.find((m) => (m.ts || 0) >= a.startedAt)
+            || agents[agents.length - 1]).turnId;
+        }
+      }));
+      subagentActorActions.reattachToMessages();
+    } catch { /* 重建腿失败静默：历史消息主链不受影响 */ }
+  },
+
+  /** 展开子工具名单时懒加载（static actor 刷新后无名单）：读只读记录的 actionLog */
+  async loadTools(cid: string): Promise<void> {
+    const actor = actorByKey(cid);
+    if (!cid || !actor || actor.toolsLoaded) return;
+    setActorsState(produce((s) => {
+      const a = s.list.find((x) => x.key === cid);
+      if (a) a.toolsLoaded = true;   // 先置位防并发重复拉
+    }));
+    try {
+      const resp = await getSubagentRecord(cid);
+      const tools: SubagentActorTool[] = [];
+      (resp.messages || []).forEach((m) => {
+        (m.actionLog || []).forEach((op, i) => {
+          tools.push({
+            id: `${cid}-r${i}-${tools.length}`, name: '', summary: op, status: 'done',
+          });
+        });
+      });
+      setActorsState(produce((s) => {
+        const a = s.list.find((x) => x.key === cid);
+        if (a && !a.tools.length) a.tools = tools;
+      }));
+    } catch { /* 名单拉取失败：卡保留、名单空（不阻断） */ }
   },
 };
 

@@ -8,13 +8,16 @@
  */
 import { render, fireEvent, cleanup } from '@solidjs/testing-library';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { SseEvent, SseSubagentMeta } from '@/types';
+import type { ChatMessage, SseEvent, SseSubagentMeta } from '@/types';
+import { settleLedger, settledLedgerForMessage } from '@/lib/turn-ledger';
 import { state, setState } from '@/stores/studio';
+import { chatState, chatActions } from '@/stores/chat';
 import {
   subagentActorActions, resetSubagentActors, pendingSubagentRecord, actorByKey,
   SUBAGENT_DELEGATE_TOOL,
 } from '@/stores/chat/subagent-actors';
 import { SubagentActorCard } from '../right-panel/SubagentActorCard';
+import { TurnLedgerCard } from '../right-panel/TurnLedgerCard';
 
 const META: SseSubagentMeta = {
   cid: 'conv-sub-9', stage: 'script_analyze', label: '剧本分析', depth: 1,
@@ -44,6 +47,8 @@ function renderCard(key: string) {
 beforeEach(() => {
   resetSubagentActors();
   setState('middleView', 'preview');
+  chatActions.loadMessages([]);
+  chatActions.startStream('model-A');   // 建立本轮空账本（槽位写入处）
 });
 afterEach(() => cleanup());
 
@@ -106,5 +111,27 @@ describe('SubagentActorCard 点击进只读记录', () => {
     await fireEvent.click(head);
     expect(state.middleView).toBe('preview');
     expect(pendingSubagentRecord()).toBe('');
+  });
+});
+
+describe('相位翻转后不闪失（live → settled）', () => {
+  it('done 收尾：槽位随账本入库，settled 相位 actor 卡仍在', () => {
+    seed();
+    finishDelegate(true);
+    // 模拟 finishStream：live 账本相位翻转随消息入库（buildDoneMessage 同口径）
+    const msg: ChatMessage = {
+      sender: 'agent',
+      text: '剧本分析已落账',
+      ledger: settleLedger(chatState.turnLedger, {}),
+    };
+    const { getByTestId } = render(() => (
+      <TurnLedgerCard
+        phase="settled"
+        ledger={() => settledLedgerForMessage(msg)}
+        message={() => msg}
+      />
+    ));
+    expect(getByTestId('subagent-actor-card')).toBeTruthy();
+    expect(getByTestId('subagent-actor-card').textContent).toContain('已完成');
   });
 });
