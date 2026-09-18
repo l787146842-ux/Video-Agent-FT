@@ -36,6 +36,19 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-19 · D2 批（前端停滞根治 + 会话投影）与流式二期（子代理 actor 归组）
+- **背景（3333 取证 proj-1789706227，2026-09-18 12:40–12:44）**：服务端 turn 3 步连续、turn/end reason=done、暂停三态落账正常，前端却整屏冻死（用户按停止+继续才救回）。核对代码后定性：「死屏」= **前端 SSE 静默死连接**——replay 首帧 / event_seq 去重 / 15s 注释心跳后端早已存在，缺客户端字节级活感与服务端连接级取证；另一路缺口 = done 帧丢失时确认卡永不出现（无账本兜底腿）。同批并入用户 2026-09-18 批准解冻的流式二期（子代理活动 actor 归组，冻结清单 #17）。
+- **裁决（用户，2026-09-19）**：认可「专家绑定」方向与 dsh **state/view 分离**（session-projection 蓝图）；否决编译表+硬闸 / manifest 机器字段 / roster 覆盖闸（均为复活已退役物，撞 ADR-0004/#36B5/ADR-0007/冻结 #16 #18）；批准项 1/2/3（D2 批）+ 项 4（二期具名卡）先写计划书→审→开工（计划书已审）。红线不变：#12 ref_integrity 不扩面、#16 skill 一行不改、#18 KE 覆盖闸不加。
+- **改动（六个独立 commit）**：
+  - commit1 `a90dee0`：`web/sse_conn_diag.py`（SseConnDiag 连接级诊断：frames/heartbeats/last_seq/_close 首因留痕）+ routes/agent.py 接线。
+  - commit2 `fadb029`：`core/session_projection.py`（四单元 interaction_pause/subagent_catalog/storyboard_progress/chat_tail，init/apply/view 三纯函数 + fold/snapshot 一致切 + 双跑 `[ProjDiff]` 对拍；只读不写，Rule 3 不动）+ `GET /api/conversations/{cid}/projection`。
+  - 遗留修补 `ca70078`：commit2 的两处方法内 import 撞宪法第六章（func_imports 闸红）→ 顶层化；计划书补**实现期修正④**（不设投影变更推送帧：done 帧已携暂停/决策表单，无消费方不私设通道；前端只留 pull 腿）并据实现口径校正 §四.1/§四.2/§六。
+  - commit3 `236df09`：`lib/sse-events.ts` parseSseStream +onChunk（字节级活感钩子，注释心跳帧零事件也算活）；`lib/sse-connection.ts` 看门狗（静默满 45s = 3× 心跳跳闸）+ event_seq 断口跳闸，catch 侧把 trip 消费为可重连（区别于用户取消）；`stores/chat/projection.ts` + `api/conversations.getConversationProjection` + `messageActions.applyPauseFallback`（末条 agent 消息无载体才挂暂停卡，幂等不双挂、不跨用户消息复活、选项面缺 label 归一丢弃），resume/focusConversation 接兜底腿。
+  - commit4 `d810dda`：`core/planner._launch_subagent` 包 tagger（子循环每帧加 `subagent={cid,stage,label,depth}`；只加字段不改原 type/payload，一期消费方零感知；on_event 空不包装；降级 cid="" 仍打标）+ `core/sse_events.SseSubagentMeta` 与三帧可选字段 + `scripts/gen_api_types.py` 重生成（未手改生成物）。
+  - commit5 `1fb7fd7`：`stores/chat/subagent-actors.ts`（一子一卡：三态/步数/子工具名单 + 账本 name=subagent_actor 槽位，不入 countableItems 防一次委派算两次）+ `lib/sse-events` 分流（带标记的 tool 帧不落普通工具卡；actions_applied 保留故事板腿另计步；父 run_subagent 起止交 actor 域按锚点 id 认领收尾）+ `SubagentActorCard.tsx` + AgentTimeline 槽位行 + SubagentRail 消费打开请求 + `web/chat_service.py` 重建 actions_applied 帧时保留 subagent 打标。
+  - commit6（本条）：`docs/前端体验规范.md` §二补「子代理 actor 卡」「SSE 断流自愈」两条 + §四台账 #22/#23；`docs/未清偿债务清单.md` 登记 **D-21**（投影消费方未切换、旧折叠未删——删旧前提 = 双跑 `[ProjDiff]` 干净，而 snapshot 端点尚无实跑取证，故本批**不删**）。
+- **验证**：各 commit 过 pre-commit 受影响子集；新增前端单测 4 文件（活感/断口 14 例、投影兜底 12 例、actor 域 13 例、actor 卡组件 7 例）+ 后端二期打标 5 例；`npm run build` 绿（首屏关键路径 374.68 kB ≤ 400 kB 上限）；批末 `python scripts/acceptance.py` **全量三阶段全绿**（GATES 13 + SUITES 4 + RATCHETS 2，退出码 0）。**UI 变更待用户目测**（宪法 §3.1）：actor 卡观感 / 重连文案 / 暂停卡兜底。
+
 ### 2026-09-18 · 3333 取证续批（D1 续跑现场轮末门控 + D3 A' 窗口恢复计划书语义）
 - **背景（3333 实跑取证 proj-1789706227）**：①续跑前置块把已完成轮误标「中途中断」（chat_retry_context 把 trace 内任何失败动作当失败轮/中断点；3333 含轮内 sceneRefs 拒收的完成轮被误标，续跑恢复轮被污染）；②A' 注入窗口开窗条件被批 B 实现收窄为「KE 非空」（计划书 §五原语义 = 节点当前 OR 已完成但 review 未过），第一批 KE 组落笔的几步章节缺席（3333 模型 read_skill 自救，与 DISCIPLINE #7 相悖）。
 - **裁决（用户，2026-09-18）**：D1 续跑现场只在「上一轮真未正常收尾」（turn/end reason ≠ done 或无轮闭合）时组装，轮内已恢复拒收不算中断点；Q1 启动顺序问题否决提示层禁令补丁（架构级正向修复原则，待多轮沟通）；D2 前端停滞=取证优先（复现 + 客户端日志），子代理进度事件列下一批。
