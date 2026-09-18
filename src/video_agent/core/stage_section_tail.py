@@ -9,8 +9,9 @@
 
 设计定案（计划书 §五 / 已锁定决策）：
 - 注入单位 = 一步（一次 LLM 调用），非分组；窗口内每步重算注入；
-- 窗口 = KE 已开始且 review_storyboard 未过（workflow_runtime.in_storyboard_window，
-  避探针粒度陷阱：建第一批 shot 后节点翻 audio，章节仍全程在场）；
+- 窗口 = 故事板设计节点当前（含第一批 KE 组落笔前的几步）或 KE 已完成且
+  review_storyboard 未过（workflow_runtime.in_storyboard_window，计划书原
+  语义；避探针粒度陷阱：建第一批 shot 后节点翻 audio，章节仍全程在场）；
 - 纯函数 (state, skill) → 文本，不含时间戳/随机/遍历序，回放重算字节一致；
 - 章节逐字原文，平台零产出形态引导（红线：desc 零引导 / 不给卡面正例）；
 - 顺序：analysis 段在前（素材）、章节段在末（规范，近因效应离生成最近）；

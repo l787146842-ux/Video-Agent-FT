@@ -137,30 +137,62 @@ def _node_objectively_done(node_id: str, run: Dict[str, Any],
         if not all(po.stage_done(k, state, skill)
                    for k in _REVIEW_NODE_PREREQ[node_id]):
             return False
+        # 只读快路：账本键缺席 = 必无 DecisionResolved（EventLedger 构造会
+        # setdefault 突变 state，读路径（current_node_probe 等纯函数）不得踩）
+        if state.get("workflow_events") is None:
+            return False
         rid = str(run.get("run_id") or "")
         return any(e.node_id == node_id and e.event_type == "DecisionResolved"
                    for e in EventLedger(state).by_run(rid))
     return False
 
 
+def _completed_nodes(run: Dict[str, Any], state: Dict[str, Any],
+                     skill: str) -> List[str]:
+    """平铺清单客观探针全量重算（单一源：sync_run 与只读探针共用）。"""
+    return [node_id for node_id in _FLAT_NODES
+            if _node_objectively_done(node_id, run, state, skill)]
+
+
+def current_node_probe(state: Dict[str, Any], skill: str) -> str:
+    """只读 current_node 探针（不写账本）：平铺清单首个未完成节点，全完成 = ''。
+
+    重算口径与 sync_run 完全同源（账本无自报）；供「只读不写」的每步判定
+    （如 A' 注入窗口）使用，区别于轮末 sync_run 的落账写入。
+    """
+    if not isinstance(state, dict):
+        return ""
+    run = state.get("workflow_run") or {}
+    completed = set(_completed_nodes(run, state, skill))
+    for node_id in _FLAT_NODES:
+        if node_id not in completed:
+            return node_id
+    return ""
+
+
+# 故事板设计三节点（A' 章节注入窗口的「节点当前」判据来源）
+_STORYBOARD_DESIGN_NODES = ("storyboard_key_elements", "storyboard_shots",
+                            "storyboard_audio")
+
+
 def in_storyboard_window(state: Dict[str, Any], skill: str) -> bool:
     """A' 章节注入窗口只读判定（纯函数，不写状态；2026-09-18 批 B）。
 
-    窗口 = 故事板设计已开始（KE 结构非空）且分镜评审未通过
-    （review_storyboard 未完成）。避开探针粒度陷阱：建第一批 shot 后
-    storyboard_shots 探针即判完成、current_node 翻向 audio，但模型仍在
-    写后续 shot——只要 review_storyboard 未过，章节持续在场。
+    窗口开 = 故事板三设计节点任一为 current_node（只读探针；**含 KE 尚空
+    但 analysis 已落账的几步**——第一批 KE 组落笔时章节必须在场；3333 实证
+    旧实现以「KE 非空」开窗致该几步章节缺席、模型被迫 read_skill 自救），
+    或 KE 已完成且 review_storyboard 未过（探针粒度陷阱：建第一批 shot 后
+    节点翻向 audio/review，模型仍在写后续产物——章节持续在场）。
     """
     if not isinstance(state, dict):
         return False
-    # 故事板设计已开始：KE 结构非空（客观探针，fail-closed）
+    if current_node_probe(state, skill) in _STORYBOARD_DESIGN_NODES:
+        return True
+    # 节点已翻过设计段：KE 完成且分镜评审未通过 → 章节仍在场
     if not po.stage_done("key_elements", state, skill):
         return False
-    # 分镜评审未通过：review_storyboard 未完成（需 DecisionResolved 事件）
     run = state.get("workflow_run") or {}
-    if _node_objectively_done("review_storyboard", run, state, skill):
-        return False
-    return True
+    return not _node_objectively_done("review_storyboard", run, state, skill)
 
 
 def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
@@ -196,9 +228,7 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     ):
         run.setdefault(key, copy.deepcopy(value))
     # 账本无自报：平铺清单全量探针重算，覆盖任何历史自报条目
-    run["completed_nodes"] = [
-        node_id for node_id in _FLAT_NODES
-        if _node_objectively_done(node_id, run, state, skill)]
+    run["completed_nodes"] = _completed_nodes(run, state, skill)
     run["current_node"] = ""
     for node_id in _FLAT_NODES:
         if node_id not in run["completed_nodes"]:

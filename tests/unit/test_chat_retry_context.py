@@ -316,6 +316,38 @@ def test_last_error_bubble_scoped_after_last_user_message():
         {"sender": "agent", "text": "⚠️ 首轮错误"}])) == "首轮错误"
 
 
+# ---------- D1（3333 批）：轮末门控 + 已恢复拒收 ----------
+
+def test_scene_suppressed_when_last_turn_done(patch_traces, monkeypatch):
+    """上轮正常收尾（turn/end reason=done）：轮内含拒收回执也不组装现场
+    （3333 实证误标「中途中断」），回落机械重发。"""
+    patch_traces["traces"] = [_trace(steps=[{"actions": [
+        _action("storyboard_create_group", ok=False, detail="sceneRefs 为空")]}])]
+    monkeypatch.setattr(crc, "_last_turn_end_reason", lambda svc: "done")
+    assert crc.collect_failure_scene(FakeSvc()) is None
+    assert crc.build_retry_resume_note(FakeSvc()) == ""
+
+
+def test_scene_assembled_when_last_turn_stopped(patch_traces, monkeypatch):
+    """上轮未正常收尾（stopped）：照常组装现场并定位中断点。"""
+    patch_traces["traces"] = [_trace(steps=[{"actions": [
+        _action("image_generate", ok=False, detail="上游 504")]}])]
+    monkeypatch.setattr(crc, "_last_turn_end_reason", lambda svc: "stopped")
+    scene = crc.collect_failure_scene(FakeSvc())
+    assert scene and "image_generate" in scene["failed_at"]
+
+
+def test_recovered_reject_not_failed_at(patch_traces, monkeypatch):
+    """轮内拒收被后续同名成功恢复：进清单但不定位中断点。"""
+    patch_traces["traces"] = [_trace(steps=[{"actions": [
+        _action("storyboard_create_group", ok=False, detail="sceneRefs 为空"),
+        _action("storyboard_create_group", ok=True)]}])]
+    monkeypatch.setattr(crc, "_last_turn_end_reason", lambda svc: "stopped")
+    scene = crc.collect_failure_scene(FakeSvc())
+    assert scene and scene["failed_at"] == ""
+    assert [p["ok"] for p in scene["progress"]] == [False, True]
+
+
 # ---------- tracer：失败轮归档格式 ----------
 
 def test_trace_record_error_lands_in_dict(tmp_path, monkeypatch):

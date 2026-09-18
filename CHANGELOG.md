@@ -36,6 +36,12 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-18 · 3333 取证续批（D1 续跑现场轮末门控 + D3 A' 窗口恢复计划书语义）
+- **背景（3333 实跑取证 proj-1789706227）**：①续跑前置块把已完成轮误标「中途中断」（chat_retry_context 把 trace 内任何失败动作当失败轮/中断点；3333 含轮内 sceneRefs 拒收的完成轮被误标，续跑恢复轮被污染）；②A' 注入窗口开窗条件被批 B 实现收窄为「KE 非空」（计划书 §五原语义 = 节点当前 OR 已完成但 review 未过），第一批 KE 组落笔的几步章节缺席（3333 模型 read_skill 自救，与 DISCIPLINE #7 相悖）。
+- **裁决（用户，2026-09-18）**：D1 续跑现场只在「上一轮真未正常收尾」（turn/end reason ≠ done 或无轮闭合）时组装，轮内已恢复拒收不算中断点；Q1 启动顺序问题否决提示层禁令补丁（架构级正向修复原则，待多轮沟通）；D2 前端停滞=取证优先（复现 + 客户端日志），子代理进度事件列下一批。
+- **改动**：`web/chat_retry_context.py`（+_last_turn_end_reason 轮末门控；failed_at 跳过被后续同名成功恢复的拒收）；`core/workflow_runtime.py`（+current_node_probe 只读探针、_completed_nodes 单一源 sync_run 共用、in_storyboard_window 按计划书语义重写、_node_objectively_done 评审分支只读快路防 EventLedger setdefault 突变）；回归钉 test_chat_retry_context +3 / test_stage_section_tail +1。
+- **验证**：定点 pytest 76 绿；acceptance --quick 绿。待办：D2（前端停滞复现取证 + 子代理进度状态事件）、Q1/Q2①②③/Q4a 待多轮沟通。
+
 ### 2026-09-18 · 分镜章节注入与工具面修复批（2222 分镜劣化根因；对齐 flova「平台保证章节写时在场」；Skill 零改动）
 - **背景（2222 实测 + trace 66aad3bc782e）**：主代理亲做故事板时 skill 章节 STEP1 读过、写 shot 时已被 3-4 万 token 稀释（15 镜单运镜、0 内切、台词脱离描述）；read_uploaded_doc 被 PRODUCTION_MAIN_PRUNE 裁掉，台词只能靠分析报告还原。根因 = 写时章节/剧本原文不在场，非模型档位（high 经 chat_models_meta 回落一直生效、档位非变量）。
 - **裁决（用户，2026-09-18）**：①主代理工具面全还（退役 PRODUCTION_MAIN_PRUNE 六件；structured_output 打卡仍子代理专属；委派改协议引导非结构性强制）；②A' 阶段键控临时尾：故事板窗口（KE 起至 review_storyboard 过）每步注入 skill 故事板三章原文，经 agent_loop extra_messages 拼消息最末、不落事件流、纯函数回放自证、章节近生成端（近因效应）；③analysis 挪出模型状态快照、改走 A' 同窗口（章节前），恢复裁决③「故事板阶段注入分析、其他阶段不需要」且防双付；④write_media_prompt/script_analyze 保持委派（PIPELINE_STAGE_KINDS 不变）；⑤desc/summary 键序写闸（shot 建组 model_validator 验原始 JSON desc 先于 summary，倒序整单拒收）；⑥删冻结 #18（模型档位 UI）——R6 翻案，依据 high 一直生效、档位非变量；⑦红线：Skill 零改动、闸机/工具不写死格式、不给卡面正例、散文不检查。

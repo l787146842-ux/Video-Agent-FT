@@ -5,7 +5,8 @@
 ① 纯函数：同 (state, skill) 回放重算字节一致（不掺时间戳/随机/遍历序）；
 ② 不突变 state（只读构造）——「不落事件流」由 agent_loop 的 extra_messages
    通道结构性保证（拼副本、不持久化，见 agent_loop._await_llm_with_stop_guard）；
-③ 窗口门控：KE 未起 / review_storyboard 已过 → 空串；故事板窗口 → 章节原文；
+③ 窗口门控：analysis 未落账（current 节点未到设计段）/ review_storyboard
+   已过 → 空串；故事板窗口（含第一批 KE 组落笔前的几步）→ 章节原文；
 ④ 章节逐字原文、平台零产出形态引导（红线：desc 零引导 / 不给卡面正例）。
 """
 import copy
@@ -44,6 +45,25 @@ def test_window_opens_on_ke():
 def test_window_closed_no_ke():
     """KE 未起 → 窗口关（故事板设计尚未开始）。"""
     assert workflow_runtime.in_storyboard_window(_state_no_ke(), SKILL) is False
+
+
+def test_window_opens_at_ke_node_before_first_ke(monkeypatch):
+    """D3（3333 批）：analysis/spec/review_spec 已过、KE 尚空 → current 节点 =
+    storyboard_key_elements → 窗口开（第一批 KE 组落笔时章节必须在场；
+    旧实现「KE 非空」开窗致该几步章节缺席）。"""
+    real = workflow_runtime._node_objectively_done
+
+    def fake(node, run, state, skill):
+        if node in ("collect_spec", "write_spec", "review_spec"):
+            return True
+        return real(node, run, state, skill)
+
+    monkeypatch.setattr(workflow_runtime, "_node_objectively_done", fake)
+    state = {CAT_KEY_ELEMENTS: [], CAT_SHOTS: [], CAT_AUDIO_ITEMS: [],
+             "analysis": {"summary": "三幕科幻剧本"}, "workflow_run": {}}
+    assert workflow_runtime.current_node_probe(state, SKILL) == \
+        "storyboard_key_elements"
+    assert workflow_runtime.in_storyboard_window(state, SKILL) is True
 
 
 def test_window_closed_after_review(monkeypatch):

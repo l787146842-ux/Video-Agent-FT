@@ -10,11 +10,17 @@
   持久化的用户气泡不含本块）。
 - 用户无感知回落：取不到现场/任何异常一律返回空串，调用方回落原机械重发，
   重试本身绝不因续跑组装而报错。
+- 轮末门控（2026-09-18 3333 取证批 D1）：现场只在「上一轮真未正常收尾」
+  （主对话最后一条 turn/end reason ≠ done，或无轮闭合=崩溃/流不可读）时
+  组装；正常收尾轮（含暂停待消费）内的工具拒收回执属轮内已恢复重试，
+  不构成中断点（3333 实证：已完成轮含 sceneRefs 拒收被误标「中途中断」，
+  续跑恢复轮被污染）。
 """
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from src.video_agent.core import session_log
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.utils.prompts import load_prompt_section
 
@@ -58,6 +64,23 @@ def _find_scene_trace(traces: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _last_turn_end_reason(svc) -> str:
+    """主对话事件流最后一条 turn/end 的 reason（done/stopped/cancelled/error）。
+
+    '' = 无轮闭合（崩溃中断留下的未闭合 turn/start）或事件流不可读——
+    两者皆按「未正常收尾」fail-open 组装现场（续跑价值优先）。
+    """
+    try:
+        events = session_log.load_events(svc, "")
+    except Exception as e:
+        logger.debug("[RetryResume] 轮末 reason 读取失败（按未闭合处理）: {}", e)
+        return ""
+    for ev in reversed(events):
+        if ev.get("type") == session_log.EV_TURN_END:
+            return str(ev.get("reason") or "done")
+    return ""
+
+
 def _last_error_chat_message(svc) -> str:
     """最近一条用户消息之后的最近一条错误气泡正文（⚠️ 前缀 = chat_errors
     统一出口）。限定在最后一条 user 消息之后：失败气泡必在触发重试的
@@ -85,7 +108,12 @@ def collect_failure_scene(svc) -> Optional[Dict[str, Any]]:
     返回 {"progress": [{name, ok, detail}], "failed_at": str, "error": str}：
     progress = 按序工具调用账本（只留最近 N 条）；failed_at = 中断点；
     error = 失败原因（trace 归档摘要优先，聊天错误气泡回落）。
+    轮末门控（D1）：上一轮 turn/end reason == done（正常收尾，含暂停待
+    消费）→ 返回 None（轮内拒收属已恢复重试，非中断点），调用方回落机械
+    重发；reason ≠ done 或无轮闭合 → 正常组装。
     """
+    if _last_turn_end_reason(svc) == "done":
+        return None
     try:
         traces = AgentTracer.get_instance().get_recent_traces(limit=3)
     except Exception as e:
@@ -97,6 +125,7 @@ def collect_failure_scene(svc) -> Optional[Dict[str, Any]]:
     error = ""
     if trace:
         error = str(trace.get("error") or "").strip()[:_ERROR_MAX_CHARS]
+        entries: List[tuple] = []
         for step in trace.get("steps") or []:
             for act in step.get("actions") or []:
                 if not isinstance(act, dict):
@@ -106,10 +135,13 @@ def collect_failure_scene(svc) -> Optional[Dict[str, Any]]:
                     continue
                 ok = act.get("ok") is not False
                 detail = str(act.get("result_summary") or act.get("summary") or "").strip()
-                detail = detail[:_DETAIL_MAX_CHARS]
-                progress.append({"name": name, "ok": ok, "detail": detail})
-                if not ok and not failed_at:
-                    failed_at = f"执行到工具 {name} 时失败" + (f"：{detail}" if detail else "")
+                entries.append((name, ok, detail[:_DETAIL_MAX_CHARS]))
+        # 轮内已恢复拒收不算中断点：同名调用后续成功 = 重试已恢复（D1）
+        for i, (name, ok, detail) in enumerate(entries):
+            progress.append({"name": name, "ok": ok, "detail": detail})
+            if not ok and not failed_at and not any(
+                    n == name and o for n, o, _ in entries[i + 1:]):
+                failed_at = f"执行到工具 {name} 时失败" + (f"：{detail}" if detail else "")
         progress = progress[-_MAX_ACTION_ENTRIES:]
     chat_error = _last_error_chat_message(svc)
     if chat_error and not error:
