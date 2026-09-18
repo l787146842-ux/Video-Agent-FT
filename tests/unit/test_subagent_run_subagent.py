@@ -137,8 +137,11 @@ async def test_dispatch_intercepts_run_subagent():
 
 async def test_launch_subagent_forwards_on_event(svc, monkeypatch):
     """2026-09-15 1111 批（子活动流式可见）：父 on_event 透传给子循环，
-    子级增量事件进父 SSE（故事板增量亮卡，不再做完一次性弹出）。"""
+    子级增量事件进父 SSE（故事板增量亮卡，不再做完一次性弹出）。
+    流式二期起子级拿到的是 tagger 包装件（非父回调本体），
+    包装只加 subagent 字段、不改原事件（打标契约见下方二期组用例）。"""
     seen = {}
+    forwarded = []
 
     class _FakeResp:
         text = "ok"
@@ -148,12 +151,20 @@ async def test_launch_subagent_forwards_on_event(svc, monkeypatch):
         seen["on_event"] = on_event
         return _FakeResp()
 
-    sentinel = object()
+    async def _parent_on_event(ev):
+        forwarded.append(ev)
+
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
     parent = Planner(state_manager=svc, llm_adapter=None)
     await parent._launch_subagent(
-        "拆解", PlannerContext(subagent_depth=0), on_event=sentinel)
-    assert seen["on_event"] is sentinel
+        "拆解", PlannerContext(subagent_depth=0), on_event=_parent_on_event)
+    assert seen["on_event"] is not None          # 子级有事件出口（一期语义）
+    assert seen["on_event"] is not _parent_on_event  # 二期：经 tagger 包装
+    # 包装件仍把事件送回父回调（出口不断）
+    await seen["on_event"]({"type": "status", "text": "子级进度"})
+    assert len(forwarded) == 1
+    assert forwarded[0]["type"] == "status" and forwarded[0]["text"] == "子级进度"
+    assert "subagent" in forwarded[0]
 
 
 async def test_dispatch_passes_runner_on_event_to_launcher():
@@ -544,3 +555,134 @@ async def test_subagent_label_truncation(svc, monkeypatch):
     label = labels_seen[-1]
     assert len(label) == _SUBAGENT_LABEL_MAX
     assert label == "b" * (_SUBAGENT_LABEL_MAX - 1) + "\u2026"
+
+
+# ---------- 流式二期：子事件打标（actor 归组数据源） ----------
+
+async def test_launch_subagent_tags_every_child_event(svc, monkeypatch):
+    """流式二期①：子循环发出的每个事件都带 subagent={cid,stage,label,depth}，
+    且原有 type/payload 一字不改（一期消费方零感知，只加字段）。"""
+    from src.video_agent.skill_runtime.registry import STAGE_LABELS
+
+    got: list = []
+    seen = {}
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, stream_hook=None,
+                           on_event=None, **kw):
+        seen["cid"] = str(getattr(context, "session_conversation_id", "") or "")
+        # 子级真实发射面：工具起止（含事件卡/时间线子步）+ state_refresh
+        await on_event({"type": "tool_started", "id": "t1",
+                        "name": "storyboard_create_group", "summary": "建组"})
+        await on_event({"type": "actions_applied", "count": 1})
+        await on_event({"type": "tool_finished", "id": "t1", "ok": True,
+                        "elapsed_ms": 3.0, "result_summary": "建组"})
+        return _FakeResp()
+
+    async def _parent_on_event(ev):
+        got.append(ev)
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    await parent._launch_subagent(
+        "拆解剧本", PlannerContext(subagent_depth=0),
+        stage="script_analyze", on_event=_parent_on_event)
+
+    assert [e["type"] for e in got] == [
+        "tool_started", "actions_applied", "tool_finished"]
+    # 原字段保真（打标不改子事件本体）
+    assert got[0]["name"] == "storyboard_create_group" and got[0]["id"] == "t1"
+    assert got[2]["ok"] is True and got[2]["elapsed_ms"] == 3.0
+    assert seen["cid"]                            # 子隐藏线程已建
+    for ev in got:
+        meta = ev["subagent"]
+        assert set(meta) == {"cid", "stage", "label", "depth"}
+        assert meta["cid"] == seen["cid"]         # 归组键 = 子隐藏线程 id
+        assert meta["stage"] == "script_analyze"
+        assert meta["label"] == STAGE_LABELS["script_analyze"]  # 阶段展示名后端权威
+        assert meta["depth"] == 1                 # 父 0 → 子 1
+
+
+async def test_launch_subagent_label_falls_back_to_task_excerpt(svc, monkeypatch):
+    """流式二期②：无 stage 的通用委派 → label 取任务摘要前段（actor 卡标题不空）。"""
+    from src.video_agent.core.planner import _SUBAGENT_ACTOR_LABEL_MAX
+
+    got: list = []
+    task_text = "为已建好的关键元素逐条撰写媒体提示词并保持风格一致"
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, stream_hook=None,
+                           on_event=None, **kw):
+        await on_event({"type": "tool_started", "id": "t1",
+                        "name": "prompt_draft", "summary": "写提示词"})
+        return _FakeResp()
+
+    async def _parent_on_event(ev):
+        got.append(ev)
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    await parent._launch_subagent(
+        task_text, PlannerContext(subagent_depth=0), on_event=_parent_on_event)
+
+    meta = got[0]["subagent"]
+    assert meta["stage"] == ""
+    assert meta["label"] == task_text[:_SUBAGENT_ACTOR_LABEL_MAX]
+    assert len(meta["label"]) == _SUBAGENT_ACTOR_LABEL_MAX   # 长任务被截断
+
+
+async def test_launch_subagent_without_on_event_not_wrapped(svc, monkeypatch):
+    """流式二期③：on_event=None（CLI/单测/无前端）不包装、不崩——子级拿到 None。"""
+    captured = {}
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, stream_hook=None,
+                           on_event=None, **kw):
+        captured["on_event"] = on_event
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    out = await parent._launch_subagent("x", PlannerContext(subagent_depth=0))
+    assert captured["on_event"] is None
+    assert out == "ok"                            # 无事件通道仍正常回摘要
+
+
+async def test_launch_subagent_tags_empty_cid_on_degrade(svc, monkeypatch):
+    """流式二期④：子会话创建失败（降级不落流）仍打标，cid=""
+    ——前端按 label+depth 兜底归组（风险 C），不因降级而丢失归组能力。"""
+    from src.video_agent.state import conversation_ops as conv_ops
+
+    got: list = []
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, stream_hook=None,
+                           on_event=None, **kw):
+        await on_event({"type": "tool_started", "id": "t1",
+                        "name": "script_analysis_report", "summary": "交分析"})
+        return _FakeResp()
+
+    def _boom(*a, **k):
+        raise RuntimeError("hidden thread persist failed")
+
+    async def _parent_on_event(ev):
+        got.append(ev)
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    monkeypatch.setattr(conv_ops, "create_scoped_conversation", _boom)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    out = await parent._launch_subagent(
+        "拆解剧本", PlannerContext(subagent_depth=0), on_event=_parent_on_event)
+
+    assert out == "ok"                            # 降级不阻断委派
+    meta = got[0]["subagent"]
+    assert meta["cid"] == ""                      # 不落流仍打标
+    assert meta["label"] and meta["depth"] == 1    # 兜底归组键齐备

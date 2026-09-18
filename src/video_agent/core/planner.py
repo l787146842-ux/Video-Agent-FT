@@ -60,7 +60,9 @@ from src.video_agent.core.turn_executor import TurnExecutor
 from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.progress import emit_event_card
-from src.video_agent.skill_runtime.registry import fallback_skill_from_state, tool_sections
+from src.video_agent.skill_runtime.registry import (
+    STAGE_LABELS, fallback_skill_from_state, tool_sections,
+)
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_contract, workflow_runtime
 from src.video_agent.core import state_delta as state_delta_mod
@@ -99,6 +101,9 @@ _BG_TASKS: set = set()
 
 # 子代理标题最大长度（含省略号）
 _SUBAGENT_LABEL_MAX = 40
+
+# 子代理 actor 卡标签最大长度（流式二期：无 stage 的通用委派取任务摘要前段）
+_SUBAGENT_ACTOR_LABEL_MAX = 24
 
 
 async def drain_background_tasks() -> None:
@@ -492,14 +497,36 @@ class Planner:
                             base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
                 except Exception as _e:
                     logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
+        # 流式二期（子代理活动 actor 归组）：子循环事件经 tagger 统一打标
+        # subagent={cid,stage,label,depth}，前端按 cid 把同一子代理的活动归成
+        # 一张 actor 卡（flova 具名 specialist 形态）。只加字段、不改子事件原有
+        # type/payload，一期消费方零感知；on_event 为空（CLI/单测）不包装。
+        # cid 为空（子会话创建失败降级不落流）仍打标，前端按 label+depth 兜底归组。
+        child_on_event = None
+        if on_event is not None:
+            sub_meta = {
+                "cid": child_cid,
+                "stage": resolved_stage,
+                "label": (
+                    STAGE_LABELS.get(resolved_stage, resolved_stage) if resolved_stage
+                    else (task or "")[:_SUBAGENT_ACTOR_LABEL_MAX]
+                ),
+                "depth": child_depth,
+            }
+
+            async def child_on_event(ev: Dict[str, Any]) -> None:
+                await on_event({**ev, "subagent": sub_meta})
+
         # 子在同一 asyncio task/同一 context 内联跑：包一层追踪隔离带（D1），
         # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
         # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。
         with AgentTracer.get_instance().child_trace_scope():
             # 2026-09-15 1111 批（对齐 flova/dsh 子活动实时可见）：把父的 on_event
-            # 透传给子循环，子级 state_refresh/timeline/tool 事件进入父 SSE，
-            # 故事板增量亮卡（此前子级 emit 无出口，做完才一次性弹出）。
-            resp = await child.handle_message(base_task, child_ctx, on_event=on_event)
+            # 透传给子循环（流式二期经上方 tagger 打标），子级 state_refresh/
+            # timeline/tool 事件进入父 SSE，故事板增量亮卡（此前子级 emit 无出口，
+            # 做完才一次性弹出）。
+            resp = await child.handle_message(
+                base_task, child_ctx, on_event=child_on_event)
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:

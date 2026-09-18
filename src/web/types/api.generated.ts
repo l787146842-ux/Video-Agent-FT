@@ -674,6 +674,13 @@ export interface SseReasoningDeltaEvent {
   text?: string;
 }
 
+export interface SseSubagentMeta {
+  cid?: string;
+  stage?: string;
+  label?: string;
+  depth?: number;
+}
+
 export interface SseToolStartedEvent {
   type: 'tool_started';
   id: string;
@@ -681,6 +688,7 @@ export interface SseToolStartedEvent {
   summary: string;
   args?: Record<string, unknown> | undefined;
   detail_md?: string | undefined;
+  subagent?: SseSubagentMeta | undefined;
 }
 
 export interface SseToolFinishedEvent {
@@ -691,6 +699,7 @@ export interface SseToolFinishedEvent {
   result_summary?: string;
   detail_md?: string | undefined;
   planning?: boolean | undefined;
+  subagent?: SseSubagentMeta | undefined;
 }
 
 export interface SseDocWrittenEvent {
@@ -704,6 +713,7 @@ export interface SseActionsAppliedEvent {
   count?: number | undefined;
   step?: number | undefined;
   payload?: Record<string, unknown> | undefined;
+  subagent?: SseSubagentMeta | undefined;
 }
 
 export interface SseStoppedInflightItem {

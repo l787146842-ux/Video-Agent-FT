@@ -100,6 +100,18 @@ class SseReasoningDeltaEvent(_SseFrame):
     text: str = ""
 
 
+class SseSubagentMeta(BaseModel):
+    """子代理活动归组标记（流式二期）：子循环事件经
+    core/planner._launch_subagent 的 tagger 打标后随帧下发，前端按 cid
+    把同一子代理的活动归成一张 actor 卡（flova 具名 specialist 形态）。
+    cid 空 = 子会话创建失败降级不落流（前端按 label+depth 兜底归组）；
+    label = 阶段展示名（STAGE_LABELS）或通用委派的任务摘要前段。"""
+    cid: str = ""
+    stage: str = ""
+    label: str = ""
+    depth: int = 0
+
+
 class SseToolStartedEvent(_SseFrame):
     type: Literal["tool_started"]
     # id/name/summary 为发射侧必携字段（无默认 → 生成 TS 必填，
@@ -110,6 +122,8 @@ class SseToolStartedEvent(_SseFrame):
     args: Optional[Dict[str, Any]] = None
     # 事件卡折叠区全文（对齐批：分析报告全文挂卡，仅 event_card 携带）
     detail_md: Optional[str] = None
+    # 子代理活动标记（流式二期）：仅子循环事件携带，父自身事件恒为 null
+    subagent: Optional[SseSubagentMeta] = None
 
 
 class SseToolFinishedEvent(_SseFrame):
@@ -121,6 +135,8 @@ class SseToolFinishedEvent(_SseFrame):
     # 事件卡折叠区全文（仅 event_card 携带）
     detail_md: Optional[str] = None
     planning: Optional[bool] = None
+    # 子代理活动标记（流式二期）：同 tool_started 口径
+    subagent: Optional[SseSubagentMeta] = None
 
 
 class SseDocWrittenEvent(_SseFrame):
@@ -135,6 +151,9 @@ class SseActionsAppliedEvent(_SseFrame):
     step: Optional[int] = None
     # web 透传层快照形态：payload.count + payload.state（ServerStateSnapshot）
     payload: Optional[Dict[str, Any]] = None
+    # 子代理活动标记（流式二期）：子级 state_refresh 同携带，前端据此
+    # 给 actor 卡计步（故事板刷新腿保留一期语义不变）
+    subagent: Optional[SseSubagentMeta] = None
 
 
 class SseStoppedInflightItem(BaseModel):
@@ -284,6 +303,7 @@ TS_EVENT_FRAMES: List[tuple] = [
     ("SseStatusEvent", SseStatusEvent),
     ("SseDeltaEvent", SseDeltaEvent),
     ("SseReasoningDeltaEvent", SseReasoningDeltaEvent),
+    ("SseSubagentMeta", SseSubagentMeta),
     ("SseToolStartedEvent", SseToolStartedEvent),
     ("SseToolFinishedEvent", SseToolFinishedEvent),
     ("SseDocWrittenEvent", SseDocWrittenEvent),

@@ -55,6 +55,7 @@ import type {
   SseStatusEvent,
   SseStoppedEvent as GenSseStoppedEvent,
   SseStoppedInflightItem,
+  SseSubagentMeta,
   SseTaskStatusEvent,
   SseToolFinishedEvent,
   SseToolStartedEvent,
@@ -416,6 +417,7 @@ export type {
   SseReasoningDeltaEvent,
   SseStatusEvent,
   SseStoppedInflightItem,
+  SseSubagentMeta,
   SseTaskStatusEvent,
   SseToolFinishedEvent,
   SseToolStartedEvent,
@@ -429,6 +431,9 @@ export type SseStoppedEvent = Omit<GenSseStoppedEvent, 'phase'> & {
 export type SseActionsAppliedEvent = Omit<GenSseActionsAppliedEvent, 'payload'> & {
   payload?: { count?: number; state?: ServerStateSnapshot | null };
 };
+// SseSubagentMeta（流式二期）：子代理活动归组标记（cid/stage/label/depth），
+// 挂在 tool_started / tool_finished / actions_applied 三帧的可选 subagent 字段上；
+// 前端消费方 = 子代理 actor 卡归组（二期计划书 §四）。
 /** done 载荷：账本四件套收窄必填；state/trace/workflow 收窄视图态 */
 export type SseDonePayload = Omit<GenSseDonePayload,
   'text' | 'elapsed_ms' | 'steps' | 'applied_actions'
