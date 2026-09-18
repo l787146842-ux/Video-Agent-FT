@@ -23,6 +23,7 @@ from src.video_agent.web.agent_task_manager import (
     is_shutting_down,
     shutdown_terminal_frame,
 )
+from src.video_agent.web.sse_conn_diag import SseConnDiag
 from src.video_agent.web.task_manager import snapshot_inflight_generations
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.web.error_payload import (
@@ -281,6 +282,8 @@ async def agent_task_events(task_id: str, request: Request):
         raise VideoAgentError(
             f"任务 '{task_id}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
         )
+    # D2 批 commit1：连接级诊断（纯观测，不参与控制流）
+    diag = SseConnDiag(task_id)
 
     async def gen():
         try:
@@ -300,8 +303,10 @@ async def agent_task_events(task_id: str, request: Request):
                             "message": "订阅超时，任务仍在后台运行，刷新可重连",
                         }, ensure_ascii=False) + "\n\n"
                     )
+                    diag.close("stream_timeout")
                     break
                 if await request.is_disconnected():
+                    diag.close("client_disconnected")
                     break
                 if is_shutting_down():
                     # 服务优雅关停：grace window 内下发结构化终态帧后收尾
@@ -309,6 +314,7 @@ async def agent_task_events(task_id: str, request: Request):
                     yield (
                         "data: " + json.dumps(shutdown_terminal_frame(), ensure_ascii=False) + "\n\n"
                     )
+                    diag.close("shutdown")
                     break
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=1.0)
@@ -316,13 +322,17 @@ async def agent_task_events(task_id: str, request: Request):
                     idle_polls += 1
                     if idle_polls >= 15:  # 约 15s 静默发一次心跳
                         idle_polls = 0
+                        diag.note_heartbeat()
                         yield ": heartbeat\n\n"
                     continue
                 idle_polls = 0
+                diag.note_frame(ev.get("event_seq"))
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 if ev.get("type") in ("done", "error", "task_status", "stopped"):
+                    diag.close(f"terminal:{ev.get('type')}")
                     break
         finally:
+            diag.close("generator_exit")
             tm.unsubscribe(task_id, q)
 
     return StreamingResponse(
