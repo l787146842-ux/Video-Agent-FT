@@ -49,6 +49,12 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
   - commit6（本条）：`docs/前端体验规范.md` §二补「子代理 actor 卡」「SSE 断流自愈」两条 + §四台账 #22/#23；`docs/未清偿债务清单.md` 登记 **D-21**（投影消费方未切换、旧折叠未删——删旧前提 = 双跑 `[ProjDiff]` 干净，而 snapshot 端点尚无实跑取证，故本批**不删**）。
 - **验证**：各 commit 过 pre-commit 受影响子集；新增前端单测 4 文件（活感/断口 14 例、投影兜底 12 例、actor 域 13 例、actor 卡组件 7 例）+ 后端二期打标 5 例；`npm run build` 绿（首屏关键路径 374.68 kB ≤ 400 kB 上限）；批末 `python scripts/acceptance.py` **全量三阶段全绿**（GATES 13 + SUITES 4 + RATCHETS 2，退出码 0）。**UI 变更待用户目测**（宪法 §3.1）：actor 卡观感 / 重连文案 / 暂停卡兜底。
 
+### 2026-09-19 · D2 批续批（actor 卡重载重建 + 双跑对拍留痕；用户实跑反馈驱动）
+- **背景（用户实跑 5555/6666 两项目反馈）**：actor 卡执行中可见、切走切回/刷新后消失。取证（logs/agent-20260919.log + [SseDiag]）：两项目任务均 `close=terminal:done`（自然收尾，非停止路径）；6666 自然收尾后卡仍在（收尾路径无缺陷），5555 的消失与期间多次项目/对话切换吻合（消息从服务端重拉即不带前端账本）——根因 = 卡槽位只活在前端内存账本。
+- **改动**：①同页面会话内重建——done 收尾把 actor 绑 turn_id（`bindTurn`），`loadMessages` 重拉后按 turnId 把槽位插回对应消息的 settled 账本（锚定父委派行之后；未绑轮次不挂防跨轮误挂），步数/子工具名单全保真；②页面刷新后重建——拉 `GET /conversations/subagents` 造 static actor（步数/状态取服务端口径），按子会话 id 内嵌创建时刻落到首个 ts≥创建时刻 的轮次，子工具名单展开时懒加载只读记录（`loadTools` 幂等）；重建腿失败静默不影响历史主链；③`session_projection.snapshot` 每次对拍打一条 INFO 留痕（`[ProjDiff] 对拍 cid/auth/proj/match`）——D-21 的「干净」自此可计数，零调用不再被误当干净。
+- **D-21 结论（用户问「能不能删旧码」）**：**本批不删**。两条理由：对拍样本量尚小（个位数调用，未覆盖暂停被消费等状态翻转）；四个消费方目前都不能直接切（投影单元缺字段：subagent_catalog 无 cid/steps，切 SubagentRail 会丢「点进只读记录」能力）。清偿要件已更新为：补投影单元字段 → 实跑覆盖状态翻转且 match 全真 → 逐个切消费方 → 删旧码。
+- **验证**：vitest 全量 993 绿（新增 7 例：切回挂回/防跨轮误挂/刷新重建/懒加载幂等/settled 不闪失）、tsc/eslint 绿、`npm run build` 绿、pre-commit 子集 229 绿、tests/unit/test_session_projection.py 6 绿。**UI 待用户复测**：切走切回与刷新后卡是否在原轮次原位重建。
+
 ### 2026-09-18 · 3333 取证续批（D1 续跑现场轮末门控 + D3 A' 窗口恢复计划书语义）
 - **背景（3333 实跑取证 proj-1789706227）**：①续跑前置块把已完成轮误标「中途中断」（chat_retry_context 把 trace 内任何失败动作当失败轮/中断点；3333 含轮内 sceneRefs 拒收的完成轮被误标，续跑恢复轮被污染）；②A' 注入窗口开窗条件被批 B 实现收窄为「KE 非空」（计划书 §五原语义 = 节点当前 OR 已完成但 review 未过），第一批 KE 组落笔的几步章节缺席（3333 模型 read_skill 自救，与 DISCIPLINE #7 相悖）。
 - **裁决（用户，2026-09-18）**：D1 续跑现场只在「上一轮真未正常收尾」（turn/end reason ≠ done 或无轮闭合）时组装，轮内已恢复拒收不算中断点；Q1 启动顺序问题否决提示层禁令补丁（架构级正向修复原则，待多轮沟通）；D2 前端停滞=取证优先（复现 + 客户端日志），子代理进度事件列下一批。
