@@ -205,6 +205,16 @@ const zhCN = {
   // 机器判定事实条（账本内与工具行并排，不计入「已处理 N 个操作」）
   'rp.timeline.resumeNotice': '系统检测到本轮未执行任何操作，已要求模型继续（第 {count} 次）',
   'rp.timeline.noAction': '本轮未执行任何操作',
+
+  // ---------- 子代理 actor 卡（流式二期：主 Feed 内子活动归组） ----------
+  'rp.actor.badge': '子代理',
+  'rp.actor.fallbackLabel': '子代理任务',
+  'rp.actor.running': '执行中',
+  'rp.actor.completed': '已完成',
+  'rp.actor.failed': '已中断',
+  'rp.actor.steps': '{count} 步',
+  'rp.actor.tools': '子代理操作（{count}）',
+  'rp.actor.openRecord': '查看子代理执行记录',
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',

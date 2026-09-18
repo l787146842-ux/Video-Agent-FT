@@ -1,6 +1,7 @@
-import { createSignal, For, Show, onMount, onCleanup } from 'solid-js';
+import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
 import { FiArrowLeft } from 'solid-icons/fi';
 import { getSubagentThreads, getSubagentRecord } from '@/api/conversations';
+import { clearPendingSubagentRecord, pendingSubagentRecord } from '@/stores/chat/subagent-actors';
 import type { SubagentThread, SubagentRecordMessage } from '@/types';
 import { MarkdownBubble } from '../right-panel/MarkdownBubble';
 
@@ -113,6 +114,17 @@ export function SubagentRail() {
     setRecord([]);
     setErr('');
   }
+
+  // actor 卡点击 → 直接进该子代理的只读记录（流式二期）：请求到达即选中对应线程；
+  // 清单尚未拉到时不消费（不提前清请求），轮询/首拉更新 threads 后本 effect 再跑一次
+  createEffect(() => {
+    const cid = pendingSubagentRecord();
+    if (!cid) return;
+    const hit = threads().find((th) => th.conversation_id === cid);
+    if (!hit) return;
+    clearPendingSubagentRecord();
+    void openThread(hit);
+  });
 
   onMount(() => {
     refreshList();

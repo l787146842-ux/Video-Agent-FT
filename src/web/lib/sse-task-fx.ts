@@ -8,6 +8,7 @@
  * 标签栏唯一事实源 = conversations REST 接口 + 启动/切项目快照。
  */
 import { chatActions } from '@/stores/chat';
+import { subagentActorActions } from '@/stores/chat/subagent-actors';
 import { agentActions } from '@/stores/agent-state';
 import { convState } from '@/stores/conversations';
 import { studioActions } from '@/stores/studio';
@@ -89,6 +90,14 @@ export function makeRoutedTaskFx(
     toast: (msg, level) => showToast(msg, level),
     insertMedia: (media) => { if (isLiveConv(convId)) requestInsertMedia(media); },
     refreshHistory: () => { void refreshHistoryStatus(); },
+    // 子代理活动归组（流式二期）：仅活跃对话入 actor 卡——后台对话事件本就不进
+    // 聊天区（shadow 口径），actor 卡同理不落（切回时子活动由隐藏线程记录承载）
+    subagentEvent: (meta, ev) => {
+      if (isLiveConv(convId)) subagentActorActions.applyChildEvent(meta, ev);
+    },
+    subagentDelegate: (ev) => {
+      if (isLiveConv(convId)) subagentActorActions.applyDelegateEvent(ev);
+    },
     now: () => Date.now(),
   };
 }
@@ -198,6 +207,22 @@ export function makeScopeTaskFx(
     toast: (msg, level) => showToast(msg, level),
     insertMedia: () => {}, // 媒体不进主输入框；图卡经 done 载荷 chat_inserts 落线程
     refreshHistory: () => { void refreshHistoryStatus(); },
+    // 微调浮窗无轮次账本模型（只有工具行），不设 actor 卡槽位：子代理活动
+    // 保持一期观感照旧落浮窗工具行（数据不静默丢；归组卡是主 Feed 的载体）
+    subagentEvent: (_meta, ev) => {
+      if (ev.type === 'tool_started') {
+        adjustScopeActions.appendEvent(scopeKey, {
+          kind: 'tool_started', id: ev.id, name: ev.name, summary: ev.summary,
+        });
+      } else if (ev.type === 'tool_finished') {
+        adjustScopeActions.appendEvent(scopeKey, {
+          kind: 'tool_finished', id: ev.id, ok: ev.ok,
+          elapsedMs: ev.elapsed_ms, resultSummary: ev.result_summary,
+        });
+      }
+      // state_refresh（actions_applied）浮窗无对应载体：故事板共享面已由 syncSnapshot 同步
+    },
+    subagentDelegate: () => {}, // 浮窗无 actor 卡，无收尾可认领
     now: () => Date.now(),
   };
 }

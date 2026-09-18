@@ -8,7 +8,7 @@
  */
 import { describe, it, expectTypeOf, expect } from 'vitest';
 import type {
-  SseEvent, SseDonePayload, SseErrorEvent,
+  SseEvent, SseDonePayload, SseErrorEvent, SseSubagentMeta,
   AgentTaskReplayPayload, AgentTrace, AgentTraceStep,
 } from '@/types';
 import { ERROR_KINDS, type ErrorKind } from '@/lib/error-payload';
@@ -46,6 +46,34 @@ describe('SSE 事件契约桥接', () => {
   it('task_status 事件为联合成员（不再落 default 静默忽略）', () => {
     const ev: SseEvent = { type: 'task_status', status: 'cancelled' };
     expect(ev.type).toBe('task_status');
+  });
+
+  // ---------- 流式二期：子代理活动打标字段契约 ----------
+
+  it('subagent 归组标记可挂 tool_started/tool_finished/actions_applied 三帧', () => {
+    const meta: SseSubagentMeta = {
+      cid: 'conv-sub', stage: 'script_analyze', label: '剧本分析', depth: 1,
+    };
+    const started: SseEvent = {
+      type: 'tool_started', id: 'c1', name: 'read_draft', summary: '读草稿', subagent: meta,
+    };
+    const finished: SseEvent = {
+      type: 'tool_finished', id: 'c1', ok: true, elapsed_ms: 3, subagent: meta,
+    };
+    const applied: SseEvent = { type: 'actions_applied', subagent: meta };
+    // 字段面 = cid/stage/label/depth（后端 SseSubagentMeta 生成物同构；
+    // 四字段均带默认值→生成物为可选，消费侧按空值兜底）
+    expectTypeOf<SseSubagentMeta>().toEqualTypeOf<{
+      cid?: string; stage?: string; label?: string; depth?: number;
+    }>();
+    expect(started.type === 'tool_started' && started.subagent?.label).toBe('剧本分析');
+    expect(finished.type === 'tool_finished' && finished.subagent?.cid).toBe('conv-sub');
+    expect(applied.type === 'actions_applied' && applied.subagent?.depth).toBe(1);
+  });
+
+  it('subagent 为可选字段：父自身帧不携也能赋值（一期帧形不破坏）', () => {
+    const ev: SseEvent = { type: 'tool_started', id: 'p1', name: 'run_subagent', summary: '委派' };
+    expect(ev.type === 'tool_started' && ev.subagent).toBeUndefined();
   });
 
   // ---------- 任务 #19：ErrorPayload 契约钉死（后端 web/error_payload.py 镜像） ----------

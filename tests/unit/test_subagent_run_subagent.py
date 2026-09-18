@@ -686,3 +686,15 @@ async def test_launch_subagent_tags_empty_cid_on_degrade(svc, monkeypatch):
     meta = got[0]["subagent"]
     assert meta["cid"] == ""                      # 不落流仍打标
     assert meta["label"] and meta["depth"] == 1    # 兜底归组键齐备
+
+
+def test_chat_service_preserves_subagent_tag_on_state_refresh():
+    """流式二期⑤：actions_applied 在 web 透传层是**重建帧**（附故事板投影），
+    重建时必须保留子代理打标——否则前端 actor 卡的计步腿静默断
+    （「数据不静默丢」同纪律；源码扫描钉死，同 test_status_i18n_keys 口径）。"""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    src = (root / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
+    assert '_sa = _ap.get("subagent")' in src
+    assert '**({"subagent": _sa} if _sa else {})' in src

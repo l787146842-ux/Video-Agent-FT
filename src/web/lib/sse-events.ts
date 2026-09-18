@@ -4,7 +4,7 @@
  * 顺序铁律：终态路径经 ctx.finalize 收尾——先复位忙态、置空归属、再关订阅，
  * 顺序搞反会产生假错误气泡（见 lib/sse-connection.finalizeTerminal 注释）。
  */
-import type { SseEvent, SseDonePayload, ServerStateSnapshot, InlineMedia } from '@/types';
+import type { SseEvent, SseDonePayload, ServerStateSnapshot, InlineMedia, SseSubagentMeta } from '@/types';
 import type { chatActions } from '@/stores/chat';
 import type { ToastLevel } from '@/stores/toast';
 import { sseErrorPayload, normalizeKind } from '@/lib/error-payload';
@@ -32,6 +32,12 @@ export interface SseEventFx {
   toast(msg: string, level: ToastLevel): void;
   insertMedia(media: InlineMedia): void;
   refreshHistory(): void;
+  /** 子代理活动归组（流式二期）：带 subagent 标记的子事件→ actor 卡
+   * （不再落普通工具卡，一条子活动流 = 一张卡） */
+  subagentEvent(meta: SseSubagentMeta, ev: SseEvent): void;
+  /** 父委派帧（未打标的 tool_started/tool_finished）：actor 收尾判定
+   * （run_subagent 锚点 id 过滤在 store 侧，本层不识工具名） */
+  subagentDelegate(ev: SseEvent): void;
   /** 读时间注入（运行中工具秒起点兜底），测试可钉死 */
   now(): number;
 }
@@ -207,8 +213,23 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
     }
     case 'delta': fx.chat.appendDelta(ev.text || ''); break;
     case 'reasoning_delta': fx.chat.appendReasoning(ev.text || ''); break;
-    case 'tool_started': fx.chat.toolStarted(ev.id, ev.name, ev.summary, ev.args, ev.detail_md ?? undefined); break;
+    case 'tool_started':
+      // 子代理活动（流式二期）：不进普通工具卡，归入该子代理的 actor 卡
+      if (ev.subagent) {
+        fx.subagentEvent(ev.subagent, ev);
+        break;
+      }
+      // 父自身帧：run_subagent 委派锚点交 actor 域认领（其余工具名 store 侧忽略）
+      fx.subagentDelegate(ev);
+      fx.chat.toolStarted(ev.id, ev.name, ev.summary, ev.args, ev.detail_md ?? undefined);
+      break;
     case 'tool_finished':
+      if (ev.subagent) {
+        fx.subagentEvent(ev.subagent, ev);
+        break;
+      }
+      // 收尾帧不携工具名：全量交 actor 域，按锚点 id 认领本次委派
+      fx.subagentDelegate(ev);
       fx.chat.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary, ev.planning, ev.detail_md ?? undefined);
       break;
     case 'doc_written': // 携带后端打戳的 turn_id，即显卡与 done 主消息严格同组
@@ -227,6 +248,8 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
         fx.syncSnapshot(snapshot);
         fx.markBoardApplied();
       }
+      // 子代理 state_refresh：故事板刷新腿保留一期语义（上方），另给 actor 卡计步
+      if (ev.subagent) fx.subagentEvent(ev.subagent, ev);
       break;
     }
     case 'done': finishSseDone(ev.payload, ctx); break;

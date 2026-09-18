@@ -69,5 +69,26 @@
   .tl-approval-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; white-space: nowrap; }
   .tl-approval-confirm { border: 1px solid var(--color-confirm-border); background: var(--color-confirm-bg); color: var(--color-confirm); }
   .tl-approval-review { border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent); background: color-mix(in srgb, var(--color-warning) 12%, transparent); color: var(--color-warning); }
+  /* 子代理 actor 卡（流式二期）：主 Feed 内子活动归组卡，位置紧随父
+     run_subagent 委派卡；状态药丸复用 .subagent-status 三态语义色
+     （middle-panel.css），此处只补卡体排版，均走 token 不硬编码色值 */
+  .tl-item-actor { display: block; }
+  .actor-card { margin-left: 19px; display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: color-mix(in srgb, var(--color-white) 2%, transparent); }
+  .actor-card-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; border: none; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+  .actor-card-head:disabled { cursor: default; }
+  .actor-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid var(--color-confirm-border); background: var(--color-confirm-bg); color: var(--color-confirm); white-space: nowrap; }
+  .actor-card-label { flex: 1; min-width: 0; font-size: var(--font-xs); color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .actor-card-head:not(:disabled):hover .actor-card-label { color: var(--accent-blue); }
+  .actor-card-steps { flex-shrink: 0; font-size: var(--font-2xs); color: var(--text-dim); }
+  .actor-tools-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--font-2xs); color: var(--text-dim); }
+  .actor-tools-toggle:hover { color: var(--text-main); }
+  .actor-tools { margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; list-style: none; }
+  .actor-tool { display: flex; align-items: center; gap: 5px; font-size: var(--font-2xs); color: var(--text-dim); line-height: 1.6; }
+  .actor-tool-mark { flex-shrink: 0; }
+  .actor-tool-mark.ok { color: var(--color-success); }
+  .actor-tool-mark.failed { color: var(--color-danger-strong); }
+  .actor-tool-mark.spin { color: var(--accent-blue); animation: tlSpin 1s linear infinite; }
+  .actor-tool-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .actor-tool-elapsed { flex-shrink: 0; }
   @keyframes tlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 }

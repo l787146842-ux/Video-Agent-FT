@@ -556,8 +556,12 @@ async def _stream_dispatch(ctx: _StreamCtx, planner_ctx: PlannerContext) -> bool
                 # 逐步可见：每批操作落盘后立即下发最新状态快照，
                 # 前端不必等全部完成，推理中就能看到新建的分组/提示词
                 if ctx.use_studio_context:
+                    # 流式二期：子代理的 state_refresh 同带 subagent 标记，重建帧时
+                    # 保留该字段（前端 actor 卡据此计步；丢弃则子级进度不可见）
+                    _sa = _ap.get("subagent")
                     await emit({
                         "type": SSE_ACTIONS_APPLIED,
+                        **({"subagent": _sa} if _sa else {}),
                         "payload": {
                             "count": (event.payload or {}).get("count", 0),
                             # 逐步可见：精简投影（9 板键 + chatMessages + board_version）

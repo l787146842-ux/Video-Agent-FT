@@ -33,15 +33,25 @@ export const SYSTEM_NOTICE = 'system_notice';
 /** 假停机械续跑的 trace step 标记（与后端 tracer end_step finish_reason 同字面） */
 export const FAKESTOP_RESUME_FINISH = 'fakestop_resume';
 
+/** 子代理 actor 卡槽位条目名（流式二期）：子代理活动归组为一张卡的账本槽位。
+ * 不入操作计数——卡内自带步数与子工具名单，且父自身 run_subagent 委派卡
+ * 已计一次操作，再计会把一次委派算成两次。 */
+export const SUBAGENT_ACTOR = 'subagent_actor';
+
+/** 是否子代理 actor 卡槽位条目 */
+export function isActorSlot(item: { name?: string }): boolean {
+  return item.name === SUBAGENT_ACTOR;
+}
+
 /** 是否系统事实条目（操作计数与降噪合并一律排除，防把机器提醒算成一次操作） */
 export function isSystemNotice(item: { name?: string }): boolean {
   return item.name === SYSTEM_NOTICE;
 }
 
-/** 可计数的真实账目（工具/规划条目，排除系统提醒）；泛型供渲染层
+/** 可计数的真实账目（工具/规划条目，排除系统提醒与 actor 卡槽位）；泛型供渲染层
  * TimelineItem（与 LedgerItem 同构）复用同一口径，防两处计数各写一遍走偏 */
 export function countableItems<T extends { name?: string }>(items: T[]): T[] {
-  return items.filter((i) => !isSystemNotice(i));
+  return items.filter((i) => !isSystemNotice(i) && !isActorSlot(i));
 }
 
 /** 账本单条（live 运行态与 settled 重建共用同一形态） */

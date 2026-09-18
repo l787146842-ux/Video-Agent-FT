@@ -5,7 +5,9 @@ import {
 import { t } from '@/lib/locale';
 import { consolidateTimeline, formatElapsed, type TimelineItem } from '@/lib/timeline';
 import type { TurnPhase } from '@/lib/turn-ledger';
-import { countableItems, SYSTEM_NOTICE } from '@/lib/turn-ledger';
+import { countableItems, isActorSlot, SYSTEM_NOTICE } from '@/lib/turn-ledger';
+import { actorByKey, actorKeyFromSlotId } from '@/stores/chat/subagent-actors';
+import { SubagentActorCard } from './SubagentActorCard';
 import { TimelineDetail } from './TimelineDetail';
 
 // 耗时格式化与条目类型归 lib/timeline 单一事实源；保留 re-export 兼容既有导入
@@ -13,6 +15,20 @@ import { TimelineDetail } from './TimelineDetail';
 export { stageLabelFromMessage, timelineFromMessage } from '@/lib/timeline';
 export { formatElapsed };
 export type { TimelineItem };
+
+/**
+ * 子代理 actor 卡槽位行（流式二期）：账本条目只当位置锚（紧随父
+ * run_subagent 委派卡），卡面数据取 actor 域——子工具不再各占一行普通工具卡。
+ */
+function ActorRow(props: { item: TimelineItem }) {
+  // 槽位 id 不变（条目创建后不改），取一次即可
+  const key = actorKeyFromSlotId(props.item.id);
+  return (
+    <li class="tl-item tl-item-actor">
+      <SubagentActorCard actor={() => actorByKey(key)} />
+    </li>
+  );
+}
 
 /** 单条时间线条目（合并条目带逐轮明细，点击展开；展开态用户可控） */
 function TimelineRow(props: { item: TimelineItem; now: () => number }) {
@@ -236,7 +252,9 @@ export function AgentTimeline(props: {
             <div class="tl-panel-body">
               <ul class="tl-item-list">
                 <For each={viewItems()}>
-                  {(item) => <TimelineRow item={item} now={now} />}
+                  {(item) => (isActorSlot(item)
+                    ? <ActorRow item={item} />
+                    : <TimelineRow item={item} now={now} />)}
                 </For>
               </ul>
             </div>
