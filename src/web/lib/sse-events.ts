@@ -74,11 +74,14 @@ export function finishSseDone(payload: SseDonePayload, ctx: SseEventCtx): void {
 }
 
 /** SSE 帧流解析：data: 帧 → onEvent；异常帧不中断流（静默吞错曾掩盖契约漂移），
- * 每遇异常帧回调 onParseError（累计计数与告警在连接状态机侧） */
+ * 每遇异常帧回调 onParseError（累计计数与告警在连接状态机侧）；
+ * onChunk（D2 批 commit3）：每收到原始字节块回调（含注释心跳帧），
+ * 供连接状态机做字节级活感判定——静默死连接（无字节无关流）靠它发现。 */
 export async function parseSseStream(
   res: Response,
   onEvent: (ev: SseEvent) => void,
   onParseError: () => void,
+  onChunk?: () => void,
 ): Promise<void> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -86,6 +89,7 @@ export async function parseSseStream(
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (onChunk) onChunk();
     buffer += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buffer.indexOf('\n\n')) !== -1) {

@@ -33,6 +33,32 @@ export function getConversationMessages(id: string): Promise<ConversationMessage
   );
 }
 
+/** 会话投影活跃暂停（D2 批 commit2 后端 interaction_pause 单元 view） */
+export interface ProjectionActivePause {
+  seq?: number;
+  message?: string;
+  options?: Array<{ label?: string; description?: string; group?: string; value?: string }>;
+}
+
+/** 会话投影一致切（D2 批 commit2）：asOfSeq + 四单元 view；兜底读模型 */
+export interface ConversationProjectionResponse {
+  conversation_id: string;
+  asOfSeq: number;
+  values: {
+    interaction_pause?: { active_pause?: ProjectionActivePause | null; pause_count?: number };
+    subagent_catalog?: { subagents?: unknown[] };
+    storyboard_progress?: { counts?: Record<string, number>; recent_titles?: string[] };
+    chat_tail?: { tail?: unknown[] };
+  };
+}
+
+/** 拉会话投影一致切（重连/刷新后兜底：暂停卡物化等；失败静默不阻断主链） */
+export function getConversationProjection(id: string): Promise<ConversationProjectionResponse> {
+  return apiFetch<ConversationProjectionResponse>(
+    `/api/conversations/${encodeURIComponent(id)}/projection`,
+  );
+}
+
 /** 子代理隐藏线程清单响应（B3 左栏子任务卡数据源） */
 export interface SubagentThreadsResponse {
   subagents: SubagentThread[];

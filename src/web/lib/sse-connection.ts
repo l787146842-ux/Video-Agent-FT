@@ -33,6 +33,22 @@ export function isRetriableSubscribeError(err: unknown): boolean {
 export function reconnectDelayMs(attempt: number, base: number = RECONNECT_BASE_DELAY_MS): number {
   return base * 2 ** (attempt - 1);
 }
+/** 字节级活感超时（D2 批 commit3）：45s 无任何字节（含注释心跳）判静默死连接。
+ * 服务端注释心跳约 15s 一次，45s = 3 周期，零误报；3333 冻屏根因类＝
+ * 半开死连接（无字节无关流）reader.read 永挂，无此腿则永不重连。 */
+export const LIVENESS_TIMEOUT_MS = 45000;
+/** 活感检查间隔 */
+export const LIVENESS_CHECK_MS = 5000;
+/** 纯函数判定：静默超时（单测钉死） */
+export function shouldTripLiveness(
+  lastByteAt: number, now: number, timeoutMs: number = LIVENESS_TIMEOUT_MS,
+): boolean {
+  return now - lastByteAt > timeoutMs;
+}
+/** 纯函数判定：event_seq 断口（中间帧丢失；重连 replay 可修复，单测钉死） */
+export function detectSeqGap(lastSeq: number | null, seq: number): boolean {
+  return lastSeq !== null && seq > lastSeq + 1;
+}
 export interface TaskRef { taskId: string; projectId: string; recovering: boolean }
 /** 归属判定：连接是否仍属于该任务（归属已改则不再处理其失败与清理） */
 export function ownsTask(current: { taskId: string } | null | undefined, taskId: string): boolean {
@@ -81,6 +97,10 @@ export function createSseConnection(deps: SseConnectionDeps) {
   let resumeInFlight = false;
   /** 帧解析失败计数（不静默：调试可见，异常帧不中断流） */
   let sseParseErrors = 0;
+  /** 活感/断口跳闸标记：自 abort 后在 catch 侧消费为可重连（区别于用户取消） */
+  let tripLiveness = false;
+  /** 当前订阅的 event_seq 高水位（断口检测用；每次 subscribeOnce 重置） */
+  let lastSeq: number | null = null;
   /** 关闭当前订阅（不取消后台任务） */
   function closeSubscription(): void {
     abortController?.abort();
@@ -104,10 +124,35 @@ export function createSseConnection(deps: SseConnectionDeps) {
     abortController = new AbortController();
     const res = await transport.fetchEvents(taskId, abortController.signal);
     if (!res.ok || !res.body) throw new SseHttpError(res.status);
-    await parseSseStream(res, (ev: SseEvent) => routeSseEvent(ev, ctx), () => {
-      sseParseErrors += 1;
-      console.warn(`[use-sse] SSE 帧解析失败（累计 ${sseParseErrors} 次）`);
-    });
+    lastSeq = null;
+    let lastByteAt = Date.now();
+    // 字节级活感看门狗：静默超时 → 跳闸 + 自 abort（catch 侧按可重连处理）
+    const watchdog = setInterval(() => {
+      if (shouldTripLiveness(lastByteAt, Date.now())) {
+        clearInterval(watchdog);
+        tripLiveness = true;
+        abortController?.abort();
+      }
+    }, LIVENESS_CHECK_MS);
+    try {
+      await parseSseStream(res, (ev: SseEvent) => {
+        const seq = (ev as { event_seq?: number }).event_seq;
+        if (typeof seq === 'number') {
+          // 断口（QueueFull 丢非终态帧等）→ 跳闸重连，replay 幂等修复
+          if (detectSeqGap(lastSeq, seq)) {
+            tripLiveness = true;
+            abortController?.abort();
+          }
+          if (lastSeq === null || seq > lastSeq) lastSeq = seq;
+        }
+        routeSseEvent(ev, ctx);
+      }, () => {
+        sseParseErrors += 1;
+        console.warn(`[use-sse] SSE 帧解析失败（累计 ${sseParseErrors} 次）`);
+      }, () => { lastByteAt = Date.now(); });
+    } finally {
+      clearInterval(watchdog);
+    }
   }
   async function connectToTask(taskId: string, projectId: string, recovering: boolean): Promise<void> {
     fx.setStreaming(true);
@@ -121,7 +166,10 @@ export function createSseConnection(deps: SseConnectionDeps) {
       } catch (err) {
         // 任务归属已变（停止/切换/断开）：不再处理本任务的失败
         if (!ownsTask(currentTask, taskId)) return;
-        if (!isRetriableSubscribeError(err) || attempt >= MAX_RECONNECT_ATTEMPTS) {
+        // 活感/断口跳闸的自 abort 视同可重连（用户取消走归属判定提前 return）
+        const tripped = tripLiveness;
+        tripLiveness = false;
+        if ((!tripped && !isRetriableSubscribeError(err)) || attempt >= MAX_RECONNECT_ATTEMPTS) {
           const msg = (err as Error).message || '未知错误';
           // 订阅失败结构化归类（HTTP 状态按码归类；fetch/读流中断 = network）
           const payload = err instanceof SseHttpError

@@ -184,6 +184,23 @@ export const messageActions = {
     }));
   },
 
+  /** 投影暂停卡兜底物化（D2 批 commit3）：末条 agent 消息无 confirm/
+   * decisionForm/confirmOptions 载体时，把投影 snapshot 的活跃暂停挂上去
+   * （done 帧丢失类冻屏的兜底腿）；有载体即 no-op（幂等，不双挂）。 */
+  applyPauseFallback(pause: { message?: string; options?: ChatMessage['confirmOptions'] }) {
+    setChatState(produce((s) => {
+      for (let i = s.messages.length - 1; i >= 0; i -= 1) {
+        const m = s.messages[i];
+        if (m.sender === 'user') break;
+        if (m.sender !== 'agent') continue;
+        if (m.confirm || m.decisionForm || (m.confirmOptions || []).length) return;
+        m.confirm = pause.message || t('rp.decision.defaultTitle');
+        m.confirmOptions = (pause.options || []).length ? pause.options : undefined;
+        return;
+      }
+    }));
+  },
+
   /** 文档写入即显（doc_written 事件）：独立文档卡片立即渲染，
    * 不等整轮 done；同轮重复名称去重（done 全量清单与事件双通道防双显）。
    * 携带后端透传层打戳的 turn_id，即显卡严格归入轮次容器 */

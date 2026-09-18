@@ -17,6 +17,7 @@ import { makeRoutedTaskFx, makeScopeTaskFx } from '@/lib/sse-task-fx';
 import {
   adjustScopeActions, threadConvIdOf, threadKeyOfConvId,
 } from '@/stores/adjust-scopes';
+import { refreshProjectionFallback } from '@/stores/chat/projection';
 import { ApiError } from '@/api/client';
 import { makeErrorPayload } from '@/lib/error-payload';
 import { t } from '@/lib/locale';
@@ -195,6 +196,8 @@ async function resume(projectId: string): Promise<void> {
     }));
   }
   await Promise.all(jobs);
+  // D2 批 commit3：投影兜底腿——活跃暂停而消息尾无载体时物化暂停卡
+  void refreshProjectionFallback(active);
 }
 
 /** 切换活跃对话（批 6-2）：未读角标清除 → 清当前视图流式态 → 目标对话有运行中任务时新连接重订阅（replay 恢复；旧连接只断订阅不杀后台任务） */
@@ -214,6 +217,7 @@ function focusConversation(conversationId: string): void {
     });
     const fresh = spawnConnection(taskId, projectId, conversationId);
     void fresh.conn.recoverTask(taskId, projectId);
+    void refreshProjectionFallback(conversationId);
     break;
   }
 }
