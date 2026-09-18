@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from typing import Dict, List
 
 from src.video_agent.exceptions import VideoAgentError
-from src.video_agent.core import session_log
+from src.video_agent.core import session_log, session_projection
 from src.video_agent.state import conversation_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web.agent_task_manager import get_agent_task_manager
@@ -82,14 +82,13 @@ async def get_conversation_projection(conversation_id: str):
     客户端兜底读模型：重连/刷新先拉本切再接活流；暂停卡物化以
     interaction_pause 单元为准（done 帧丢失时的兜底腿）。只读不写状态
     （宪法 Rule 3）；shape = {conversation_id, asOfSeq, values{…四单元}}。"""
-    from src.video_agent.core.session_projection import snapshot
-
     svc = StateManager.get_instance()
     meta = svc.conversations_meta_payload()
     ids = [c.get("id") for c in (meta.get("conversations") or [])]
     if conversation_id not in ids:
         raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
-    return {"conversation_id": conversation_id, **snapshot(svc, conversation_id)}
+    return {"conversation_id": conversation_id,
+            **session_projection.snapshot(svc, conversation_id)}
 
 
 @router.get("/conversations/subagents")

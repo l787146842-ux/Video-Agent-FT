@@ -7,7 +7,7 @@
   view 把 state 翻成客户端 wire 值；**渲染不归本层**（前端组件自便）。
 - snapshot = 全量事件折到账尾的一致切（asOfSeq + 各单元 view），pull 模型
   （dsh coldSnapshot 同构）；live 增量仍走既有任务流 SSE，本层不推变更帧
-  （开工前修正④：done 帧已携暂停/决策表单，变更推送无消费方，不私设通道）。
+  （计划书 §三 实现期修正④：done 帧已携暂停/决策表单，变更推送无消费方，不私设通道）。
 - 双跑对比：snapshot 时把 interaction_pause 单元 view 与 StateManager 权威
   interaction 三态对拍，不一致打 [ProjDiff] 警告——对比干净前前端不切消费方
   （计划书 §七风险 B）。
@@ -18,6 +18,7 @@ storyboard_progress（故事板进度计数）/ chat_tail（聊天尾摘要）�
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -44,9 +45,8 @@ def _pause_apply(state: Dict[str, Any], ev: Dict[str, Any]) -> Dict[str, Any]:
             fn = (tc or {}).get("function") or {}
             if fn.get("name") != "workflow_pause":
                 continue
-            import json as _json
             try:
-                args = _json.loads(fn.get("arguments") or "{}")
+                args = json.loads(fn.get("arguments") or "{}")
             except Exception:
                 args = {}
             state = dict(state)
@@ -85,9 +85,8 @@ def _sub_apply(state: Dict[str, Any], ev: Dict[str, Any]) -> Dict[str, Any]:
             fn = (tc or {}).get("function") or {}
             if fn.get("name") != "run_subagent":
                 continue
-            import json as _json
             try:
-                args = _json.loads(fn.get("arguments") or "{}")
+                args = json.loads(fn.get("arguments") or "{}")
             except Exception:
                 args = {}
             state = dict(state)
@@ -137,9 +136,8 @@ def _sb_apply(state: Dict[str, Any], ev: Dict[str, Any]) -> Dict[str, Any]:
             fn = (tc or {}).get("function") or {}
             if fn.get("name") != "storyboard_create_group":
                 continue
-            import json as _json
             try:
-                args = _json.loads(fn.get("arguments") or "{}")
+                args = json.loads(fn.get("arguments") or "{}")
             except Exception:
                 args = {}
             if pending is None:
