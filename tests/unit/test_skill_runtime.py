@@ -135,7 +135,7 @@ def test_selected_block_flow_body_budget_injection():
 
 # test_add_group_badge_label_persisted_and_patchable 已随 Q2 裁决 2026-09-01 退役删除：
 # 文本轨 add_group/update_group 的 badgeLabel 口径随执行器家族退役；
-# 用户双击徽标编辑走 REST 故事板更新路径（不经执行器），行为不受影响。
+# badgeLabel 全链（含 FC 轨建组推导与前端显示编辑）随用户裁决 2026-09-17 退役。
 
 
 # test_add_draft_accepts_patch_field_fallback 已随 Q2 裁决 2026-09-01 退役删除：

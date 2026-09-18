@@ -258,14 +258,11 @@ class FCToolRunner:
         # one visibility = one permission（dsh subagent.md L90-97）：轮内被裁工具
         # 即便被模型误调也拒绝执行（可见性即权限，执行期单点强制）。
         if name in getattr(self, "turn_excluded", frozenset()):
-            # R11 裁剪可见性：拒收信封带单一替代路由（类别词，不硬编码具体工具名）
-            _route = ("经委派（run_subagent）执行对应阶段"
-                      if name in subagent_mod.PRODUCTION_MAIN_PRUNE
-                      else "该工具本轮不在可见面，请改用当前可用工具")
+            # R11 裁剪可见性：拒收信封带替代路由（类别词，不硬编码具体工具名）
             return ToolResult(
                 success=False,
                 error=(f"工具 {name} 在当前上下文不可用（本轮已裁剪），拒绝执行；"
-                       f"替代路由：{_route}。"),
+                       f"替代路由：该工具本轮不在可见面，请改用当前可用工具。"),
                 error_code="validation",
             )
         # K6 批（2026-09-16 对齐 dsh structured.ts:109-111）：打卡后终局 guard——

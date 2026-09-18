@@ -68,6 +68,15 @@ describe('studio 域拆分后行为', () => {
     expect(state.shots[0].roughDesc).toBe('');
   });
 
+  it('storyboard 域：renameGroupLocal 标题写口归一（2026-09-17 容器 ID 约定）', () => {
+    // 双击编辑标题 → 裸名补类型前缀落盘（与后端建组 normalize_group_title 同契约）；
+    // 显示层另经 normalizeDisplayTitle 剥前缀只显裸名
+    studioActions.renameGroupLocal('keyElement', 'ke1', { title: '程心' });
+    expect(state.keyElements[0].title).toBe('Element_程心');
+    studioActions.renameGroupLocal('shot', 's1', { title: 'Shot_开场' });
+    expect(state.shots[0].title).toBe('Shot_开场');
+  });
+
   it('ui 域：markSkillUsed 去重追加', () => {
     setState('usedSkills', []);
     studioActions.markSkillUsed('screenwriter');

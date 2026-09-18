@@ -93,7 +93,7 @@ class TestFcToolRunnerRejection:
         return runner
 
     def test_rejection_contains_route(self):
-        """拒收信封包含替代路由信息（R4 批后取仍可委派阶段工具为例）。"""
+        """拒收信封包含替代路由信息（工具全还批后路由文案统一为「不在可见面」）。"""
         runner = self._make_runner()
         runner.turn_excluded = frozenset({"storyboard_add_draft"})
         result = asyncio.run(
@@ -101,17 +101,19 @@ class TestFcToolRunnerRejection:
         )
         assert not result.success
         assert "替代路由" in (result.error or "")
-        assert "委派" in (result.error or "") or "run_subagent" in (result.error or "")
+        assert "不在可见面" in (result.error or "")
 
     def test_rejection_no_provider_tool_literals(self):
         """拒收信封不含 image_generate/generate_video 字面量（门禁红线）。"""
         runner = self._make_runner()
-        # 模拟生产轮裁剪集（含 provider 工具名的集合由 PRODUCTION_MAIN_PRUNE 定义）
-        from src.video_agent.core.subagent import PRODUCTION_MAIN_PRUNE
-
-        runner.turn_excluded = PRODUCTION_MAIN_PRUNE
-        # 对裁剪集中的每个工具调用 _dispatch_tool，检查错误消息
-        for tool_name in sorted(PRODUCTION_MAIN_PRUNE):
+        # 模拟一批被裁工具（含生产工具名），验证拒收信封不泄漏 provider 字面量
+        excluded_sample = frozenset({
+            "read_uploaded_doc", "script_analysis_report",
+            "storyboard_add_draft", "storyboard_patch_draft",
+            "read_draft", "view_storyboard_media",
+        })
+        runner.turn_excluded = excluded_sample
+        for tool_name in sorted(excluded_sample):
             result = asyncio.run(
                 runner._dispatch_tool(tool_name, {})
             )

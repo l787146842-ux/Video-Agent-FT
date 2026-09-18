@@ -37,7 +37,7 @@ class TestK4ThreeSourceRefMerge:
         instance = StateManager(str(tmp_path))
         StateManager._instance = instance
         instance.state_dict["keyElements"] = [
-            {"id": "ke-1", "title": "角色：程心", "desc": "", "drafts": []},
+            {"id": "ke-1", "title": "Element_程心", "desc": "", "drafts": []},
             {"id": "ke-2", "title": "S1 星环号球形舱", "desc": "", "drafts": []},
         ]
         instance.state_dict["analysis"] = {"summary": "一句话总结"}
@@ -50,21 +50,23 @@ class TestK4ThreeSourceRefMerge:
         result = await ToolManager.invoke_tool(
             "storyboard_create_group",
             {"group_type": "shot", "title": "S01",
-             "scene_refs": ["S1 星环号球形舱"],
-             "desc": "程心 苏醒于 [S1 星环号球形舱] 内。"})
+             "desc": "程心 苏醒于 [S1 星环号球形舱] 内。",
+             "summary": "含内部剪辑（约10s）",
+             "scene_refs": ["S1 星环号球形舱"]})
         assert result.success is True, result.error
         group = svc.state_dict["shots"][-1]
         # 显式 ∪ 令牌 ∪ 裸名提及，去重保序（显式在前）
-        assert group["sceneRefs"] == ["S1 星环号球形舱", "角色：程心"]
+        assert group["sceneRefs"] == ["S1 星环号球形舱", "Element_程心"]
 
     async def test_unmatched_token_still_reported(self, svc):
         result = await ToolManager.invoke_tool(
             "storyboard_create_group",
             {"group_type": "shot", "title": "S02",
-             "desc": "程心 望着 [白色薄膜]。"})
+             "desc": "程心 望着 [白色薄膜]。",
+             "summary": "含内部剪辑（约8s）"})
         assert result.success is True
         group = svc.state_dict["shots"][-1]
-        assert group["sceneRefs"] == ["角色：程心"]
+        assert group["sceneRefs"] == ["Element_程心"]
         assert "白色薄膜" in (result.data.get("detail") or "")
 
 
@@ -149,6 +151,7 @@ class TestDraftDescFieldBatch1:
         before = len(svc.state_dict.get("shots") or [])
         result = await ToolManager.invoke_tool("storyboard_create_group", {
             "group_type": "shot", "title": "分镜",
+            "summary": "含内部剪辑（约10s）",
             "draft": {"label": "x", "content": "正文"},
         })
         assert result.success is False
@@ -277,10 +280,11 @@ class TestFailureShoutAndAtomicityBatch3:
         shot = await ToolManager.invoke_tool("storyboard_create_group", {
             "group_type": "shot", "title": "追击戏",
             "desc": "太空艇穿越陨石带，背景出现 [太空艇] 与指挥舱",
+            "summary": "含内部剪辑（约10s）",
         })
         assert shot.success is True, shot.error
         group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])
-        assert "太空艇" in (group.get("sceneRefs") or []), \
+        assert "Element_太空艇" in (group.get("sceneRefs") or []), \
             f"令牌未解析进 sceneRefs: {group.get('sceneRefs')}"
 
     async def test_shot_explicit_scene_refs_merge_with_tokens(self, svc):
@@ -291,17 +295,19 @@ class TestFailureShoutAndAtomicityBatch3:
         shot = await ToolManager.invoke_tool("storyboard_create_group", {
             "group_type": "shot", "title": "追击",
             "desc": "出现 [太空艇]",
+            "summary": "含内部剪辑（约10s）",
             "scene_refs": ["显式引用"],
         })
         assert shot.success is True, shot.error
         group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])
-        assert group.get("sceneRefs") == ["显式引用", "太空艇"]
+        assert group.get("sceneRefs") == ["显式引用", "Element_太空艇"]
 
     async def test_unknown_token_dropped_not_rejected(self, svc):
         """匹配不到元素的令牌静默丢弃（令牌是引导不是闸，不锁死）。"""
         shot = await ToolManager.invoke_tool("storyboard_create_group", {
             "group_type": "shot", "title": "空镜",
             "desc": "雨夜街道 [不存在的元素]",
+            "summary": "缓慢推近（约5s）",
         })
         assert shot.success is True, shot.error
         group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])

@@ -143,6 +143,26 @@ def _node_objectively_done(node_id: str, run: Dict[str, Any],
     return False
 
 
+def in_storyboard_window(state: Dict[str, Any], skill: str) -> bool:
+    """A' 章节注入窗口只读判定（纯函数，不写状态；2026-09-18 批 B）。
+
+    窗口 = 故事板设计已开始（KE 结构非空）且分镜评审未通过
+    （review_storyboard 未完成）。避开探针粒度陷阱：建第一批 shot 后
+    storyboard_shots 探针即判完成、current_node 翻向 audio，但模型仍在
+    写后续 shot——只要 review_storyboard 未过，章节持续在场。
+    """
+    if not isinstance(state, dict):
+        return False
+    # 故事板设计已开始：KE 结构非空（客观探针，fail-closed）
+    if not po.stage_done("key_elements", state, skill):
+        return False
+    # 分镜评审未通过：review_storyboard 未完成（需 DecisionResolved 事件）
+    run = state.get("workflow_run") or {}
+    if _node_objectively_done("review_storyboard", run, state, skill):
+        return False
+    return True
+
+
 def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     """同步 WorkflowRun（无 DAG 模式）：完成度按客观探针全量重算。
 

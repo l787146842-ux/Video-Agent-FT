@@ -3,6 +3,7 @@
  * 状态树不动；原签名经 storyboard.ts 重导出，调用方零改动。 */
 import type { DraftType, Draft, SubTab, AnyGroup } from '@/types';
 import { CAT_SHOTS } from '@/lib/state-keys';
+import { canonicalGroupTitle } from '@/lib/desc-ref-utils';
 import { showToast } from '@/stores/toast';
 import { uid } from '@/lib/utils';
 import {
@@ -97,7 +98,11 @@ export const boardEditActions = {
       prev.map((g) => {
         if (g.id !== groupId) return g;
         const updated = { ...g } as Record<string, unknown>;
-        if (patch.title !== undefined) updated.title = patch.title;
+        if (patch.title !== undefined) {
+          // 容器 ID 约定写口归一（2026-09-17 裁决）：裸名补类型前缀落盘，
+          // 与后端建组 normalize_group_title 同契约（显示层只显裸名）
+          updated.title = canonicalGroupTitle(patch.title, type);
+        }
         if (patch.desc !== undefined) {
           // shot 分镜正文唯一载体 = desc（roughDesc 双通道写口 2026-09-15 退役，
           // 与后端建组入参/patch 白名单一致，ShotDescEditor 编辑的正是 desc）；
@@ -105,7 +110,6 @@ export const boardEditActions = {
           if (type === 'audio') updated.prompt = patch.desc;
           else updated.desc = patch.desc;
         }
-        if (patch.badgeLabel !== undefined) updated.badgeLabel = patch.badgeLabel;
         if (patch.timeRange !== undefined) updated.timeRange = patch.timeRange;
         return updated as unknown as AnyGroup;
       }),

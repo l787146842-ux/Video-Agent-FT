@@ -28,17 +28,17 @@ def _first_draft(svc):
 
 def test_scan_bare_name_mentions_mirror_frontend():
     """K4 批（2026-09-16 对齐 flova）：裸名提及自动绑定纯函数——候选 =
-    原全称 + 归一裸名、≥2 守卫、最长优先；命中返回去重保序的规范标题
-    （镜像前端 descChipNames 语义）。"""
+    原全称 + 归一名字（剥容器类型前缀，2026-09-17 纯结构性）、≥2 守卫、
+    最长优先；命中返回去重保序的规范标题（镜像前端 descChipNames 语义）。"""
     kes = [
-        {"id": "ke-1", "title": "角色：程心"},
+        {"id": "ke-1", "title": "Element_程心"},
         {"id": "ke-2", "title": "S1 星环号球形舱"},
         {"id": "ke-3", "title": "刀"},  # 单字全称被 ≥2 守卫剔除
     ]
     hits = ops.scan_bare_name_mentions("程心 在 S1 星环号球形舱 内苏醒", kes)
-    assert hits == ["S1 星环号球形舱", "角色：程心"]
-    # 裸名形态命中回挂规范标题
-    assert ops.scan_bare_name_mentions("只提 程心 一人", kes) == ["角色：程心"]
+    assert hits == ["S1 星环号球形舱", "Element_程心"]
+    # 名字形态命中回挂规范标题
+    assert ops.scan_bare_name_mentions("只提 程心 一人", kes) == ["Element_程心"]
     # 无提及 → 空；空 desc → 空
     assert ops.scan_bare_name_mentions("无提及", kes) == []
     assert ops.scan_bare_name_mentions("", kes) == []

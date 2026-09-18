@@ -117,11 +117,17 @@ async def test_analysis_event_card_carries_full_report():
     assert "- 程心：出场于太空电梯" in detail_md
 
 
-async def test_analysis_enters_context_snapshot():
-    """状态裁剪注入面看到分析摘要（拆解/提示词阶段主模型必须看到）。"""
+async def test_analysis_routes_to_stage_tail_not_snapshot():
+    """批 B（2026-09-18）：analysis 挪出模型状态快照，改走 A' 故事板窗口
+    临时尾（core.stage_section_tail）——避免与快照双份付钱，恢复裁决③
+    「故事板阶段注入分析、其他阶段不需要」。A' 尾注入见 test_stage_section_tail。"""
     await ToolManager.invoke_tool("script_analysis_report", _analysis_payload())
-    snap = _build_snapshot_dict(StateManager.get_instance().state_dict, "")
-    assert snap["analysis"]["summary"].startswith("太阳系确认遭遇")
+    state = StateManager.get_instance().state_dict
+    # 模型状态快照不再含 analysis（B2 已挪出）
+    snap = _build_snapshot_dict(state, "")
+    assert "analysis" not in snap
+    # state.analysis 仍在（A' 尾与前端事件卡的数据源，未丢）
+    assert state["analysis"]["summary"].startswith("太阳系确认遭遇")
 
 
 # ---------- A4：规格文档可更新且留痕 ----------

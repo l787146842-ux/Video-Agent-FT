@@ -7,13 +7,13 @@
 - 2026-09-15 铺满批（dsh 对齐）：顶级生产轮（skill_name 非空 + depth==0 +
   非 adjust_scope）read_skill 曾进 PRODUCTION_MAIN_PRUNE 裁剪集（回读三件套之一）。
 - 2026-09-16 R4 批（对齐 flova）：read_skill 解禁——故事板翻回主代理直做，
-  主代理须在设计前 read_skill 读全对应章节并消化进产出散文；顶级生产轮
+  主代理须在设计前 read_skill 读全对应章节（产出形态归 Skill 章节唯一
+  表述源，2026-09-17 裁决平台零引导）；顶级生产轮
   不再裁 read_skill。子级/微调/自由对话仍保留 read_skill 可见。
 """
 import pytest
 
 from src.video_agent.core.planner import Planner, PlannerContext
-from src.video_agent.core.subagent import PRODUCTION_MAIN_PRUNE
 
 
 @pytest.fixture()
@@ -43,13 +43,12 @@ def _make_ctx(skill, depth=0, adjust_scope=None):
 @pytest.mark.parametrize("skill", ["任意Skill", "AI-短剧一站式生成"])
 def test_production_turn_keeps_read_skill(svc, monkeypatch, skill):
     """2026-09-16 R4 批（对齐 flova）：顶级生产轮 read_skill 解禁——
-    故事板翻回主代理直做，主代理须在设计前 read_skill 读全对应章节
-    并消化进产出散文（flova 式合规杠杆=上下文在场）。"""
+    故事板翻回主代理亲做，主代理须在设计前 read_skill 读全对应章节
+    （flova 式合规杠杆=上下文在场；产出形态归 Skill 章节，平台零引导）。"""
     monkeypatch.setattr(
         "src.video_agent.core.prompt_gates.gate_mode", lambda: "off")
     excluded = _make_planner(svc)._compute_excluded_tools(_make_ctx(skill))
     assert "read_skill" not in excluded
-    assert "read_skill" not in PRODUCTION_MAIN_PRUNE
 
 
 def test_free_chat_keeps_read_skill(svc, monkeypatch):

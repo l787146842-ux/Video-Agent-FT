@@ -78,7 +78,7 @@ def _card_events(events):
     ("document_write", {"name": "Final_Video_Spec.md", "content": "# 规格"}, "规格已完成", 1),
     # 批 6 · A3：keyElement 建组 = 资产已注册 + 故事板已更新（一动作多卡）
     ("storyboard_create_group", {"group_type": "keyElement", "title": "角色"}, "资产已注册", 2),
-    ("storyboard_create_group", {"group_type": "shot", "title": "镜头一"}, "故事板已更新", 1),
+    ("storyboard_create_group", {"group_type": "shot", "title": "镜头一", "summary": "含内部剪辑（约10s）"}, "故事板已更新", 1),
     ("storyboard_add_draft", {"draft": {"label": "程心"}}, "故事板已更新", 1),
     ("storyboard_patch_draft", {"draft_id": "d1", "patch": {"prompt": "p"}}, "故事板已更新", 1),
     ("generate_video", {"draft_id": "d1"}, "时间线已更新", 1),

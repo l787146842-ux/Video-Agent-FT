@@ -90,7 +90,7 @@ describe('.sb-duration 独立时长徽标（P2-H）', () => {
     expect(container.querySelector('.sb-duration')).toBeNull();
   });
 
-  it('双击 .sb-duration 不进入标题编辑态（.sb-title-input 仍为 null）', () => {
+  it('双击 .sb-duration 不进入标题编辑态（.sb-title-input 仍为 null）；shot 进入摘要编辑态（flova 对齐批）', () => {
     const group: ShotGroup = {
       id: 'g5',
       title: '转场',
@@ -105,5 +105,32 @@ describe('.sb-duration 独立时长徽标（P2-H）', () => {
     expect(container.querySelector('.sb-title-input')).toBeNull();
     // 标题 span 仍然存在（未进入编辑态）
     expect(container.querySelector('.sb-title span[title="双击编辑标题"]')).toBeTruthy();
+    // flova 对齐批（2026-09-17）：shot 徽标位双击进摘要编辑（Esc 可退出）
+    const input = container.querySelector('.sb-duration-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.value).toBe('3s');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(container.querySelector('.sb-duration-input')).toBeNull();
+  });
+
+  it('summary 优先渲染于徽标位；空 summary 回落 duration（D2 裁决不空窗）', () => {
+    const withSummary: ShotGroup = {
+      id: 'g6',
+      title: 'Shot_01 场一·苏醒',
+      summary: '含3个内切镜头（约18s）',
+      duration: '18s',
+      drafts: [{ id: 'd1', label: '分镜 1', mediaType: 'video', videoUrl: '', prompt: '' }],
+    };
+    const c1 = setup(withSummary, 'shot').container;
+    expect((c1.querySelector('.sb-duration')!.textContent || '').trim())
+      .toBe('含3个内切镜头（约18s）');
+    const legacy: ShotGroup = {
+      id: 'g7',
+      title: '过场',
+      duration: '10s',
+      drafts: [{ id: 'd1', label: '分镜 1', mediaType: 'video', videoUrl: '', prompt: '' }],
+    };
+    const c2 = setup(legacy, 'shot').container;
+    expect((c2.querySelector('.sb-duration')!.textContent || '').trim()).toBe('10s');
   });
 });

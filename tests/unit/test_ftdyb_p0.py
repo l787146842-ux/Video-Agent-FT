@@ -30,9 +30,10 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
     r = await StoryboardCreateGroupTool().aexecute(CreateGroupInput(
         group_type="shot",
         title="Shot_太空艇与宇航员坍缩",
+        desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
+        summary="长镜头含内部剪辑（约10s）",
         scene_refs=["Element_监视太空艇", "Element_二维空间平面"],
         duration="10s",
-        desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
         draft={"label": "分镜卡片", "prompt": "p"},
     ))
     assert r.success

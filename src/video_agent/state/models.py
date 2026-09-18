@@ -44,7 +44,7 @@ class ProjectStatus(str, Enum):
 # =======================
 # 整板保存往返安全网（D-06）：以下元素模型统一 extra="allow"，让前端携带的
 # 未声明字段（如 Draft 的 imageProviderId/videoModel/customRatioWidth、Asset 的
-# sourceDraft、分组的 badgeLabel 等视图态字段）在 PUT /project/state 校验后
+# sourceDraft、存量分组的 badgeLabel 等视图态/退役字段）在 PUT /project/state 校验后
 # 原样透传，而非被静默丢弃。落盘回转走 model_dump(by_alias, mode=json,
 # exclude_unset=True)：只回传前端实际提交的键，既不丢额外字段、也不注入模型
 # 默认值污染落盘形态（契约显式 + 往返零静默丢字段的唯一家见 routes/project.py）。

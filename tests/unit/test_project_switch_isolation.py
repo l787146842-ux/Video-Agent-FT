@@ -147,13 +147,6 @@ def test_takeover_skipped_when_spec_finalized(monkeypatch):
 # 内部逻辑，规格收集改由模型按 skill_runtime 用 workflow_pause 分组向导完成。
 
 
-def test_badge_normalize_from_desc_anchors():
-    """B7：泛化「关键元素」/缺省角标按 desc 锚点确定映射。"""
-    from src.video_agent.state import storyboard_ops as ops
-
-    assert ops.normalize_badge_label("关键元素", "关键道具（prop element）。一艘小型无人太空探测器") == "道具"
-    assert ops.normalize_badge_label("", "关键场景（element scene）。空间结构：无垠开放深空") == "场景"
-    assert ops.normalize_badge_label("关键元素", "青年女性，约20-30岁。外貌：清秀") == "人物"
-    assert ops.normalize_badge_label("", "音色：温柔但坚定", group_type="audio") == "声音特征"
-    # 已有具体角标不覆盖
-    assert ops.normalize_badge_label("人物", "任意描述") == "人物"
+# test_badge_normalize_from_desc_anchors 已随用户裁决 2026-09-17 退役删除：
+# badgeLabel 类别标识全链删除（建组推导/patch 写口/前端显示编辑均退役），
+# 存量数据只读透传（extra="allow" 往返断言见 test_project_state_roundtrip）。

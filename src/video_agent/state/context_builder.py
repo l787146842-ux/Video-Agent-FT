@@ -128,12 +128,16 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
                 "index": gi + 1,
                 "title": g.get("title", ""),
                 "duration": g.get("duration", ""),
+                # flova 对齐批（2026-09-17）：summary（镜头结构摘要徽标）入状态——
+                # 模型每轮看见自己的写入侧承诺，跨轮维持 desc 与徽标自洽
+                "summary": g.get("summary", ""),
                 "sceneRefs": g.get("sceneRefs", []),
                 # R4/K3 批（2026-09-16 对齐 flova）：desc=分镜正文唯一载体入状态——
                 # 故事板翻回主代理亲做后，每轮看见先前分镜正文是合规自检前提；
-                # 单 shot ≤200 字预算截断（B 档压缩另经 _compact_snapshot 句柄保留）；
+                # 2026-09-17 裁决（desc 不限字数）：A 档全文注入不截断，
+                # 超预算压缩另经 _compact_snapshot 句柄保留（全文可 read_state_group 读回）；
                 # roughDesc 保留只读注入（存量数据兼容，新建卡不再产）
-                "desc": (g.get("desc", "") or "")[:200],
+                "desc": g.get("desc", "") or "",
                 "roughDesc": g.get("roughDesc", ""),
                 "drafts": [
                     {
@@ -210,9 +214,9 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
         # 交互阶段状态：让模型看到先前轮次是否停在「等待确认」暂停点，
         # 避免用户回复确认后模型感知不到进度、从头重复同一套操作
         "interaction": _build_interaction(raw_state),
-        # 剧本分析摘要（script_analyze 产出）：一句话总结 + 关键要点，
-        # 拆解/提示词阶段主模型必须看到，否则会凭空概括
-        "analysis": _build_analysis(raw_state),
+        # 剧本分析摘要改走 A' 阶段键控临时尾（2026-09-18 批 B）：只在故事板
+        # 设计窗口注入（core.stage_section_tail），不再进模型状态快照——避免与
+        # A' 尾双份付钱，恢复裁决③「故事板阶段注入分析、其他阶段不需要」。
     }
 
 
@@ -364,25 +368,6 @@ def _build_interaction(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_analysis(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """剧本分析摘要（script_analysis_report 产出）紧凑注入。
-
-    批 5 自由文本口径：summary 是动作落账的最小锚点，report 是
-    模型按 skill 散文自由撰写的分析全文（不再有结构化字段），按
-    注入预算截断。"""
-    analysis = raw_state.get("analysis")
-    if not isinstance(analysis, dict):
-        return {}
-    out: Dict[str, Any] = {}
-    summary = str(analysis.get("summary") or "").strip()
-    if summary:
-        out["summary"] = summary[:500]
-    report = str(analysis.get("report") or "").strip()
-    if report:
-        out["report"] = report[:2500]
-    return out
-
-
 def build_full_snapshot(raw_state: Dict[str, Any], board_version: int) -> Dict[str, Any]:
     """完整状态快照（供前端刷新/SSE done payload）。
 
@@ -465,5 +450,5 @@ def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "documents": [d.get("name", "") for d in raw_state.get("documents", [])],
         "uploadedDocs": [d.get("name", "") for d in raw_state.get("uploadedDocs", [])],
         "interaction": _build_interaction(raw_state),
-        "analysis": _build_analysis(raw_state),
+        # analysis 改走 A' 临时尾（2026-09-18 批 B），降级快照同样不含
     }

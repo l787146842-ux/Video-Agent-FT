@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
-"""分工重设计铺满批（2026-09-15）契约单测。
+"""主代理工具面契约单测（2026-09-18 工具全还批更新）。
 
-钉死 dsh 对齐断言：
-① 顶级生产轮面 = 主线程集（PRODUCTION_MAIN_PRUNE 裁剪生效）；
-② 子级面不继承顶级裁剪（script_analyze 子级可调 read_uploaded_doc、
+钉死断言：
+① 顶级生产轮主代理持全量生产工具面（PRODUCTION_MAIN_PRUNE 裁剪已退役）；
+② 子级面持生产工具（script_analyze 子级可调 read_uploaded_doc、
    key_elements 子级可调 storyboard_create_group）；
 ③ adjust_scope 不裁剪（微调子对话保留 patch/read 工具）；
 ④ 轮内 excluded 误调拒执行（one visibility = one permission）；
 ⑤ stage 映射缺失 fail-loud（装载期校验）；
-⑥ 路由改造：原"主代理直调 read_uploaded_doc/storyboard_create_group"
-   用例改经 run_subagent(stage=…)。
+⑥ 非法 stage fail-loud 拒收。
 """
 import pytest
 
@@ -19,8 +18,8 @@ from src.video_agent.core import subagent as subagent_mod
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.subagent import (
-    PIPELINE_STAGE_KINDS, PRODUCTION_MAIN_PRUNE, _MAIN_READBACK_DENY,
-    _STAGE_TOOLS, SUBAGENT_TOOL_DENY, child_deny_set, stage_tools,
+    PIPELINE_STAGE_KINDS, _STAGE_TOOLS, SUBAGENT_TOOL_DENY,
+    child_deny_set, stage_tools,
 )
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
@@ -50,27 +49,24 @@ def _ensure_platform_tools():
 
 # ---------- ① 顶级生产轮面 = 主线程集 ----------
 
-def test_top_level_production_prune(svc):
-    """顶级生产轮（skill_name 非空 + depth==0 + 非 adjust）裁剪生效：
-    PRODUCTION_MAIN_PRUNE 全部进 excluded；主线程工具保留。"""
+def test_top_level_production_no_prune(svc):
+    """工具全还（2026-09-18 用户裁决）：顶级生产轮主代理持全量生产工具面，
+    PRODUCTION_MAIN_PRUNE 裁剪已退役——可委派阶段工具与回读两件套均不再裁。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
 
-    # 可委派阶段生产工具全部裁剪
+    # 可委派阶段生产工具不再裁（主代理可亲做，委派改由协议引导）
     for stage, tools in _STAGE_TOOLS.items():
         for t in tools:
-            assert t in excluded, f"{t} (stage={stage}) should be pruned"
-    # 回读两件套裁剪
-    for t in _MAIN_READBACK_DENY:
-        assert t in excluded, f"{t} should be pruned"
-    # R4（2026-09-16）：故事板三阶段翻回主代理直做——建组工具与 read_skill 不再裁
+            assert t not in excluded, f"{t} (stage={stage}) 不应再被裁剪"
+    # 回读两件套不再裁
+    assert "read_draft" not in excluded
+    assert "view_storyboard_media" not in excluded
+    # 故事板建组工具与 read_skill 不裁
     assert "storyboard_create_group" not in excluded
     assert "read_skill" not in excluded
-    # write_media_prompt 阶段工具仍裁（委派边界不变）
-    assert "storyboard_add_draft" in excluded
-    assert "storyboard_patch_draft" in excluded
     # 主线程工具保留
     assert "run_subagent" not in excluded
     assert "workflow_pause" not in excluded
@@ -78,6 +74,8 @@ def test_top_level_production_prune(svc):
     assert "document_write" not in excluded
     assert "image_generate" not in excluded
     assert "generate_video" not in excluded
+    # structured_output 仍子代理专属（主代理面裁）
+    assert "structured_output" in excluded
 
 
 def test_free_chat_no_prune(svc):
@@ -128,20 +126,20 @@ def test_stage_tools_mapping():
     assert stage_tools("不存在") == frozenset()
 
 
-def test_r4_storyboard_back_to_main_agent(svc):
-    """R4（2026-09-16 对齐 flova）：主代理生产轮持有 storyboard_create_group +
-    read_skill（故事板主代理直做）；script_analyze / write_media_prompt 仍委派
-    （其生产工具仍裁）；委派集只余两阶段。"""
+def test_main_agent_full_toolset(svc):
+    """工具全还（2026-09-18）：主代理生产轮持全量工具——storyboard_create_group/
+    read_skill/read_uploaded_doc/script_analysis_report/storyboard_add_draft/
+    storyboard_patch_draft 均不再裁；委派集仍只余两阶段（协议引导委派）。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
     assert "storyboard_create_group" not in excluded
     assert "read_skill" not in excluded
-    assert "read_uploaded_doc" in excluded
-    assert "script_analysis_report" in excluded
-    assert "storyboard_add_draft" in excluded
-    assert "storyboard_patch_draft" in excluded
+    assert "read_uploaded_doc" not in excluded
+    assert "script_analysis_report" not in excluded
+    assert "storyboard_add_draft" not in excluded
+    assert "storyboard_patch_draft" not in excluded
     assert PIPELINE_STAGE_KINDS == frozenset(
         {"script_analyze", "write_media_prompt"})
 
@@ -194,12 +192,6 @@ def test_pipeline_stage_kinds_consistency():
     for stage in PIPELINE_STAGE_KINDS:
         assert stage in _STAGE_TOOLS, f"{stage} missing from _STAGE_TOOLS"
         assert stage_tools(stage), f"{stage} has empty tool set"
-
-
-def test_production_main_prune_is_union():
-    """PRODUCTION_MAIN_PRUNE = 各阶段工具并集 ∪ 回读三件套。"""
-    expected = frozenset().union(*_STAGE_TOOLS.values()) | _MAIN_READBACK_DENY
-    assert PRODUCTION_MAIN_PRUNE == expected
 
 
 # ---------- ⑥ 路由改造：非法 stage fail-loud ----------

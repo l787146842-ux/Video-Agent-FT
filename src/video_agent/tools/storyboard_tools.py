@@ -5,7 +5,7 @@
 """
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from loguru import logger
 
 import json
@@ -37,12 +37,34 @@ _DRAFT_FIELDS_HINT = (
 
 class CreateGroupInput(StrictToolInput):
     group_type: Literal["keyElement", "shot", "audio"] = Field(..., description="分组类型（闭集枚举）: keyElement | shot | audio")
-    title: str = Field(..., description="分组标题")
+    title: str = Field(..., description="分组标题（裸名；平台按组类型幂等补类型前缀 Element_/Shot_/Audio_；shot 标题=一句话描述镜头内容，顺序由列表序号承担，标题中不带镜号/场号编号）")
     desc: str = Field("", description="分组描述（shot 类型：完整镜头设计写这里，唯一载体）")
     duration: str = Field("", description="时长（shot 类型用；整镜总时长）")
+    summary: str = Field("", description="shot 类型必填：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段")
     scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _desc_before_summary(cls, data):
+        """批 E（2026-09-18）：shot 建组验原始入参键序——desc 必须先于 summary。
+
+        意图：先写完整镜头设计 desc、再据其提炼 summary 徽标（flova：summary
+        是 desc 的镜子），防「徽标吹内切、desc 里没有」。只查字段顺序、不看
+        内容、不碰格式红线（与「summary 缺失整单拒收」同档写闸）。
+        mode="before" 收到的 data = json.loads 保序 dict（manager.invoke_tool 原样传
+        kwargs），故键序 = 模型原始入参 JSON 键序；倒序抛 ValueError →
+        ValidationError → 整单拒收重填（retryable=False）。
+        """
+        if isinstance(data, dict) and data.get("group_type") == "shot":
+            keys = list(data.keys())
+            if ("desc" in keys and "summary" in keys
+                    and keys.index("desc") > keys.index("summary")):
+                raise ValueError(
+                    "shot 建组入参键序错误：desc 必须先于 summary（先写完整镜头"
+                    "设计 desc，再据其提炼 summary 徽标）；请调整字段顺序后整单重填。")
+        return data
 
 
 class PatchDraftInput(StrictToolInput):
@@ -103,6 +125,7 @@ class StoryboardCreateGroupTool(BaseTool):
     description = (
         "创建新的故事板分组，可附带草稿。"
         "desc 中 [元素名] 令牌与裸名提及由系统自动解析为引用；也可用 scene_refs 显式指定。"
+        "shot 类型必填 summary（镜头结构摘要徽标），缺失整单拒收打回重填。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -111,6 +134,19 @@ class StoryboardCreateGroupTool(BaseTool):
     async def aexecute(self, params: CreateGroupInput) -> ToolResult:
         svc = StateManager.get_instance()
         cat_key = ops.category_for_group_type(params.group_type)
+
+        # flova 对齐批（2026-09-17 裁决）：shot 建组写闸——summary 是写入侧承诺契约
+        # （模型先承诺镜头结构摘要，desc 按其自洽展开；对齐 flova 落库摘要徽标字段）；
+        # 缺失整单拒收打回重填，不建组不写卡（与 draft 白名单拒收同一先例）
+        if params.group_type == "shot" and not str(params.summary or "").strip():
+            return ToolResult(
+                success=False,
+                error=("Validation Error: shot 建组必填 summary（镜头结构摘要徽标）。"
+                       "本次调用已拒收、未创建分组，现有故事板与全部草稿保持原样。"
+                       "请为本次建组补填 summary 后重新提交：与 desc 镜头结构一致的自由文本短句，"
+                       "如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'。"),
+                error_code="validation", retryable=False,
+            )
 
         # 批 6 · A3：draft 宽容解析——模型高频把 draft 传成 JSON 字符串，
         # 收到字符串自动 json.loads 拆包一次；拆不了按三要素原子拒收。
@@ -147,16 +183,12 @@ class StoryboardCreateGroupTool(BaseTool):
                 )
 
         new_id = ops.new_group_id(cat_key)
-        # 标题确定性归一（与文本轨同一 ops 实现）
+        # 标题确定性归一（2026-09-17 裁决：容器 ID 约定 = 类型前缀+裸名，与文本轨同一 ops 实现）
         _raw_title = str(params.title or "")
-        _title = ops.normalize_group_title(_raw_title)
+        _title = ops.normalize_group_title(_raw_title, cat_key)
         new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": params.desc, "drafts": []}
-        # 角标归一接回（3333 批回归修复）：9/1 文本轨退役批删除旧调用点后，
-        # keyElement 组 badgeLabel 恒空、前端全落「关键元素」兜底——按 desc
-        # 锚点确定性归一（人物/场景/道具/声音特征；本工具无角标入参，纯推导）
-        if cat_key == CAT_KEY_ELEMENTS:
-            new_group["badgeLabel"] = ops.normalize_badge_label(
-                "", str(params.desc or ""), group_type=params.group_type)
+        # badgeLabel 写口退役（2026-09-17 用户裁决：关键元素类别标识全链删除）：
+        # 建组不再按 desc 锚点推导角标；存量数据只读透传（前端不显示不编辑）。
 
         # 分镜通道的未匹配元素令牌（非分镜恒空）
         unmatched_tokens: List[str] = []
@@ -166,6 +198,9 @@ class StoryboardCreateGroupTool(BaseTool):
             # 内容落进盲区（用户看到 16 张空壳卡）。分镜正文唯一载体 = desc，
             # 存量 roughDesc 数据只读保留（context_builder 照常注入）。
             new_group["duration"] = params.duration or "5s"
+            # flova 对齐批（2026-09-17 裁决）：summary 落库（标题旁徽标载体；
+            # desc 编辑不重算——与 flova 行为对齐，承诺只在写入侧成立）
+            new_group["summary"] = str(params.summary or "").strip()
             # shotType 已摘除（2026-09-14 裁决）：单值「镜头语言」字段与 Skill 声明的
             # 多内切镜格式抢方向盘，致分镜时出内切镜时不出——分镜格式唯一载体 = desc。
             # 批 6 · A3 + K4 批（2026-09-16 对齐 flova）：引用三源合并——
@@ -178,9 +213,16 @@ class StoryboardCreateGroupTool(BaseTool):
             bare_hits = ops.scan_bare_name_mentions(
                 params.desc or "", svc.state_dict.get(CAT_KEY_ELEMENTS, []))
             merged_refs: List[str] = []
+            # flova 对齐批（2026-09-17）：canonical 去重——同一元素的裸名与 Element_ 前缀
+            # 形态算同一引用（去重键=strip_type_prefix），去重保序留首；
+            # 杜绝 K4 三源合并产同元素双份（场景 chips 行重复 chip）
+            _seen_norm: set = set()
             for ref in list(params.scene_refs or []) + matched_titles + bare_hits:
-                if ref not in merged_refs:
-                    merged_refs.append(ref)
+                _k = ops.strip_type_prefix(str(ref))
+                if _k in _seen_norm:
+                    continue
+                _seen_norm.add(_k)
+                merged_refs.append(ref)
             new_group["sceneRefs"] = merged_refs
 
         async with svc.lock:

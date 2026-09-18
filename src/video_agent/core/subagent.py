@@ -91,22 +91,11 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
 
-# 主代理在生产轮额外不持有的回读工具（草稿全文/媒体画面）：这些是
-# 阶段执行器与前端面板的职责，主代理经摘要+事件卡获知（flova7「主代理读不到
-# 草稿全文、用户去面板看」同理念）；保留则主代理会忍不住亲读亲做（3333 实证）。
-# 2026-09-16 R4 批：read_skill 解禁——故事板翻回主代理直做后，主代理须在
-# 设计前 read_skill 读全对应章节并消化进产出散文（flova 式合规杠杆=上下文
-# 在场）；章节导航靠选中 Skill 块的章节目录。
-_MAIN_READBACK_DENY: FrozenSet[str] = frozenset({
-    "read_draft", "view_storyboard_media",
-})
-
-# 主代理面在顶级生产轮裁剪的生产工具集（= 各可委派阶段工具并集 ∪ 回读两件套）：
-# 主代理物理上读不到剧本、建不了草稿 → 执行可委派阶段的唯一方式=委派
-# （dsh 结构性剥夺 > 提示词恳求，workflow 沙箱 L137-149 同理念）。
-# R4 批：故事板建组工具与 read_skill 回归主代理面（故事板主代理直做）。
-PRODUCTION_MAIN_PRUNE: FrozenSet[str] = (
-    frozenset().union(*_STAGE_TOOLS.values()) | _MAIN_READBACK_DENY)
+# 主代理生产轮工具面裁剪（PRODUCTION_MAIN_PRUNE / _MAIN_READBACK_DENY）已退役
+# （2026-09-18 用户裁决「工具要给全」，对齐 flova 平台不剥夺主代理读原文能力）：
+# 主代理持全量生产工具面，可委派阶段（script_analyze/write_media_prompt）仍由
+# 协议引导委派（skill_runtime「可委派阶段整段委派」），委派不再是结构性强制。
+# _STAGE_TOOLS 保留——委派子代理的阶段落点工具集仍由它定义。
 
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
 # 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
@@ -192,8 +181,9 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
 
     2026-09-15 1111 批（对齐 flova 精简）：任务书**只承载目标**。范围/源文档/
     产出规范一律不复述——工作台状态经读工具按需获取，源文档/Skill 自己用
-    读工具取，系统注入的阶段章节是方法参考（须消化进产出，不照抄字段小标题/
-    清单骨架，措辞唯一源 = subagent.md DELEGATION_CONTEXT）；父复述只会污染
+    读工具取，系统注入的阶段章节是方法参考（措辞唯一源 = subagent.md
+    DELEGATION_CONTEXT；2026-09-17 裁决：产出形态归 Skill 章节唯一表述源，
+    平台引导子句「消化进产出/不照抄小标题」退役）；父复述只会污染
     子任务 + 双份事实源 + 烧 token。
     通用形态：不再前置分类型职责块；阶段形态：只加一行事实性阶段标注
     （取 registry.STAGE_LABELS，不带解释性括号——2026-09-16 P1-D/R3：括号内

@@ -228,6 +228,11 @@ async def test_agent_loop_resume_then_restate_completes(executor, monkeypatch, r
 
     monkeypatch.setattr(
         al, "fallback_skill_from_state", lambda _state: "AI-短剧一站式生成")
+    # 本测聚焦 fakestop 续跑对话链，与故事板章节注入无关：关闭 A' 窗口，
+    # 避免 demo 项目 KE 触发章节尾注入干扰 messages 尾部断言。
+    monkeypatch.setattr(
+        "src.video_agent.core.workflow_runtime.in_storyboard_window",
+        lambda _state, _skill: False)
 
     seen_messages = []
     calls = {"n": 0}

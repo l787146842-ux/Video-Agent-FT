@@ -21,8 +21,10 @@ from src.video_agent.state.models import (
 _GROUP_CATS = (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
 
 # 非分组状态键——变化时触发标记而非全量重推
+# analysis 已移出（2026-09-18 批 B）：改走 A' 阶段键控临时尾，不再进模型
+# 状态快照，故 delta 不监控其变化（模型从 A' 尾拿最新 analysis）。
 _NON_GROUP_KEYS = frozenset({
-    "analysis", "assets", "documents", "interaction", "uploadedDocs",
+    "assets", "documents", "interaction", "uploadedDocs",
 })
 
 

@@ -51,6 +51,8 @@ from src.video_agent.core.round_end_policies import (
 from src.video_agent.utils import live_metrics
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import session_log
+# A' 阶段键控临时尾（批 B，2026-09-18）：故事板窗口每步注入 skill 章节原文
+from src.video_agent.core import stage_section_tail
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import AdapterError, VideoAgentError
 # 失败恢复分级：循环骨架不再硬编码恢复语义，重试预算与处置动作
@@ -464,6 +466,14 @@ async def run_agent_loop(
                         "text": gtext,
                     })
             system_prompt = context_builder()  # 每步刷新，让 LLM 看到上一步执行后的最新状态
+            # A' 阶段键控临时尾（批 B，2026-09-18）：故事板窗口内每步注入
+            # skill 章节原文，经 extra_messages 拼在消息最末（近生成端）、
+            # 不落事件流（纯函数、回放字节一致）。窗口/章节见 stage_section_tail。
+            _a_tail_text = stage_section_tail.build_stage_section_tail(
+                getattr(executor, "state", None) or {}, skill)
+            _a_tail_msgs: Optional[List[Dict[str, Any]]] = (
+                [{"role": "user", "content": _a_tail_text}]
+                if _a_tail_text else None)
 
             # 过程时间线：模型推理轮本身也作为操作条目可见（仅创作型
             # 交接轮进入本循环，文案为节点内创作语义，非确定性阶段规划）
@@ -479,7 +489,8 @@ async def run_agent_loop(
                 "model_reasoning", f"模型创作规划（节点内第 {step} 轮）", 0.0, True,
             )
             content, finish_reason, fc_applied, plan_ms, fc_extra = (None, "", 0, 0.0, {})
-            _unpacked, _stopped_result = await _await_llm_with_stop_guard(STOP_PHASE_STREAMING)
+            _unpacked, _stopped_result = await _await_llm_with_stop_guard(
+                STOP_PHASE_STREAMING, extra_messages=_a_tail_msgs)
             if _stopped_result is not None:
                 return _stopped_result
             content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked

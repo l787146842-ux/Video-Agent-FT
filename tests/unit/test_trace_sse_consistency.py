@@ -95,38 +95,35 @@ def test_no_char_floor_regardless_of_language():
 
 
 
-# ---------- 0817 B3：分组标题确定性归一（剥英文标识/编号前缀） ----------
+# ---------- 分组标题确定性归一（2026-09-17 裁决：对齐 flova，纯结构性） ----------
 
-def test_normalize_group_title_strips_prefixes():
-    """模型模仿 Skill 英文标识当标题 → 确定性剥前缀，保留中文主体。"""
+def test_normalize_group_title_canonical_prefix():
+    """建组写口归一：幂等补容器类型前缀，名字原样保留（无词表翻译）。"""
     from src.video_agent.state import storyboard_ops as ops
-    assert ops.normalize_group_title("key_element_audio_瓦西里") == "瓦西里"
-    assert ops.normalize_group_title("key_element_audio_领航员") == "领航员"
-    assert ops.normalize_group_title("元素场景_01 木星轨道星环号球形舱") == "木星轨道星环号球形舱"
-    assert ops.normalize_group_title("元素道具_01 白色薄膜") == "白色薄膜"
+    from src.video_agent.state.models import (
+        CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
+    )
+    # 裸名补前缀；规范前缀输入幂等
+    assert ops.normalize_group_title("程心", CAT_KEY_ELEMENTS) == "Element_程心"
+    assert ops.normalize_group_title("Element_程心", CAT_KEY_ELEMENTS) == "Element_程心"
+    assert ops.normalize_group_title("开场", CAT_SHOTS) == "Shot_开场"
+    assert ops.normalize_group_title("Shot_开场", CAT_SHOTS) == "Shot_开场"
+    assert ops.normalize_group_title("配乐", CAT_AUDIO_ITEMS) == "Audio_配乐"
+    # 名字原样：平台不翻译旧前缀（模型写什么名字就是什么名字）
+    assert ops.normalize_group_title("角色-程心", CAT_KEY_ELEMENTS) == "Element_角色-程心"
+    # 空串原样；cat_key 缺省原样
+    assert ops.normalize_group_title("", CAT_KEY_ELEMENTS) == ""
     assert ops.normalize_group_title("程心") == "程心"
-    # 剥完无中文主体 → 原样保留（机器不造名）
-    assert ops.normalize_group_title("element_scene_01") == "element_scene_01"
-    assert ops.normalize_group_title("元素场景_01") == "元素场景_01"
 
 
-def test_normalize_group_title_strips_category_colon_prefix():
-    """P0-A1（2026-09-16）：中文类别词 + 全角/半角冒号前缀同样剥除，
-    与前端 stripCategoryPrefix 保持同集合（场景|道具|人物|角色|音频|载具）。
-    三不变量：只剥不加 / 剥后非空 / 剥后须含中文主体。"""
+def test_strip_type_prefix_display_and_matching():
+    """显示/引用匹配只剥三个结构性类型前缀，其余原样（前端 stripTypePrefix 镜像）。"""
     from src.video_agent.state import storyboard_ops as ops
-    # 全角冒号
-    assert ops.normalize_group_title("角色：张三") == "张三"
-    assert ops.normalize_group_title("元素场景：木星轨道") == "木星轨道"
-    # 半角冒号
-    assert ops.normalize_group_title("场景:客厅") == "客厅"
-    assert ops.normalize_group_title("道具 : 白色薄膜") == "白色薄膜"
-    # 剥后无主体（纯冒号无内容）→ 原样返回（剥后非空不变量）
-    assert ops.normalize_group_title("角色：") == "角色："
-    assert ops.normalize_group_title("场景:") == "场景:"
-    # 纯 ASCII 原样返回（无中文主体 → 剥后须含中文不变量）
-    assert ops.normalize_group_title("Character: John") == "Character: John"
-    assert ops.normalize_group_title("Scene: Bridge") == "Scene: Bridge"
+    assert ops.strip_type_prefix("Element_程心") == "程心"
+    assert ops.strip_type_prefix("Shot_开场") == "开场"
+    assert ops.strip_type_prefix("Audio_配乐") == "配乐"
+    assert ops.strip_type_prefix("角色-程心") == "角色-程心"
+    assert ops.strip_type_prefix("程心") == "程心"
 
 
 # test_add_group_title_normalized_on_write 已随 Q2 裁决 2026-09-01 退役删除：
@@ -146,7 +143,7 @@ def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
     asyncio.run(tool.aexecute(tool.get_input_schema()(
         group_type="keyElement", title="元素场景_02 太阳系外缘启示号控制舱", desc="x")))
     titles = [g.get("title") for g in svc.state_dict.get("keyElements", [])]
-    assert "太阳系外缘启示号控制舱" in titles
+    assert "Element_元素场景_02 太阳系外缘启示号控制舱" in titles
 
 
 # test_patch_group_title_normalized_on_model_path 已随 Q2 裁决 2026-09-01 退役删除：

@@ -48,7 +48,7 @@ def _payload() -> dict:
     return {
         "keyElements": [{
             "id": "ke-1", "title": "关键元素组", "desc": "描述",
-            "badgeLabel": "已确认",  # 前端独有额外字段
+            "badgeLabel": "已确认",  # 存量额外字段（类别标识已退役，只读透传不显示）
             "drafts": [_rich_draft("d-ke-1")],
         }],
         "shots": [{

@@ -1,7 +1,7 @@
 import { createSignal, createEffect, onCleanup, Show, Switch, Match } from 'solid-js';
 import { FiImage, FiMusic, FiVideo } from 'solid-icons/fi';
 import { studioActions } from '@/stores/studio';
-import { normalizeDisplayTitle } from '@/lib/desc-ref-utils';
+import { normalizeDisplayGroupTitle } from '@/lib/desc-ref-utils';
 import type { DraftType } from '@/types';
 
 /**
@@ -16,26 +16,38 @@ export function GroupHeader(props: {
   index: () => number;
   badge: () => string;
   badgeStyle: () => Record<string, string> | undefined;
+  /** flova 对齐批（2026-09-17）：标题旁徽标位（summary 摘要）双击可编辑；
+   *  仅 shot 且提供 onSaveSummary 时生效（空值保存=清空摘要，显示回落 duration） */
+  summaryEditable?: boolean;
+  onSaveSummary?: (val: string) => void;
 }) {
   const [editingTitle, setEditingTitle] = createSignal(false);
   const [editingBadge, setEditingBadge] = createSignal(false);
+  const [editingSummary, setEditingSummary] = createSignal(false);
   const [titleVal, setTitleVal] = createSignal('');
   const [badgeVal, setBadgeVal] = createSignal('');
+  const [summaryVal, setSummaryVal] = createSignal('');
 
-  /** 左上角标题：显示层归一单一事实源 = lib/desc-ref-utils normalizeDisplayTitle
-   * （K7 批收敛，本地副本删除）；数据层标题（如新建组的 `Element_未命名`）
+  /** 左上角标题：显示层归一单一事实源 = lib/desc-ref-utils normalizeDisplayGroupTitle
+   * （组标题专用：剥容器前缀 + 剥存量镜号/场号 leading 令牌；
+   * K7 批收敛，本地副本删除）；数据层标题（如新建组的 `Element_未命名`）
    * 原样存储（台账 #10）。 */
-  const displayTitle = () => normalizeDisplayTitle(props.title());
+  const displayTitle = () => normalizeDisplayGroupTitle(props.title());
+
+  function saveSummary(val: string) {
+    setEditingSummary(false);
+    props.onSaveSummary?.(val.trim());
+  }
 
   /** 编辑退出兼容（Q3）：任一编辑态下点击输入框以外的任何地方 → 强制失焦
    *  （部分浏览器点 draggable 区域不会自然移焦，onBlur 不触发导致退不出编辑） */
   createEffect(() => {
-    if (!editingTitle() && !editingBadge()) return;
+    if (!editingTitle() && !editingBadge() && !editingSummary()) return;
     const onDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && target.closest('.sb-title-input, .sb-badge-input')) return;
+      if (target && target.closest('.sb-title-input, .sb-badge-input, .sb-duration-input')) return;
       const active = document.activeElement as HTMLElement | null;
-      if (active && active.matches('.sb-title-input, .sb-badge-input')) {
+      if (active && active.matches('.sb-title-input, .sb-badge-input, .sb-duration-input')) {
         active.blur(); // 触发对应 onBlur：保存并退出编辑
       }
     };
@@ -46,16 +58,13 @@ export function GroupHeader(props: {
   function saveBadge(val: string) {
     const v = val.trim();
     if (!v || v === props.badge()) { setEditingBadge(false); return; }
-    // 根据类型存储到对应字段
-    if (props.type === 'keyElement') {
-      studioActions.renameGroupLocal(props.type, props.groupId, { badgeLabel: v } as never);
-    } else if (props.type === 'shot') {
+    if (props.type === 'shot') {
       // 分镜角标为固定类别名「分镜」，不可编辑（shotType 已摘除，镜头语言唯一载体 = desc）
       setEditingBadge(false);
       return;
-    } else {
-      studioActions.renameGroupLocal(props.type, props.groupId, { timeRange: v } as never);
     }
+    // audio: 时段编辑（keyElement 无角标，不会进入此路径）
+    studioActions.renameGroupLocal(props.type, props.groupId, { timeRange: v } as never);
     setEditingBadge(false);
   }
 
@@ -90,12 +99,35 @@ export function GroupHeader(props: {
             onKeyDown={(e) => { if (e.key === 'Enter') { const v = titleVal().trim() || props.title(); if (v !== props.title()) studioActions.renameGroupLocal(props.type, props.groupId, { title: v }); setEditingTitle(false); } if (e.key === 'Escape') setEditingTitle(false); }}
           />
         </Show>
-        <Show when={props.durationBadge()}>
-          <span class="sb-duration">{props.durationBadge()}</span>
-        </Show>
       </div>
-      <Show when={props.badge()}>
-        <span class="sb-badge-wrap">
+      <span class="sb-badge-wrap">
+        {/* summary 摘要徽标移至右上角（2026-09-18 批 D：删「分镜」角标、摘要占右上位）；
+            仅 shot 有 durationBadge，双击可编辑 */}
+        <Show when={props.durationBadge()}>
+          <Show when={editingSummary()} fallback={
+            <span
+              class="sb-duration"
+              title={props.summaryEditable ? '双击编辑摘要徽标' : undefined}
+              onDblClick={() => {
+                if (!props.summaryEditable) return;
+                setSummaryVal(props.durationBadge());
+                setEditingSummary(true);
+              }}
+            >
+              {props.durationBadge()}
+            </span>
+          }>
+            <input
+              class="sb-duration-input"
+              value={summaryVal()}
+              ref={(el) => requestAnimationFrame(() => { el.focus(); el.select(); })}
+              onInput={(e) => setSummaryVal(e.currentTarget.value)}
+              onBlur={() => saveSummary(summaryVal())}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveSummary(summaryVal()); if (e.key === 'Escape') setEditingSummary(false); }}
+            />
+          </Show>
+        </Show>
+        <Show when={props.badge()}>
           <Show when={editingBadge()} fallback={
             <span
               class="sb-badge"
@@ -115,9 +147,9 @@ export function GroupHeader(props: {
               onKeyDown={(e) => { if (e.key === 'Enter') saveBadge(badgeVal()); if (e.key === 'Escape') setEditingBadge(false); }}
             />
           </Show>
-          <span class="sb-index">{props.index()}</span>
-        </span>
-      </Show>
+        </Show>
+        <span class="sb-index">{props.index()}</span>
+      </span>
     </div>
   );
 }

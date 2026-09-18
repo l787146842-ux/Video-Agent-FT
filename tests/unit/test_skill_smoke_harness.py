@@ -207,12 +207,10 @@ def _run_skill_smoke(slug: str) -> None:
         svc, ["platform.tool_risk", "platform.gen_confirm"], flush=True)
 
     # --- 消息 1：标准产物序列（末步 workflow_pause 问即停）---
-    # 2026-09-15 铺满批更新：本测试钉的是平台事实落盘（state 记录），非路由架构。
-    # 可委派阶段生产工具（script_analysis_report / storyboard_create_group 等）
-    # 在顶级生产轮由 PRODUCTION_MAIN_PRUNE 裁剪，主代理直调会被 turn_excluded
-    # 拒执行（one visibility = one permission）。
-    # 本测试经 subagent_depth=1 模拟阶段执行器上下文（子级不继承顶级生产裁剪），
-    # 工具面完整可用；路由改造（主代理经 run_subagent 委派）由 test_subagent_delegation 覆盖。
+    # 本测试钉的是平台事实落盘（state 记录），非路由架构。
+    # 2026-09-18 工具全还批：顶级生产轮裁剪（PRODUCTION_MAIN_PRUNE）已退役，
+    # 主代理持全量工具面；本测试仍经 subagent_depth=1 模拟阶段执行器上下文，
+    # 工具面完整可用（子代理 deny 集另由 child_deny_set 收口）。
     ctx = PlannerContext(use_studio_context=True, skill_name=slug, subagent_depth=1)
     result = asyncio.run(planner.handle_message("请按 Skill 流程开始", ctx))
     assert not result.warnings or all("上限" not in w for w in result.warnings), \
@@ -231,9 +229,9 @@ def _run_skill_smoke(slug: str) -> None:
             if d.get("name") == "制片规格.md"]
     assert len(docs) == 1 and "2.39:1" in docs[0]["content"], \
         f"[{slug}] 规格文档未落盘/未更新"
-    # 故事板结构与卡片
+    # 故事板结构与卡片（2026-09-17 容器 ID 约定：建组写口补类型前缀）
     groups = svc.state_dict.get("keyElements") or []
-    assert groups and groups[0]["title"] == "角色", f"[{slug}] 分组未落盘"
+    assert groups and groups[0]["title"] == "Element_角色", f"[{slug}] 分组未落盘"
     draft = (groups[0].get("drafts") or [{}])[0]
     assert draft.get("desc") == "年龄 28；外貌：黑色短发；服装：作训服", \
         f"[{slug}] A2 desc 静默丢弃（假成功）"
@@ -490,10 +488,9 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         planner = Planner(state_manager=svc,
                           llm_adapter=ScriptedAdapter(script1),
                           tool_manager=ToolManager)
-        # 2026-09-15 铺满批更新：本测试钉的是规格写入落盘 + 暂停卡发行链路，
-        # 非路由架构。read_skill / document_write 在顶级生产轮被裁剪
-        # （PRODUCTION_MAIN_PRUNE + _STUDIO_STATE_TOOLS），经 subagent_depth=1
-        # 模拟阶段执行器上下文（子级不继承顶级生产裁剪），工具面完整可用。
+        # 本测试钉的是规格写入落盘 + 暂停卡发行链路，非路由架构。
+        # 2026-09-18 工具全还批：顶级生产轮裁剪已退役；本测试仍经
+        # subagent_depth=1 模拟阶段执行器上下文，工具面完整可用。
         ctx1 = PlannerContext(use_studio_context=True,
                               skill_name="未来科幻真人电影",
                               subagent_depth=1)

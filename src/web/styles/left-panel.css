@@ -35,7 +35,10 @@
     /* 描述编辑框：多行 textarea，高度随内容自适应（与展示区同等占位，长文不截断） */
     .sb-desc-input { font-size: var(--font-sm); color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; padding: 3px 6px; width: 100%; outline: none; margin-top: 4px; display: block; resize: none; line-height: 1.4; font-family: inherit; min-height: 28px; overflow: hidden; }
   .sb-badge { font-size: var(--font-xs); padding: 2px 6px; background-color: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--accent-blue); border-radius: 4px; cursor: default; }
-  .sb-duration { font-size: var(--font-xs); padding: 2px 6px; background-color: color-mix(in srgb, var(--accent-purple) 15%, transparent); color: var(--accent-purple); border-radius: 4px; cursor: default; margin-left: 6px; }
+  .sb-duration { font-size: var(--font-xs); padding: 2px 6px; background-color: color-mix(in srgb, var(--accent-purple) 15%, transparent); color: var(--accent-purple); border-radius: 4px; cursor: default; }
+    /* flova 对齐批（2026-09-17）：摘要徽标双击可编辑（仅 shot 挂 title 提示） */
+    .sb-duration[title] { cursor: pointer; }
+    .sb-duration-input { font-size: var(--font-xs); padding: 1px 4px; width: 160px; background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; color: var(--text-main); outline: none; }
   .sb-badge-wrap { display: flex; align-items: center; gap: 5px; }
   .sb-badge-input { font-size: var(--font-xs); padding: 1px 4px; width: 64px; background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; color: var(--text-main); outline: none; }
   /* 镜头设计详情（仅分镜卡）：折叠开关 + 全文（锚点卡/动作/台词，pre-wrap 保换行） */

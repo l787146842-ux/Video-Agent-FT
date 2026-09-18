@@ -35,69 +35,63 @@ ALLOWED_NEW_DRAFT_FIELDS = ALLOWED_DRAFT_FIELDS + ("id",)
 
 # group patch 允许写入的字段全集（shotType 已摘除：分镜镜头语言唯一载体 = desc；
 # roughDesc 同批退役写口 2026-09-15：双通道歧义致分镜正文落盲区，
-# 存量数据只读保留）
+# 存量数据只读保留；badgeLabel 同批退役写口 2026-09-17：用户裁决类别标识
+# 全链删除，存量数据只读透传）
 ALLOWED_GROUP_FIELDS = (
-    "title", "desc", "duration", "timeRange", "prompt", "sceneRefs",
-    "badgeLabel",
+    "title", "desc", "duration", "timeRange", "prompt", "sceneRefs", "summary",
 )
 
-# ---------- 分组标题确定性归一（模型模仿 Skill 英文标识当标题） ----------
-# 自动修正：剥 key_element_* 等英文标识前缀 / 「元素场景_01」式中文类别编号前缀 /
-# 「角色：张三」式中文类别冒号前缀（全角/半角冒号），保留中文主体；
-# 剥完无中文主体则原样保留（机器不造名，用户可手动改名）。
-# 三不变量（strip only, never add；剥后非空；剥后须含中文主体）由 normalize_group_title 兜底。
-_ASCII_ID_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+_")
-# 类别词集合与前端 stripCategoryPrefix 保持一致：场景|道具|人物|角色|音频|载具
-# 可选前缀「元素|关键元素」；后缀两支并列：
-#   1) 编号分支：[_\-\s]?\d+\s*  —— 覆盖「元素场景_01 」
-#   2) 冒号分支：\s*[：:]\s*     —— 覆盖「角色：」「场景:」
-_CN_CAT_PREFIX_RE = re.compile(
-    r"^(?:元素|关键元素)?(?:场景|道具|人物|角色|音频|载具)"
-    r"(?:[_\-\s]?\d+\s*|\s*[：:]\s*)"
-)
-_TITLE_CJK_RE = re.compile(r"[一-鿿]")
+
+def dedup_scene_refs(refs: Any) -> List[str]:
+    """flova 对齐批（2026-09-17）：sceneRefs canonical 去重——同一元素的裸名与
+    Element_ 前缀形态算同一引用（去重键 = strip_type_prefix），去重保序留首；
+    杜绝 K4 三源合并产同元素双份（场景 chips 行重复 chip）。纯函数，不改状态。"""
+    out: List[str] = []
+    seen: set = set()
+    for ref in refs or []:
+        if not isinstance(ref, str):
+            continue
+        k = strip_type_prefix(ref)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(ref)
+    return out
+
+# ---------- 分组标题容器 ID 约定（2026-09-17 裁决：对齐 flova，纯结构性） ----------
+# 组标题 = 类型前缀 + 名字：前缀由平台按组类型幂等补全（flova 容器 ID 约定），
+# 名字部分 = 模型原文照搬——平台不剥不清洗不翻译任何旧前缀（无词表映射）；
+# 显示层只剥三个结构性类型前缀、其余原样（前端 desc-ref-utils 同契约镜像）。
+
+# 容器 ID 约定类型前缀（前端 GROUP_TITLE_PREFIX 同契约镜像）
+_GROUP_TITLE_PREFIX = {
+    CAT_KEY_ELEMENTS: "Element_",
+    CAT_SHOTS: "Shot_",
+    CAT_AUDIO_ITEMS: "Audio_",
+}
 
 
-def normalize_group_title(title: str) -> str:
-    """分组标题确定性归一（双轨建组入口共用）。"""
+def strip_type_prefix(title: str) -> str:
+    """剥容器类型前缀取名字（显示/引用匹配共用；只认三个结构性前缀）。"""
     t = str(title or "").strip()
-    if not t:
-        return t
-    for rx in (_ASCII_ID_PREFIX_RE, _CN_CAT_PREFIX_RE):
-        s = rx.sub("", t).strip()
-        if s and s != t and _TITLE_CJK_RE.search(s):
-            return s
+    for prefix in _GROUP_TITLE_PREFIX.values():
+        if t.startswith(prefix):
+            return t[len(prefix):]
     return t
 
 
-# ---------- 关键元素角标归一 ----------
-# 模型偷懒写泛化「关键元素」或缺省角标时，按 desc 类型锚点确定映射
-# （模型自己的 desc 通常带 prop element/element scene 等锚点）；映射不到才保留原值。
-_BADGE_ANCHORS: Tuple[Tuple[str, str], ...] = (
-    ("prop element", "道具"), ("关键道具", "道具"), ("道具", "道具"),
-    ("element scene", "场景"), ("关键场景", "场景"), ("场景", "场景"), ("空间结构", "场景"),
-    ("character", "人物"), ("主要角色", "人物"), ("角色", "人物"),
-    ("服装", "人物"), ("发型", "人物"), ("男性", "人物"), ("女性", "人物"),
-    ("音色", "声音特征"), ("音频", "声音特征"), ("声音", "声音特征"),
-)
-_GENERIC_BADGES = ("", "关键元素")
+def normalize_group_title(title: str, cat_key: str = "") -> str:
+    """分组标题确定性归一（写口）：幂等补容器类型前缀，名字原样保留。"""
+    t = str(title or "").strip()
+    prefix = _GROUP_TITLE_PREFIX.get(cat_key, "")
+    if not prefix or not t or t.startswith(prefix):
+        return t
+    return prefix + t
 
 
-def normalize_badge_label(badge: str, desc: str = "", group_type: str = "") -> str:
-    """角标归一到分类体系（人物/场景/道具/声音特征）。
-
-Skill 要求按剧本分类登记，模型却写泛化「关键元素」；
-    平台层确定性映射，audio 组缺省补「声音特征」。"""
-    b = str(badge or "").strip()
-    if str(group_type or "").strip().lower() == "audio":
-        return b or "声音特征"
-    if b and b not in _GENERIC_BADGES:
-        return b
-    d = str(desc or "")
-    for anchor, label in _BADGE_ANCHORS:
-        if anchor in d:
-            return label
-    return b
+# ---------- 关键元素角标（2026-09-17 用户裁决全链退役） ----------
+# badgeLabel 推导（_BADGE_ANCHORS 锚点表 + normalize_badge_label）随类别标识
+# 删除裁决退役：建组/patch 写口关闭，前端不显示不编辑；存量数据只读透传。
 
 # 卡片小标编号：组号-卡序号（如 "1-2"，与前端卡片下方小标/上下文 index 一致）
 INDEX_REF_RE = re.compile(r"^(\d+)\s*[-－.·]\s*(\d+)$")
@@ -254,7 +248,8 @@ def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, Lis
     changed = False
     for field in ALLOWED_GROUP_FIELDS:
         if field in patch:
-            group[field] = patch[field]
+            # sceneRefs 写口同口径 canonical 去重（与 create_group 三源合并一致）
+            group[field] = dedup_scene_refs(patch[field]) if field == "sceneRefs" else patch[field]
             changed = True
     return changed, dropped
 
@@ -450,18 +445,6 @@ def parse_element_tokens(text: str) -> List[str]:
     return tokens
 
 
-def _strip_cn_cat_prefix(title: str) -> str:
-    """中文类别前缀剥离（与前端 stripCategoryPrefix 同正则同三不变量）：
-    只剥不加；剥后为空返原文；剥后无中文返原文。"""
-    t = str(title or "")
-    s = _CN_CAT_PREFIX_RE.sub("", t)
-    if not s:
-        return t
-    if not _TITLE_CJK_RE.search(s):
-        return t
-    return s
-
-
 def scan_bare_name_mentions(
     desc: str, key_elements: List[Dict[str, Any]],
 ) -> List[str]:
@@ -483,7 +466,7 @@ def scan_bare_name_mentions(
         title = str(ke.get("title") or "").strip()
         if not title:
             continue
-        bare = _strip_cn_cat_prefix(title)
+        bare = strip_type_prefix(title)
         for cand in (title, bare):
             if len(cand) >= 2 and cand not in seen:
                 seen.add(cand)

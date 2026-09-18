@@ -9,7 +9,8 @@
 - ``event_cards`` 剧本分析已完成事件卡（detail_md 携报告全文挂卡折叠，
   对齐批 2026-09-08 前为 stage_deliverables 正文渲染，已随裁决退役）；
 - ``gates_cards`` 分析探针判据；
-- ``context_builder._build_analysis`` 状态裁剪注入。
+- ``core.stage_section_tail`` A' 故事板窗口临时尾注入（2026-09-18 批 B：
+  改走阶段键控注入，不再进 context_builder 状态快照）。
 
 命名口径：工具名 = ``script_analysis_report``，与能力词
 ``script_analyze``（Skill 章节标签，阶段标记非工具名）刻意区分——

@@ -22,6 +22,19 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
   };
   const refLabel = (ref: string) => normalizeDisplayTitle(rawResolve(ref));
 
+  /** flova 对齐批（2026-09-17）：显示层兜底去重——存量 sceneRefs 同元素裸名与
+   *  Element_ 双份（K4 三源合并历史数据）按解析标签去重保序留首；
+   *  写口去重已在后端同步落地，新数据不再产双份。 */
+  const visibleRefs = () => {
+    const seen = new Set<string>();
+    return sceneRefs().filter((r) => {
+      const label = refLabel(String(r));
+      if (seen.has(label)) return false;
+      seen.add(label);
+      return true;
+    });
+  };
+
   /** 尚未引用的关键元素标题（添加候选；按原始标题去重，不受显示归一影响） */
   const availableElements = () => {
     const have = new Set(sceneRefs().map((r) => rawResolve(String(r))));
@@ -56,9 +69,9 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
 
   return (
     <div class="scene-refs">
-      <Show when={sceneRefs().length > 0}>
+      <Show when={visibleRefs().length > 0}>
         <span class="scene-refs-label">场景:</span>
-        <For each={sceneRefs()}>
+        <For each={visibleRefs()}>
           {(ref) => (
             <span class="scene-ref-chip scene-ref-editable">
               <button

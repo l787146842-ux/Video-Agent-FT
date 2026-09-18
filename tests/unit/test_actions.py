@@ -36,7 +36,7 @@ async def test_add_group_with_draft(svc, monkeypatch):
     assert r.success
     groups = svc.state_dict["keyElements"]
     assert len(groups) == before + 1
-    assert groups[-1]["title"] == "测试元素"
+    assert groups[-1]["title"] == "Element_测试元素"  # 2026-09-17 容器 ID 约定：写口补类型前缀
     assert groups[-1]["drafts"][0]["prompt"] == "test prompt"
 
 

@@ -339,15 +339,8 @@ class Planner:
         deny = getattr(context, "subagent_deny", None)
         if deny:
             excluded |= set(deny)
-        # 生产轮主代理裁剪（分工重设计，2026-09-15）：仅顶级生产轮生效；
-        # 子级（depth≥1）/微调（adjust_scope）/自由对话（无 skill）不裁。
-        # 子级**不继承**本裁剪——否则阶段执行器会被饿死（script_analyze 需
-        # read_uploaded_doc、建组需 storyboard_create_group）；裁剪集 = 各可委派
-        # 阶段生产工具并集（subagent.PRODUCTION_MAIN_PRUNE 单一源）。
-        if (getattr(context, "skill_name", "")
-                and not getattr(context, "subagent_depth", 0)
-                and not getattr(context, "adjust_scope", None)):
-            excluded |= subagent_mod.PRODUCTION_MAIN_PRUNE
+        # 生产轮主代理工具裁剪已退役（2026-09-18 用户裁决「工具要给全」）：
+        # 主代理持全量生产工具面；可委派阶段仍由协议引导委派（非结构性强制）。
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:

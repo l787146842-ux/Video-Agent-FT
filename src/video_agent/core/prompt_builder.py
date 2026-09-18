@@ -187,7 +187,9 @@ class PromptBuilder:
             if deg_note:
                 parts.append(deg_note)
         # 同源裁剪解释（stage_note）已随批 B 工具全量常驻退役（2026-09-09）：
-        # 阶段边界注释不再存在，正确性由闸机 + 工具自身校验兜底。
+        # 阶段边界注释不再存在。注：2026-09-18 批 B 的 A' 章节注入（按 workflow
+        # 节点每步注入 skill 章节原文到消息尾、不落库）与本处退役的 stage_note
+        # （工具裁剪解释文案）非同一物，不是其复活。
         # 批 10 · 执行偏好注入（外部标杆同款）：轮始按档位签发
         # （planner._load_execution_pref_note），每步随尾部消息可见；
         # 行为层引导，闸机（tool_risk/gen_confirm + 同意账本）兜底硬保证。

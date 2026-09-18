@@ -92,7 +92,9 @@ export function GroupCard(props: {
       case 'keyElement': {
         const g = props.group as KeyElementGroup;
         return {
-          badge: g.badgeLabel || '关键元素',
+          // 关键元素无右上类别标识（2026-09-17 裁决：badgeLabel 类别标识全链删除；
+          // 存量 badgeLabel 数据只读透传不显示）
+          badge: '',
           badgeStyle: undefined as Record<string, string> | undefined,
           desc: g.desc || '',
           addTitle: '手动新建/上传草稿',
@@ -102,13 +104,10 @@ export function GroupCard(props: {
       case 'shot': {
         const g = props.group as ShotGroup;
         return {
-          // 分镜角标固定「分镜」（2026-09-14 裁决：不再显 shotType 运镜——
-          // 单值运镜与 Skill 多内切镜格式抢方向盘；镜头语言唯一载体 = desc）
-          badge: '分镜',
-          badgeStyle: {
-            background: 'color-mix(in srgb, var(--accent-purple) 15%, transparent)',
-            color: 'var(--accent-purple)',
-          },
+          // 分镜角标已删（2026-09-18 批 D 用户裁决：右上角「分镜」类别角标去除，
+          // 该位改显 summary 镜头结构摘要徽标；镜头语言唯一载体仍 = desc）
+          badge: '',
+          badgeStyle: undefined as Record<string, string> | undefined,
           desc: '',  // 不显示 roughDesc 简介行（对齐 Flova：标题下直接是分镜正文）
           addTitle: '手动生成视频分镜',
           adjustLabel: '分镜',
@@ -129,10 +128,13 @@ export function GroupCard(props: {
     }
   };
 
-  const durationBadge = () =>
-    props.type === 'shot' && (props.group as ShotGroup).duration
-      ? String((props.group as ShotGroup).duration)
-      : '';
+  // flova 对齐批（2026-09-17 裁决）：标题旁徽标位 = summary 镜头结构摘要；
+  // 存量卡无 summary 时回落 duration 徽标（D2 裁决：摘要空回落，不空窗）
+  const durationBadge = () => {
+    if (props.type !== 'shot') return '';
+    const g = props.group as ShotGroup;
+    return (g.summary || '').trim() || (g.duration ? String(g.duration) : '');
+  };
 
   return (
     <div
@@ -156,6 +158,8 @@ export function GroupCard(props: {
         index={() => props.index}
         badge={() => meta().badge}
         badgeStyle={() => meta().badgeStyle}
+        summaryEditable={props.type === 'shot'}
+        onSaveSummary={(v) => studioActions.renameGroupLocal('shot', props.group.id, { summary: v } as never)}
       />
 
       {/* 场景引用 chips（仅分镜）：子组件承载跳转/删除/添加（C4） */}

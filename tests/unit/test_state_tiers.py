@@ -63,8 +63,9 @@ def test_a_tier_small_state_full(svc):
 
 
 def test_shot_desc_injected_with_budget(svc):
-    """R4/K3 批（2026-09-16 对齐 flova）：shot desc（分镜正文唯一载体）入状态，
-    单 shot ≤200 字预算截断；roughDesc 只读注入不变（存量兼容）。"""
+    """R4/K3 批（2026-09-16 对齐 flova）：shot desc（分镜正文唯一载体）入状态；
+    2026-09-17 裁决（desc 不限字数）：A 档全文注入不截断；
+    roughDesc 只读注入不变（存量兼容）。"""
     svc.state_dict[CAT_SHOTS] = [{
         "id": "sh1", "title": "S01", "desc": "镜" * 500,
         "roughDesc": "粗" * 50, "sceneRefs": ["主角"],
@@ -72,7 +73,7 @@ def test_shot_desc_injected_with_budget(svc):
     }]
     parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
     shot = parsed[CAT_SHOTS][0]
-    assert shot["desc"] == "镜" * 200
+    assert shot["desc"] == "镜" * 500
     assert shot["roughDesc"] == "粗" * 50
 
 

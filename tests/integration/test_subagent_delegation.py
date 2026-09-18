@@ -133,7 +133,7 @@ async def test_delegation_runs_child_in_isolated_context_and_returns_summary(svc
 
     # ① 子的产物真的落进共享工作台（账本合流，B4 结论）
     ke = svc.state_dict.get("keyElements") or []
-    assert any(g.get("title") == "程心" for g in ke), "子级建组未落账"
+    assert any(g.get("title") == "Element_程心" for g in ke), "子级建组未落账"
     # ② 父收到子的摘要，并向用户交付
     assert "结构搭建已由子代理完成" in (result.text or "")
     parent_last = adapter.calls[-1]
@@ -193,9 +193,10 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
         #    shot 组 sceneRefs 强非空是闸机硬要求，带上引用）
         {"tool": "storyboard_create_group", "args": {
             "group_type": "shot", "title": "S01 开场",
-            "scene_refs": ["星环号球形舱"],
             "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
-                    "分镜语法：中景+平视+缓推。"}},
+                    "分镜语法：中景+平视+缓推。",
+            "summary": "含内部剪辑（约10s）",
+            "scene_refs": ["星环号球形舱"]}},
         # 3) 子：摘要收尾
         {"text": "已建 1 组分镜（S01 开场）。"},
         # 4) 父：向用户交代
@@ -208,7 +209,7 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
 
     # ① 落账与摘要回父（委派链路基本盘）
     shots = svc.state_dict.get("shots") or []
-    assert any(g.get("title") == "S01 开场" for g in shots), "stage 子级建组未落账"
+    assert any(g.get("title") == "Shot_S01 开场" for g in shots), "stage 子级建组未落账"
     assert "提示词编写已由子代理完成" in (result.text or "")
 
     # ② 章节隔离：子级首轮模型调用的 user 消息（= build_subagent_task 包装文本）

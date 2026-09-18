@@ -111,9 +111,11 @@ def test_build_subagent_task_stage_header():
     # P1-D/R3（2026-09-16）：阶段标注只留事实行，旧解释性括号措辞退役
     assert "章节即产出规范的全部依据" not in msg
     assert "（系统已注入该阶段 Skill 章节全文" not in msg
-    # 定位语改为消化性指令（措辞唯一源 = subagent.md DELEGATION_CONTEXT）
+    # 定位语保留「方法参考」（措辞唯一源 = subagent.md DELEGATION_CONTEXT）；
+    # 2026-09-17 裁决（desc 零引导）：平台引导子句退役，产出形态归 Skill 章节
     assert "方法参考" in msg
-    assert "不得照抄章节字段小标题或清单骨架" in msg
+    assert "不得照抄章节字段小标题或清单骨架" not in msg
+    assert "消化进你自己的产出内容" not in msg
     # 旧事实错误子句退役（工作台状态实为经读工具按需获取）
     assert "你能看到与主代理相同的工作台状态" not in msg
     # L24-27 汇报格式四行逐字保留（唯一源，不得被定位语改写波及）

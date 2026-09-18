@@ -83,4 +83,13 @@ describe('SceneRefsChips（场景引用展示与增删）', () => {
     const { container } = render(() => <SceneRefsChips group={makeGroup([])} />);
     expect(container.querySelector('.scene-refs-label')).toBeNull();
   });
+
+  it('存量同元素裸名+Element_ 双份显示去重保序留首（flova 对齐批 2026-09-17）', () => {
+    const { container } = render(() => (
+      <SceneRefsChips group={makeGroup(['少女', 'Element_少女', 'ke-1', '古宅'])} />
+    ));
+    const jumps = container.querySelectorAll('.scene-ref-jump');
+    // 少女/Element_少女/ke-1 同解析标签「少女」→ 只留首份；古宅独立
+    expect([...jumps].map((b) => b.textContent)).toEqual(['少女', '古宅']);
+  });
 });
