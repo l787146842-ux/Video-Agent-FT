@@ -42,9 +42,9 @@ def _make_ctx(skill, depth=0, adjust_scope=None):
 
 @pytest.mark.parametrize("skill", ["任意Skill", "AI-短剧一站式生成"])
 def test_production_turn_keeps_read_skill(svc, monkeypatch, skill):
-    """2026-09-16 R4 批（对齐 flova）：顶级生产轮 read_skill 解禁——
-    故事板翻回主代理亲做，主代理须在设计前 read_skill 读全对应章节
-    （flova 式合规杠杆=上下文在场；产出形态归 Skill 章节，平台零引导）。"""
+    """主代理（纯编排）保留 read_skill（不在 MAIN_AGENT_DENY）：
+    主代理默认注入 planner 流程调度章节，read_skill 供其查阅非当前
+    阶段/其他 Skill 章节以判断流程（读工具全保留，只锁阶段执行写入工具）。"""
     monkeypatch.setattr(
         "src.video_agent.core.prompt_gates.gate_mode", lambda: "off")
     excluded = _make_planner(svc)._compute_excluded_tools(_make_ctx(skill))
@@ -79,7 +79,7 @@ def test_adjust_scope_keeps_read_skill(svc, monkeypatch):
 
 def test_oversized_real_skills_keep_read_skill_in_production(svc, monkeypatch):
     """真实数据链路：三个超长分级注入 Skill 激活时，
-    顶级生产轮 read_skill 仍可见（R4 批解禁：主代理亲做故事板须读章节）。"""
+    顶级生产轮 read_skill 仍可见（主代理保留读工具，不属 MAIN_AGENT_DENY）。"""
     monkeypatch.setattr(
         "src.video_agent.core.prompt_gates.gate_mode", lambda: "off")
     planner = _make_planner(svc)
