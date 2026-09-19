@@ -23,12 +23,18 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 的通用委派全现状不动。仍是模型经 FC 自主发起、同一循环同一闸机链，
 非机械执行器（FORBIDDEN 符号零触碰）。
 
-2026-09-16 R4 批（用户裁决，对齐 flova）：故事板三阶段（key_elements/shots/
-audio）从委派子代理翻回**主代理直做**——flova 唯一重大不一致=故事板设计在
-主代理（7 份转录一致）；4444 取证证明 stage 隔离委派使 shot 规则章节结构性
-不可达（RC1，留痕见 CHANGELOG §二 2026-09-16 R1-R6 批）。委派集只保留
-script_analyze / write_media_prompt；同批 read_skill 自主代理生产轮解禁
-（主代理设计故事板前须 read_skill 读全对应章节并消化进产出散文）。
+2026-09-16 R4 批（已翻案，见下）：故事板三阶段曾翻回主代理直做。
+
+2026-09-19 主代理纯编排批（用户裁决，翻案 R4 + 2026-09-18「工具要给全」）：
+主代理改为**纯编排角色**——结构性缺少各执行阶段的专业写入工具（MAIN_AGENT_DENY），
+只能经 run_subagent 委派触达；除媒体生成（image_generate/generate_video，花钱生成
+确认闸只能主线程发行）外，全部生产阶段委派子代理。委派集恢复故事板三阶段
+（key_elements/shots/audio）+ 素材分析 + 提示词撰写（提示词撰写与媒体生成是两个
+独立顺序阶段，非包含关系，故提示词撰写属委派集）。子代理 read_skill 保持 deny
+（STAGE_TOOL_DENY_EXTRA）：子代理只能用注入的对应 Skill 分区 + 共享项目状态 +
+明确传递的资源，不能自由读其他章节（规则按职责隔离、项目状态按需共享）。RC1
+（4444 取证：stage 隔离使 shot 规则不可达）由「按正确 stage 粒度委派 + 精准章节
+注入 + 跨阶段数据经共享状态可见」化解，非靠解禁 read_skill。
 """
 from typing import Dict, FrozenSet
 
@@ -70,32 +76,49 @@ SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
 # 结构上关闭跨阶段预读通道（分镜子代理物理看不到其它章节，等效 Flova 隔离）。
 STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({"read_skill"})
 
-# 阶段执行器（2026-09-15 试点、同日铺满）：委派可选的生产阶段枚举（与
-# registry.CAPABILITY_TOOL_STAGES 键同名）。生成/组装类阶段（image_generate/
-# generate_video/audio_generate/video_assembler）确认闸留主线程，不进本枚举。
-# 2026-09-16 R4 批（用户裁决，对齐 flova）：故事板三阶段翻回主代理直做
-# （flova 唯一重大不一致=故事板设计在主代理；4444 取证证明 stage 隔离委派
-# 使 shot 规则章节结构性不可达），委派集只保留 script_analyze /
-# write_media_prompt；章节映射与展示标签仍留 registry 供 read_skill/telemetry。
+# 阶段执行器：委派可选的生产阶段枚举（与 registry.CAPABILITY_TOOL_STAGES 键
+# 同名）。媒体生成（image_generate/generate_video）花钱确认闸只能主线程发行，
+# 留主代理不进本枚举；时间线组装（video_assembler）本项目暂无对应工具，待工具
+# 落地再登记（fail-loud 校验要求 _STAGE_TOOLS 非空）。
+# 2026-09-19 主代理纯编排批：恢复故事板三阶段（key_elements/shots/audio），
+# 委派集 = 素材分析 + 故事板设计三阶段 + 提示词撰写。
 PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
-    "script_analyze", "write_media_prompt",
+    "script_analyze",
+    "storyboard_key_elements", "storyboard_shots", "storyboard_audio",
+    "write_media_prompt",
 })
 
-# 两桶分工（正向设计单一事实源）：可委派阶段 → 阶段执行器在其上下文内调用的
-# 生产工具（主代理面在顶级生产轮裁掉这些，只能经委派触达）；主线程阶段工具
-# （document_write/workflow_pause/read_state_group/image_generate/generate_video）
-# 不在此表，主代理直调。本表是「主代理面裁剪」与「阶段执行器必备工具」的唯一源。
+# 阶段执行器必备工具集（正向设计单一事实源）：每个可委派阶段的子代理在其
+# 上下文内调用的生产工具。供 stage_tools() 查询 + 装载期 fail-loud 校验。
+# 注意：本表含读工具（read_uploaded_doc），故主代理结构性 deny 集
+# （MAIN_AGENT_DENY）≠ 本表并集——主代理保留读工具，只锁写入/执行工具。
 _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
     "script_analyze": frozenset({"read_uploaded_doc", "script_analysis_report"}),
+    "storyboard_key_elements": frozenset(
+        {"storyboard_create_group", "storyboard_delete_group"}),
+    "storyboard_shots": frozenset(
+        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_add_draft", "storyboard_patch_draft"}),
+    "storyboard_audio": frozenset(
+        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_add_draft"}),
     "write_media_prompt": frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
 
-# 主代理生产轮工具面裁剪（PRODUCTION_MAIN_PRUNE / _MAIN_READBACK_DENY）已退役
-# （2026-09-18 用户裁决「工具要给全」，对齐 flova 平台不剥夺主代理读原文能力）：
-# 主代理持全量生产工具面，可委派阶段（script_analyze/write_media_prompt）仍由
-# 协议引导委派（skill_runtime「可委派阶段整段委派」），委派不再是结构性强制。
-# _STAGE_TOOLS 保留——委派子代理的阶段落点工具集仍由它定义。
+# 主代理结构性 deny 集（2026-09-19 主代理纯编排批，翻案 2026-09-18「工具要给全」）：
+# 主代理是纯编排角色，物理上缺少各执行阶段的专业写入工具——这些工具只能经
+# run_subagent 委派给子代理触达（planner._compute_excluded_tools 在 depth==0 时
+# 并入本集；one visibility = one permission：schema 不可见 + 误调拒执行，
+# turn_excluded.md 渲染「经委派执行对应阶段」路由提示）。范围 = 素材分析产出 +
+# 故事板结构写入 + 提示词草稿写入（提示词撰写与故事板设计共用 add/patch_draft）。
+# 媒体生成（image_generate/generate_video）与读工具/文档/确认/编排工具不在本集
+# （主代理保留：理解需求/读资料/维护文档/处理确认节点/编排/花钱生成带确认闸）。
+MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
+    "script_analysis_report",
+    "storyboard_create_group", "storyboard_delete_group",
+    "storyboard_add_draft", "storyboard_patch_draft",
+})
 
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
 # 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
@@ -114,6 +137,16 @@ for _stage in PIPELINE_STAGE_KINDS:
             f"[subagent] PIPELINE_STAGE_KINDS 漂移：阶段 {_stage!r} 缺 "
             f"_STAGE_TOOLS 工具集（fail-loud）")
 del _stage
+
+# MAIN_AGENT_DENY 一致性：每个主代理 deny 工具必须被某个可委派阶段使用，否则
+# 主代理锁掉后无子代理阶段可用 = 结构性不可达（配置漂移在 import 期即报错）。
+_all_stage_tools: FrozenSet[str] = frozenset().union(*_STAGE_TOOLS.values())
+_orphan_deny = MAIN_AGENT_DENY - _all_stage_tools
+if _orphan_deny:
+    raise ValueError(
+        f"[subagent] MAIN_AGENT_DENY 漂移：{sorted(_orphan_deny)} 不属任何 "
+        f"_STAGE_TOOLS 阶段工具集（主代理锁掉后不可达，fail-loud）")
+del _all_stage_tools, _orphan_deny
 
 
 def stage_tools(stage: str = "") -> FrozenSet[str]:

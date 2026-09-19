@@ -245,8 +245,9 @@ def test_generate_video_always_resident(svc, monkeypatch):
 
     2026-09-15 铺满批更新：本测钉的是「无状态基裁剪」——故事板为空不触发
     额外裁剪；主线程工具（generate_video / image_generate）仍全量常驻。
-    2026-09-18 工具全还批更新：故事板建组工具与可委派阶段生产工具均不再裁
-    （PRODUCTION_MAIN_PRUNE 退役），主代理持全量生产工具面。"""
+    2026-09-19 主代理纯编排批更新：媒体生成（generate_video/image_generate）
+    作为例外仍留主代理（花钱生成确认闸）；故事板结构写入工具改由
+    MAIN_AGENT_DENY 结构性裁掉（只能经委派触达）。"""
     from src.video_agent.core.planner import Planner, PlannerContext
 
     planner = Planner.__new__(Planner)  # 绕过重量级构造，只测裁剪逻辑
@@ -260,12 +261,12 @@ def test_generate_video_always_resident(svc, monkeypatch):
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
     excluded = planner._compute_excluded_tools(ctx)
-    # 主线程工具全量常驻（不受状态/生产裁剪影响）
+    # 媒体生成例外：全量常驻留主代理（不受状态/纯编排裁剪影响）
     assert "generate_video" not in excluded
     assert "image_generate" not in excluded
-    # 工具全还（2026-09-18）：故事板建组工具与可委派阶段生产工具均不再裁
-    assert "storyboard_create_group" not in excluded
-    assert "storyboard_add_draft" not in excluded
+    # 主代理纯编排（2026-09-19）：故事板结构写入工具被结构性裁掉
+    assert "storyboard_create_group" in excluded
+    assert "storyboard_add_draft" in excluded
     # 阶段边界注释与裁剪解释已退役
     assert not getattr(ctx, "stage_note", "")
 

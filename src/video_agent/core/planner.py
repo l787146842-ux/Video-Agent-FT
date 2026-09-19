@@ -328,7 +328,8 @@ class Planner:
         结构就绪前的 generate_video 不再从可见面裁掉，改由第二层兜底
         （工具自身校验 + gen_confirm/tool_risk 闸 + 失败回喂带保留声明）；
         裁剪每步重算曾是前缀缓存击穿点，全量常驻后 tools 跨步字节稳定。
-        仅保留轮界级裁剪源（canvas 探针 / MCP 白名单 / 非 studio 上下文）。
+        轮界级裁剪源：canvas 探针 / MCP 白名单 / 非 studio 上下文 /
+        主代理纯编排 deny（MAIN_AGENT_DENY，2026-09-19 批，仅 depth==0）。
         """
         excluded = set()
         # K6 批（2026-09-16 对齐 dsh）：structured_output 为子代理专属完工
@@ -336,6 +337,16 @@ class Planner:
         # UNAVAILABLE 段不渲染 CHILD_ONLY_TOOLS（主代理不感知打卡工具）。
         if not getattr(context, "subagent_depth", 0):
             excluded |= subagent_mod.CHILD_ONLY_TOOLS
+            # 2026-09-19 主代理纯编排批（翻案 2026-09-18「工具要给全」）：
+            # 主代理结构性缺少各执行阶段的专业写入工具（故事板结构/素材
+            # 分析产出/提示词草稿），只能经 run_subagent 委派触达。子代理
+            # （depth≥1）不并入本集——它们正是这些工具的执行主体。
+            # 门控：仅生产编排上下文（有选中 Skill）且非微调子对话——
+            # ・无 Skill（自由对话）= 无阶段流水线，不锁（主代理可直接操作）；
+            # ・adjust_scope（微调真子对话）= 交互式微调模式，保留 patch/read
+            #   工具（同旧 PRODUCTION_MAIN_PRUNE 的 adjust 豁免口径）。
+            if context.skill_name and not getattr(context, "adjust_scope", None):
+                excluded |= subagent_mod.MAIN_AGENT_DENY
         # 子代理 deny 模式（2026-09-15 1111 批，对齐 dsh inherit∩restrict）：
         # 子级继承主代理整面工具，仅剔除 deny 集（run_subagent 防递归 / 花钱
         # 生成 / workflow_pause / stage 去 read_skill）。不再用硬编码 allowlist
@@ -344,8 +355,8 @@ class Planner:
         deny = getattr(context, "subagent_deny", None)
         if deny:
             excluded |= set(deny)
-        # 生产轮主代理工具裁剪已退役（2026-09-18 用户裁决「工具要给全」）：
-        # 主代理持全量生产工具面；可委派阶段仍由协议引导委派（非结构性强制）。
+        # 主代理读工具/媒体生成不裁（2026-09-18「工具要给全」维持读工具部分；
+        # 2026-09-19 主代理纯编排批只锁执行写入工具 = 上方 MAIN_AGENT_DENY）。
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:

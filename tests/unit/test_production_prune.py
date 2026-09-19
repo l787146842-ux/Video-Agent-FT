@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""主代理工具面契约单测（2026-09-18 工具全还批更新）。
+"""主代理工具面契约单测（2026-09-19 主代理纯编排批更新）。
 
 钉死断言：
-① 顶级生产轮主代理持全量生产工具面（PRODUCTION_MAIN_PRUNE 裁剪已退役）；
+① 顶级生产轮主代理结构性缺执行写入工具（MAIN_AGENT_DENY），但保留
+   读工具/媒体生成/文档/确认/编排工具；
 ② 子级面持生产工具（script_analyze 子级可调 read_uploaded_doc、
-   key_elements 子级可调 storyboard_create_group）；
+   storyboard 子级可调 storyboard_create_group），不继承主代理 deny；
 ③ adjust_scope 不裁剪（微调子对话保留 patch/read 工具）；
 ④ 轮内 excluded 误调拒执行（one visibility = one permission）；
 ⑤ stage 映射缺失 fail-loud（装载期校验）；
@@ -18,8 +19,8 @@ from src.video_agent.core import subagent as subagent_mod
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.subagent import (
-    PIPELINE_STAGE_KINDS, _STAGE_TOOLS, SUBAGENT_TOOL_DENY,
-    child_deny_set, stage_tools,
+    MAIN_AGENT_DENY, PIPELINE_STAGE_KINDS, STAGE_TOOL_DENY_EXTRA,
+    SUBAGENT_TOOL_DENY, _STAGE_TOOLS, child_deny_set, stage_tools,
 )
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
@@ -47,33 +48,39 @@ def _ensure_platform_tools():
     register_analysis_tools()
 
 
-# ---------- ① 顶级生产轮面 = 主线程集 ----------
+# ---------- ① 顶级生产轮面 = 主代理纯编排（锁执行写入工具） ----------
 
-def test_top_level_production_no_prune(svc):
-    """工具全还（2026-09-18 用户裁决）：顶级生产轮主代理持全量生产工具面，
-    PRODUCTION_MAIN_PRUNE 裁剪已退役——可委派阶段工具与回读两件套均不再裁。"""
+def test_top_level_production_main_agent_deny(svc):
+    """主代理纯编排（2026-09-19 用户裁决）：顶级生产轮主代理结构性缺
+    MAIN_AGENT_DENY 执行写入工具（只能经委派触达），但保留读工具/
+    媒体生成/文档/确认/编排工具。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
 
-    # 可委派阶段生产工具不再裁（主代理可亲做，委派改由协议引导）
-    for stage, tools in _STAGE_TOOLS.items():
-        for t in tools:
-            assert t not in excluded, f"{t} (stage={stage}) 不应再被裁剪"
-    # 回读两件套不再裁
+    # 执行写入工具被锁（故事板结构/素材分析产出/提示词草稿）
+    for t in MAIN_AGENT_DENY:
+        assert t in excluded, f"{t} 应被主代理结构性裁剪"
+    assert "storyboard_create_group" in excluded
+    assert "storyboard_delete_group" in excluded
+    assert "storyboard_add_draft" in excluded
+    assert "storyboard_patch_draft" in excluded
+    assert "script_analysis_report" in excluded
+    # 读工具不裁（主代理理解需求/读资料）
+    assert "read_uploaded_doc" not in excluded
     assert "read_draft" not in excluded
     assert "view_storyboard_media" not in excluded
-    # 故事板建组工具与 read_skill 不裁
-    assert "storyboard_create_group" not in excluded
-    assert "read_skill" not in excluded
-    # 主线程工具保留
-    assert "run_subagent" not in excluded
-    assert "workflow_pause" not in excluded
     assert "read_state_group" not in excluded
-    assert "document_write" not in excluded
+    assert "read_skill" not in excluded
+    # 媒体生成不裁（例外：花钱生成确认闸留主线程）
     assert "image_generate" not in excluded
     assert "generate_video" not in excluded
+    # 编排/文档/确认工具保留
+    assert "run_subagent" not in excluded
+    assert "workflow_pause" not in excluded
+    assert "document_write" not in excluded
+    assert "storyboard_confirm_draft" not in excluded
     # structured_output 仍子代理专属（主代理面裁）
     assert "structured_output" in excluded
 
@@ -91,10 +98,10 @@ def test_free_chat_no_prune(svc):
 
 # ---------- ② 子级面不继承顶级裁剪 ----------
 
-def test_child_does_not_inherit_production_prune(svc):
-    """子级（depth≥1）不继承顶级生产裁剪——阶段执行器仍持生产工具。"""
+def test_child_does_not_inherit_main_agent_deny(svc):
+    """子级（depth≥1）不继承主代理纯编排 deny——阶段执行器仍持生产工具。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
-    # script_analyze 子级：deny 集不含 read_uploaded_doc
+    # script_analyze 子级：deny 集不含 read_uploaded_doc / script_analysis_report
     ctx_script = PlannerContext(
         skill_name=SKILL, subagent_depth=1, use_studio_context=True,
         subagent_deny=child_deny_set("script_analyze"))
@@ -102,13 +109,18 @@ def test_child_does_not_inherit_production_prune(svc):
     assert "read_uploaded_doc" not in excluded_script
     assert "script_analysis_report" not in excluded_script
 
-    # key_elements 子级：R4 后 storyboard 阶段已离委派集 → resolve 为通用形态
+    # storyboard_key_elements 子级：本批恢复为合法阶段 → 持故事板写入工具，
+    # 不继承主代理 MAIN_AGENT_DENY；stage deny 额外去 read_skill。
     ctx_key = PlannerContext(
         skill_name=SKILL, subagent_depth=1, use_studio_context=True,
         subagent_deny=child_deny_set("storyboard_key_elements"))
     excluded_key = planner._compute_excluded_tools(ctx_key)
     assert "storyboard_create_group" not in excluded_key
-    assert child_deny_set("storyboard_key_elements") == SUBAGENT_TOOL_DENY
+    assert "storyboard_delete_group" not in excluded_key
+    assert child_deny_set("storyboard_key_elements") == (
+        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA)
+    # 子代理 read_skill 仍 deny（不能自由读其他章节）
+    assert "read_skill" in excluded_key
 
 
 def test_stage_tools_mapping():
@@ -117,31 +129,49 @@ def test_stage_tools_mapping():
         {"read_uploaded_doc", "script_analysis_report"})
     assert stage_tools("write_media_prompt") == frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"})
-    # R4（2026-09-16）：storyboard 三阶段已离委派集 → 空集
-    assert stage_tools("storyboard_key_elements") == frozenset()
-    assert stage_tools("storyboard_shots") == frozenset()
-    assert stage_tools("storyboard_audio") == frozenset()
+    # 2026-09-19 主代理纯编排批：故事板三阶段恢复委派集 → 非空工具集
+    assert stage_tools("storyboard_key_elements") == frozenset(
+        {"storyboard_create_group", "storyboard_delete_group"})
+    assert stage_tools("storyboard_shots") == frozenset(
+        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_add_draft", "storyboard_patch_draft"})
+    assert stage_tools("storyboard_audio") == frozenset(
+        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_add_draft"})
     # 未知/空阶段返回空集
     assert stage_tools("") == frozenset()
     assert stage_tools("不存在") == frozenset()
 
 
-def test_main_agent_full_toolset(svc):
-    """工具全还（2026-09-18）：主代理生产轮持全量工具——storyboard_create_group/
-    read_skill/read_uploaded_doc/script_analysis_report/storyboard_add_draft/
-    storyboard_patch_draft 均不再裁；委派集仍只余两阶段（协议引导委派）。"""
+def test_main_agent_orchestrator_surface(svc):
+    """主代理纯编排（2026-09-19）：生产轮锁掉 5 个执行写入工具，保留
+    读工具/媒体生成；委派集 = 素材分析 + 故事板三阶段 + 提示词撰写。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
-    assert "storyboard_create_group" not in excluded
+    # 执行写入工具被锁
+    assert "storyboard_create_group" in excluded
+    assert "script_analysis_report" in excluded
+    assert "storyboard_add_draft" in excluded
+    assert "storyboard_patch_draft" in excluded
+    # 读工具保留
     assert "read_skill" not in excluded
     assert "read_uploaded_doc" not in excluded
-    assert "script_analysis_report" not in excluded
-    assert "storyboard_add_draft" not in excluded
-    assert "storyboard_patch_draft" not in excluded
-    assert PIPELINE_STAGE_KINDS == frozenset(
-        {"script_analyze", "write_media_prompt"})
+    assert PIPELINE_STAGE_KINDS == frozenset({
+        "script_analyze", "storyboard_key_elements", "storyboard_shots",
+        "storyboard_audio", "write_media_prompt"})
+
+
+def test_main_agent_deny_subset_of_stage_tools():
+    """MAIN_AGENT_DENY 每个工具都被某个可委派阶段使用（否则锁掉后不可达）。"""
+    all_stage_tools = frozenset().union(*_STAGE_TOOLS.values())
+    assert MAIN_AGENT_DENY <= all_stage_tools
+    # 读工具不在 deny 集（主代理保留读能力）
+    assert "read_uploaded_doc" not in MAIN_AGENT_DENY
+    # 媒体生成不在 deny 集（例外：留主代理带确认闸）
+    assert "image_generate" not in MAIN_AGENT_DENY
+    assert "generate_video" not in MAIN_AGENT_DENY
 
 
 # ---------- ③ adjust_scope 不裁剪 ----------

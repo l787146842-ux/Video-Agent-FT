@@ -71,19 +71,19 @@ def _fake_child(captured: dict):
 # ---------- 纯契约 ----------
 
 def test_resolve_stage_enum_and_fallback():
-    # R4 批（2026-09-16）：委派集只余两阶段（故事板三阶段翻回主代理直做）
+    # 2026-09-19 主代理纯编排批：委派集恢复故事板三阶段
     assert resolve_stage("script_analyze") == "script_analyze"
     assert resolve_stage("write_media_prompt") == "write_media_prompt"
-    # storyboard 三阶段已离委派集 → 回落通用（不阻断委派）
-    assert resolve_stage("storyboard_shots") == ""
-    assert resolve_stage("storyboard_key_elements") == ""
-    assert resolve_stage("storyboard_audio") == ""
-    assert resolve_stage(" storyboard_shots ") == ""
+    assert resolve_stage("storyboard_shots") == "storyboard_shots"
+    assert resolve_stage("storyboard_key_elements") == "storyboard_key_elements"
+    assert resolve_stage("storyboard_audio") == "storyboard_audio"
+    assert resolve_stage(" storyboard_shots ") == "storyboard_shots"
     # 未知/空 → 回落通用（不阻断委派）
     assert resolve_stage("不存在") == ""
     assert resolve_stage("") == ""
     assert PIPELINE_STAGE_KINDS == frozenset({
-        "script_analyze", "write_media_prompt",
+        "script_analyze", "storyboard_key_elements", "storyboard_shots",
+        "storyboard_audio", "write_media_prompt",
     })
 
 
@@ -94,8 +94,9 @@ def test_stage_deny_drops_read_skill_only():
     assert child_deny_set("write_media_prompt") == SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
     assert child_deny_set("") == SUBAGENT_TOOL_DENY
     assert child_deny_set("未知阶段") == SUBAGENT_TOOL_DENY
-    # R4：storyboard 阶段 resolve 为通用 → 不再额外 deny read_skill
-    assert child_deny_set("storyboard_shots") == SUBAGENT_TOOL_DENY
+    # 2026-09-19：storyboard 阶段恢复为合法 stage → 额外 deny read_skill
+    assert child_deny_set("storyboard_shots") == (
+        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA)
     for deny in (child_deny_set(""), child_deny_set("write_media_prompt")):
         assert "run_subagent" in deny            # 防递归
         assert "image_generate" in deny and "generate_video" in deny  # 花钱留主线程
