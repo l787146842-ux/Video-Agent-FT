@@ -214,9 +214,9 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
         # 交互阶段状态：让模型看到先前轮次是否停在「等待确认」暂停点，
         # 避免用户回复确认后模型感知不到进度、从头重复同一套操作
         "interaction": _build_interaction(raw_state),
-        # 剧本分析摘要改走 A' 阶段键控临时尾（2026-09-18 批 B）：只在故事板
-        # 设计窗口注入（core.stage_section_tail），不再进模型状态快照——避免与
-        # A' 尾双份付钱，恢复裁决③「故事板阶段注入分析、其他阶段不需要」。
+        # 剧本分析不进模型状态快照（2026-09-18 批 B 挪出；2026-09-19 退役 A'
+        # 临时尾后不再常驻注入）：state.analysis 仅作探针/事件卡/前端数据源，
+        # 下游阶段经规格文档/读工具按需获取故事内容（对齐 flova 分析一次性使用）。
     }
 
 
@@ -450,5 +450,5 @@ def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "documents": [d.get("name", "") for d in raw_state.get("documents", [])],
         "uploadedDocs": [d.get("name", "") for d in raw_state.get("uploadedDocs", [])],
         "interaction": _build_interaction(raw_state),
-        # analysis 改走 A' 临时尾（2026-09-18 批 B），降级快照同样不含
+        # analysis 不进快照（2026-09-18 批 B 挪出、2026-09-19 退役 A' 尾），降级快照同样不含
     }

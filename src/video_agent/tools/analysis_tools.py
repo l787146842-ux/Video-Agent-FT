@@ -8,9 +8,12 @@
 - ``stage_probes.stage_done("analysis")`` 客观探针；
 - ``event_cards`` 剧本分析已完成事件卡（detail_md 携报告全文挂卡折叠，
   对齐批 2026-09-08 前为 stage_deliverables 正文渲染，已随裁决退役）；
-- ``gates_cards`` 分析探针判据；
-- ``core.stage_section_tail`` A' 故事板窗口临时尾注入（2026-09-18 批 B：
-  改走阶段键控注入，不再进 context_builder 状态快照）。
+- ``gates_cards`` 分析探针判据。
+
+分析结论不再常驻注入模型上下文（2026-09-19 主代理纯编排批退役 A' 临时
+尾，对齐 flova「分析一次性使用 + 历史衰减」）：state.analysis 仅作探针/
+事件卡/前端数据源；下游阶段经共享项目状态（规格文档/故事板）与读工具
+（剧本/规格原文）按需获取故事内容，主代理委派时明确传递所需依赖。
 
 命名口径：工具名 = ``script_analysis_report``，与能力词
 ``script_analyze``（Skill 章节标签，阶段标记非工具名）刻意区分——

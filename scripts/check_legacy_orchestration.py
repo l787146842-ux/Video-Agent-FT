@@ -135,6 +135,10 @@ FORBIDDEN = re.compile(
     # current_node_title 只读投影随消费链整体退场（B3 收窄后账本产物
     # 只服务审计与判官层，无 UI 消费者）。
     r"|suggest_next_actions|current_node_title|_skill_aware_suggestion"
+    # 2026-09-19 主代理纯编排批：A' 阶段键控临时尾退役（故事板设计委派子
+    # 代理后主代理不再亲做故事板，每步章节注入失去消费方；子代理章节注入
+    # 由 _launch_subagent 的 tool_sections 精准注入承接）。
+    r"|stage_section_tail|build_stage_section_tail|in_storyboard_window"
 )
 
 # 任务#12 批次B：L2 注入路径拆除（渐进式披露）——全文直注/分级注入/组合注入

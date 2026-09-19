@@ -117,16 +117,17 @@ async def test_analysis_event_card_carries_full_report():
     assert "- 程心：出场于太空电梯" in detail_md
 
 
-async def test_analysis_routes_to_stage_tail_not_snapshot():
-    """批 B（2026-09-18）：analysis 挪出模型状态快照，改走 A' 故事板窗口
-    临时尾（core.stage_section_tail）——避免与快照双份付钱，恢复裁决③
-    「故事板阶段注入分析、其他阶段不需要」。A' 尾注入见 test_stage_section_tail。"""
+async def test_analysis_not_in_model_snapshot():
+    """analysis 不进模型状态快照（2026-09-18 批 B 挪出；2026-09-19 退役 A'
+    临时尾后不再常驻注入，对齐 flova 分析一次性使用 + 历史衰减）。
+    state.analysis 仍作探针/事件卡/前端数据源；下游阶段经规格文档/读工具
+    按需获取故事内容。"""
     await ToolManager.invoke_tool("script_analysis_report", _analysis_payload())
     state = StateManager.get_instance().state_dict
-    # 模型状态快照不再含 analysis（B2 已挪出）
+    # 模型状态快照不含 analysis
     snap = _build_snapshot_dict(state, "")
     assert "analysis" not in snap
-    # state.analysis 仍在（A' 尾与前端事件卡的数据源，未丢）
+    # state.analysis 仍在（探针/事件卡/前端数据源，未丢）
     assert state["analysis"]["summary"].startswith("太阳系确认遭遇")
 
 

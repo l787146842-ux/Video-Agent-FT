@@ -157,8 +157,8 @@ def _completed_nodes(run: Dict[str, Any], state: Dict[str, Any],
 def current_node_probe(state: Dict[str, Any], skill: str) -> str:
     """只读 current_node 探针（不写账本）：平铺清单首个未完成节点，全完成 = ''。
 
-    重算口径与 sync_run 完全同源（账本无自报）；供「只读不写」的每步判定
-    （如 A' 注入窗口）使用，区别于轮末 sync_run 的落账写入。
+    重算口径与 sync_run 完全同源（账本无自报）；供「只读不写」的探针
+    消费（区别于轮末 sync_run 的落账写入）。
     """
     if not isinstance(state, dict):
         return ""
@@ -168,31 +168,6 @@ def current_node_probe(state: Dict[str, Any], skill: str) -> str:
         if node_id not in completed:
             return node_id
     return ""
-
-
-# 故事板设计三节点（A' 章节注入窗口的「节点当前」判据来源）
-_STORYBOARD_DESIGN_NODES = ("storyboard_key_elements", "storyboard_shots",
-                            "storyboard_audio")
-
-
-def in_storyboard_window(state: Dict[str, Any], skill: str) -> bool:
-    """A' 章节注入窗口只读判定（纯函数，不写状态；2026-09-18 批 B）。
-
-    窗口开 = 故事板三设计节点任一为 current_node（只读探针；**含 KE 尚空
-    但 analysis 已落账的几步**——第一批 KE 组落笔时章节必须在场；3333 实证
-    旧实现以「KE 非空」开窗致该几步章节缺席、模型被迫 read_skill 自救），
-    或 KE 已完成且 review_storyboard 未过（探针粒度陷阱：建第一批 shot 后
-    节点翻向 audio/review，模型仍在写后续产物——章节持续在场）。
-    """
-    if not isinstance(state, dict):
-        return False
-    if current_node_probe(state, skill) in _STORYBOARD_DESIGN_NODES:
-        return True
-    # 节点已翻过设计段：KE 完成且分镜评审未通过 → 章节仍在场
-    if not po.stage_done("key_elements", state, skill):
-        return False
-    run = state.get("workflow_run") or {}
-    return not _node_objectively_done("review_storyboard", run, state, skill)
 
 
 def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
