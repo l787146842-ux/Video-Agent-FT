@@ -179,8 +179,9 @@ async def test_zero_action_stop_ends_in_one_round(svc, fakestop_off):
 
 
 async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
-    """阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离；R4 批后委派集只余
-    script_analyze / write_media_prompt）端到端：委派带 stage=write_media_prompt
+    """阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离；2026-09-19 主代理
+    纯编排批：委派集 = 素材分析 + 故事板三阶段 + 提示词撰写）端到端：
+    委派带 stage=write_media_prompt
     → 子级任务文本精准携带该阶段章节全文，storyboard_shots 章节探针零在场
     （跨阶段污染根除）；子级真建组落账、只回摘要；子线程 meta 记阶段名。
     用真实 Skill（data/skills）验证章节切割。"""
@@ -225,4 +226,60 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     assert "本次委派阶段：媒体提示词编写" in task_text
     assert "内切镜时长估算" in task_text, "write_media_prompt 章节未精准注入"
     assert "分镜语法三件套" not in task_text, "storyboard_shots 章节泄漏进子代理"
+    assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
+
+
+async def test_stage_delegation_storyboard_shots(svc, fakestop_off):
+    """主代理纯编排批（2026-09-19）：故事板设计委派子代理端到端——
+    ① 主代理面结构性缺 storyboard_create_group/patch_draft（只能委派）；
+    ② 委派带 stage=storyboard_shots → 子级任务精准注入 storyboard_shot 章节
+      （「分镜语法三件套」探针在场），write_media_prompt 章节探针零在场；
+    ③ 子级真建 shot 组落账、只回摘要；子线程 meta 记 stage:storyboard_shots。
+    用真实 Skill（data/skills）验证章节切割与结构锁。"""
+    # ① 主代理（顶级生产轮）结构性缺故事板执行写入工具（纯编排）
+    planner = Planner(state_manager=svc, llm_adapter=None, tool_manager=ToolManager)
+    main_excluded = planner._compute_excluded_tools(
+        PlannerContext(skill_name=SKILL, use_studio_context=True))
+    assert "storyboard_create_group" in main_excluded
+    assert "storyboard_patch_draft" in main_excluded
+
+    adapter = _ScriptedAdapter([
+        # 1) 父：委派分镜设计阶段
+        {"tool": "run_subagent", "args": {
+            "task": "按已确认规格与关键元素拆解分镜",
+            "stage": "storyboard_shots"}},
+        # 2) 子：真调建组工具（shot 组 sceneRefs 强非空是闸机硬要求，带上引用）
+        {"tool": "storyboard_create_group", "args": {
+            "group_type": "shot", "title": "S01 开场",
+            "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
+                    "分镜语法：中景+平视+缓推。",
+            "summary": "含内部剪辑（约10s）",
+            "scene_refs": ["星环号球形舱"]}},
+        # 3) 子：摘要收尾
+        {"text": "已建 1 组分镜（S01 开场）。"},
+        # 4) 父：向用户交代
+        {"text": "分镜设计已由子代理完成。"},
+    ])
+    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=ToolManager)
+    result = await planner.handle_message(
+        "开始拆分镜",
+        PlannerContext(skill_name=SKILL, use_studio_context=True))
+
+    # ③ 落账与摘要回父
+    shots = svc.state_dict.get("shots") or []
+    assert any(g.get("title") == "Shot_S01 开场" for g in shots), \
+        "storyboard_shots 子级建组未落账"
+    assert "分镜设计已由子代理完成" in (result.text or "")
+
+    threads = svc.subagent_threads()
+    assert len(threads) == 1
+    scope = svc.get_conversation_scope(threads[0]["conversation_id"])
+    assert scope.get("subagent_kind") == "stage:storyboard_shots"
+    child_first = adapter.calls[1]
+    task_text = next(str(m.get("content") or "") for m in child_first
+                     if m.get("role") == "user")
+    assert "本次委派阶段：分镜设计" in task_text
+    # ② 章节隔离：storyboard_shot 章节真身在场、write_media_prompt 章节零在场
+    assert "分镜语法三件套" in task_text, "storyboard_shots 章节未精准注入"
+    assert "内切镜时长估算" not in task_text, "write_media_prompt 章节泄漏进分镜子代理"
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
