@@ -87,6 +87,17 @@ export function DraftCard(props: {
     return !!d.imgUrl;
   };
 
+  /** 关键元素组内的角色音色卡（对齐 flova 小图标子卡）：半尺寸、卡面只留音频符号、
+   *  不渲染名称/描述文字（内容经悬停 title 与中间预览框承载）；音频 tab 的 BGM/旁白卡不受影响 */
+  const isVoiceCard = () => props.type === 'keyElement' && props.draft.mediaType === 'audio';
+
+  /** 悬停 title：音色卡文字已隐藏，名称+描述都走 title 兜底；其余卡保持原 desc 兜底 */
+  const cardTitle = () => {
+    const desc = (props.draft.desc ?? '').trim();
+    if (isVoiceCard()) return [props.draft.label, desc].filter(Boolean).join('　') || undefined;
+    return desc || undefined;
+  };
+
   function addToChat() {
     studioActions.selectDraft(props.draft.id, props.type);
     const label = props.draft.label || props.draft.id;
@@ -156,9 +167,9 @@ export function DraftCard(props: {
       <div
         role="button"
         tabIndex={0}
-        class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''}`}
+        class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''} ${isVoiceCard() ? 'draft-card--voice' : ''}`}
         style={bgStyle()}
-        title={(props.draft.desc ?? '').trim() || undefined}
+        title={cardTitle()}
         onClick={() => studioActions.selectDraft(props.draft.id, props.type)}
         onKeyDown={(e) => e.key === 'Enter' && studioActions.selectDraft(props.draft.id, props.type)}
         onContextMenu={onContextMenu}
@@ -178,17 +189,17 @@ export function DraftCard(props: {
             <FiVideo size={11} />
           </span>
         </Show>
-        {/* 音频媒体：音符 + 波形标识 */}
+        {/* 音频媒体：音符 + 波形标识（音色卡缩小图标） */}
         <Show when={props.draft.mediaType === 'audio'}>
           <div class="draft-card-audio-indicator" title="音频">
-            <FiMusic size={15} />
+            <FiMusic size={isVoiceCard() ? 11 : 15} />
             <div class="draft-card-wave">
               <span /><span /><span /><span /><span />
             </div>
           </div>
         </Show>
-        {/* 文字标识（状态标签 + 名称 + 描述）仅在空卡片时显示；有媒体后隐藏 */}
-        <Show when={!hasMedia()}>
+        {/* 文字标识（状态标签 + 名称 + 描述）仅在空卡片时显示；有媒体后隐藏；音色卡恒隐藏 */}
+        <Show when={!hasMedia() && !isVoiceCard()}>
           <Show when={props.draft.tag}>
             <span
               class="draft-card-tag"

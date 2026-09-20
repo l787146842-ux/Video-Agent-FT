@@ -10,6 +10,7 @@
  * - API 健康检查
  */
 import { test, expect } from '@playwright/test';
+import { waitAppReady } from './helpers/sse-mock';
 
 /** 任务式传输 mock：提交任务返回 task_id，事件端点回放状态/增量 + done */
 async function mockAgentTask(page: import('@playwright/test').Page, payload: Record<string, unknown>, withDelta = false) {
@@ -49,8 +50,8 @@ async function mockAgentTask(page: import('@playwright/test').Page, payload: Rec
 test.describe('Studio 页面加载', () => {
     test('首页正常渲染三栏布局', async ({ page }) => {
         await page.goto('/');
-        // 等待页面基本结构加载
-        await page.waitForLoadState('networkidle');
+        // 等待页面基本结构加载（web-first 断言替代 DISCOURAGED 的 networkidle）
+        await waitAppReady(page);
 
         // 页面标题
         await expect(page).toHaveTitle(/FTDYB|Studio/i);
@@ -93,7 +94,7 @@ test.describe('Agent 对话（mock 模式）', () => {
         }, true);
 
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
+        await waitAppReady(page);
 
         // 定位聊天输入框（新 Solid UI 的稳定 id）
         const chatInput = page.locator('#chatInputTextarea');
@@ -112,7 +113,7 @@ test.describe('Agent 对话（mock 模式）', () => {
 test.describe('故事板面板', () => {
     test('左侧面板显示分组标签页', async ({ page }) => {
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
+        await waitAppReady(page);
 
         // 检查标签页（关键元素 / 分镜 / 音频）
         const tabs = page.locator('[data-tab], .tab-btn, [class*="tab"]');
@@ -136,7 +137,7 @@ test.describe('阶段确认卡片与文档卡片', () => {
         });
 
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
+        await waitAppReady(page);
         const chatInput = page.locator('#chatInputTextarea');
         await chatInput.fill('建立故事板');
         await chatInput.press('Enter');
@@ -173,7 +174,7 @@ test.describe('阶段确认卡片与文档卡片', () => {
         });
 
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
+        await waitAppReady(page);
         const chatInput = page.locator('#chatInputTextarea');
         await chatInput.fill('分析剧本');
         await chatInput.press('Enter');
@@ -245,7 +246,7 @@ test.describe('闸机「本次放行」（814F7）', () => {
         });
 
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
+        await waitAppReady(page);
         const chatInput = page.locator('#chatInputTextarea');
         await chatInput.fill('触发拦截');
         await chatInput.press('Enter');
@@ -273,7 +274,7 @@ test.describe('Skill 「+」插入引用块并发送', () => {
         });
 
         await page.goto('/');
-        await page.waitForLoadState('networkidle');
+        await waitAppReady(page);
 
         // 打开 Skill 下拉面板
         await page.locator('button[title="技能加载"]').click();

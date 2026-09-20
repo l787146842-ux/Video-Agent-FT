@@ -21,7 +21,7 @@
 import { test, expect } from '@playwright/test';
 import {
   startSseServer, wireAgentRoutes, wireEmptyConversations, wireEmptyProjectState,
-  sendMessage, pinDefaultTheme, expectDefaultTheme,
+  sendMessage, pinDefaultTheme, expectDefaultTheme, waitAppReady,
 } from './helpers/sse-mock';
 
 // 基线缺失平台跳过：仅 win32 存在截图基线（见文件头债务登记）
@@ -44,7 +44,7 @@ test.describe('视觉回归：核心对话流关键态（默认 dark 主题）',
     await wireEmptyProjectState(page);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await expectDefaultTheme(page);
 
     const feed = page.getByTestId('chat-feed');
@@ -70,7 +70,7 @@ test.describe('视觉回归：核心对话流关键态（默认 dark 主题）',
     await wireEmptyProjectState(page);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await expectDefaultTheme(page);
     await sendMessage(page, '写一段开场白');
 
@@ -99,7 +99,7 @@ test.describe('视觉回归：核心对话流关键态（默认 dark 主题）',
     await wireEmptyProjectState(page);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await expectDefaultTheme(page);
     await sendMessage(page, '帮我评估剧本');
 
@@ -130,7 +130,7 @@ test.describe('视觉回归：核心对话流关键态（默认 dark 主题）',
     await wireEmptyProjectState(page);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await expectDefaultTheme(page);
     await sendMessage(page, '生成一张海报');
 

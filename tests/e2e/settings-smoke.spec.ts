@@ -6,6 +6,7 @@
  * 测试结束回拨原值保持环境幂等）。
  */
 import { test, expect } from '@playwright/test';
+import { waitAppReady } from './helpers/sse-mock';
 
 test.describe('设置页冒烟', () => {
   test('打开全局设置：关键区块可见，模型角色档位可切换不报错', async ({ page }) => {
@@ -29,7 +30,7 @@ test.describe('设置页冒烟', () => {
     });
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
 
     // 顶栏入口打开全局设置
     await page.getByLabel('全局模型选择设置').click();

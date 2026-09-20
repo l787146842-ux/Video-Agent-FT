@@ -92,6 +92,16 @@
     .draft-card-wave span:nth-child(3) { height: 7px; }
     .draft-card-wave span:nth-child(4) { height: 12px; }
     .draft-card-wave span:nth-child(5) { height: 6px; }
+    /* 角色音色卡（关键元素组内，对齐 flova 小图标子卡）：半尺寸、卡面只留音频符号，
+       名称/描述不渲染（悬停 title 与中间预览框承载）；波形同比例缩小适配 32px 高 */
+    .draft-card--voice { width: 58px; min-width: 58px; height: 32px; padding: 2px; }
+    .draft-card--voice .draft-card-audio-indicator { gap: 1px; }
+    .draft-card--voice .draft-card-wave { height: 7px; gap: 1px; }
+    .draft-card--voice .draft-card-wave span:nth-child(1) { height: 3px; }
+    .draft-card--voice .draft-card-wave span:nth-child(2) { height: 6px; }
+    .draft-card--voice .draft-card-wave span:nth-child(3) { height: 4px; }
+    .draft-card--voice .draft-card-wave span:nth-child(4) { height: 7px; }
+    .draft-card--voice .draft-card-wave span:nth-child(5) { height: 4px; }
 
   .add-card-btn { width: 40px; height: 64px; min-width: 40px; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background-color: color-mix(in srgb, var(--color-white) 2%, transparent); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
   .add-card-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background-color: color-mix(in srgb, var(--color-info-strong) 5%, transparent); }

@@ -13,6 +13,7 @@
 import { test, expect } from '@playwright/test';
 import {
   startSseServer, wireAgentRoutes, wireEmptyConversations, sendMessage,
+  waitAppReady,
 } from './helpers/sse-mock';
 
 /** 可切换的项目状态快照：初始钉空，刷新前切换为含 trace 的定型持久化形态 */
@@ -55,7 +56,7 @@ test.describe('流式中刷新重建（任务 #11）', () => {
     await wireSwitchableProjectState(page, () => snapshot);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '帮我评估剧本');
     const feed = page.getByTestId('chat-feed');
     // 流式中：工具条目 live 上屏（刷新前基线）
@@ -84,7 +85,7 @@ test.describe('流式中刷新重建（任务 #11）', () => {
       ],
     };
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
 
     // 重建断言：正文 + 账本条目 + 耗时角标 + 深度思考文本全部从 trace 回来
     await expect(feed).toContainText('剧本评估完成', { timeout: 10000 });
@@ -114,7 +115,7 @@ test.describe('流式中刷新重建（任务 #11）', () => {
     await wireSwitchableProjectState(page, () => snapshot);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '写一段很长的开场白');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('半途而废的回答', { timeout: 10000 });
@@ -131,7 +132,7 @@ test.describe('流式中刷新重建（任务 #11）', () => {
       ],
     };
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
 
     // 重建断言：部分正文与停止痕迹（meta）都在，痕迹不因刷新而失踪
     await expect(feed).toContainText('半途而废的回答', { timeout: 10000 });

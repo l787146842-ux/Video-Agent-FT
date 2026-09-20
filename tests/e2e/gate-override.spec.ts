@@ -12,6 +12,7 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
+import { waitAppReady } from './helpers/sse-mock';
 
 interface ScriptOpts {
   /** 完成帧负载，按任务次序返回不同负载（省略则流保持打开） */
@@ -119,7 +120,7 @@ test.describe('闸机放行交互（§2.4）', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     const input = page.locator('#chatInputTextarea');
     await expect(input).toBeVisible();
     await input.fill('执行高风险清理操作');

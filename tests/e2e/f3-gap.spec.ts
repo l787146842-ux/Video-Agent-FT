@@ -12,6 +12,7 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
+import { waitAppReady } from './helpers/sse-mock';
 
 /** 与 chat-stream.spec.ts 同款的本地 SSE 服务器（帧注入 / done 收口） */
 function startSseServer(opts: {
@@ -124,7 +125,7 @@ test.describe('F-3 补钉：结构化决策表单', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '开始规划');
 
     // 表单卡渲染：标题 + select/number 字段（number 出 schema.default=4）
@@ -165,7 +166,7 @@ test.describe('F-3 补钉：钉住栏', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '把规范写下来');
 
     // 文档卡上屏 → 右键出上下文菜单 → 钉住到侧栏
@@ -216,7 +217,7 @@ test.describe('F-3 补钉：画布降级', () => {
     const capturedBodies: Array<Record<string, unknown>> = [];
     await wireAgentRoutes(page, handle, capturedBodies);
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '画布挂了你还能干活吗');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('画布虽离线我仍能回答', { timeout: 10000 });

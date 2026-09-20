@@ -192,3 +192,29 @@ export async function expectDefaultTheme(page: import('@playwright/test').Page) 
   const { expect } = await import('@playwright/test');
   await expect(page.locator('html')).toHaveClass(/(^|\s)dark(\s|$)/);
 }
+
+// ===== 路由就绪信号（替代 Playwright 官方 DISCOURAGED 的 networkidle）=====
+// 背景：本项目 SSE 长连接常驻，waitForLoadState('networkidle') 要求 500ms
+// 无网络活动——SSE 流打开期间该条件结构性不可达或随机达成，是 E2E 抖动源。
+// Playwright 官方口径（params.md / best-practices-js.md，Context7 核验）：
+// 「Don't use this method for testing, rely on web assertions to assess
+// readiness instead」。下列 helper 以各路由的稳定渲染元素为就绪信号，
+// web-first 断言自动等待并重试，语义确定且不依赖网络静默。
+
+/** 主应用（/ 路由）就绪：聊天输入框可见（AgentLayout 渲染完成信号） */
+export async function waitAppReady(page: import('@playwright/test').Page) {
+  const { expect } = await import('@playwright/test');
+  await expect(page.locator('#chatInputTextarea')).toBeVisible({ timeout: 15000 });
+}
+
+/** API 设置页（/settings 路由）就绪：页头标题渲染完成 */
+export async function waitSettingsReady(page: import('@playwright/test').Page) {
+  const { expect } = await import('@playwright/test');
+  await expect(page.locator('.aps-page-head h1')).toHaveText('API 设置', { timeout: 15000 });
+}
+
+/** 全局设置页（/global-settings 路由）就绪：面板标题渲染完成 */
+export async function waitGlobalSettingsReady(page: import('@playwright/test').Page) {
+  const { expect } = await import('@playwright/test');
+  await expect(page.locator('.gs-title')).toHaveText('全局模型设置', { timeout: 15000 });
+}

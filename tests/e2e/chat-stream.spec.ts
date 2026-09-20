@@ -14,6 +14,7 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
+import { waitAppReady } from './helpers/sse-mock';
 
 /** 帧用 \n\n 分隔；done 缺省 = 流保持打开（前端忙态持续） */
 interface ScriptOpts {
@@ -165,7 +166,7 @@ test.describe('时间线两面板（结构化 SSE 帧）', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '帮我评估剧本');
 
     const feed = page.getByTestId('chat-feed');
@@ -201,7 +202,7 @@ test.describe('停止按钮', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '写一段很长的开场白');
 
     const feed = page.getByTestId('chat-feed');
@@ -232,7 +233,7 @@ test.describe('停止按钮', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '写一段很长的开场白');
 
     const feed = page.getByTestId('chat-feed');
@@ -274,7 +275,7 @@ test.describe('停止按钮', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '帮我搭建故事板');
 
     // 忙碑态建立（停止键出现），此时仍无正文
@@ -337,7 +338,7 @@ test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', 
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '原始问题');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('回复甲', { timeout: 10000 });
@@ -387,7 +388,7 @@ test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', 
     await wireTruncateRoute(page, truncateBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '原始问题');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('旧回复', { timeout: 10000 });
@@ -426,7 +427,7 @@ test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', 
     await wireTruncateRoute(page, truncateBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '写一首诗');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('第一版回复', { timeout: 10000 });
@@ -488,7 +489,7 @@ test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', 
     });
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '第一个问题');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('第一轮回复', { timeout: 10000 });
@@ -529,7 +530,7 @@ test.describe('视频结果内联预览卡（任务 #10）', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '生成一段开场视频');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('视频已生成', { timeout: 10000 });
@@ -569,7 +570,7 @@ test.describe('滚底保持（P4 滚底回归修复）', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '第一条消息');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('回复行 80', { timeout: 10000 });
@@ -598,7 +599,7 @@ test.describe('滚底保持（P4 滚底回归修复）', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '写一段很长的开场白');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('流式行 80', { timeout: 10000 });
@@ -629,7 +630,7 @@ test.describe('排队引导（忙碌中发送）', () => {
     await wireAgentRoutes(page, handle, capturedBodies);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await sendMessage(page, '第一条消息');
     // 等待忙碌态真正建立（停止键出现）再发第二条，避免与建流竞态
     await expect(page.locator('.send-btn-stop')).toBeVisible({ timeout: 10000 });

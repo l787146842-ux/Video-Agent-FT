@@ -19,6 +19,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {
   startSseServer, wireAgentRoutes, wireEmptyConversations,
   sendMessage, pinDefaultTheme, expectDefaultTheme,
+  waitAppReady, waitSettingsReady, waitGlobalSettingsReady,
 } from './helpers/sse-mock';
 
 /**
@@ -91,7 +92,7 @@ test.describe('无障碍审计（四模式 + 棘轮）', () => {
     await wireEmptyConversations(page);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await expectDefaultTheme(page);
     await sendMessage(page, '帮我评估剧本');
     const feed = page.getByTestId('chat-feed');
@@ -109,7 +110,7 @@ test.describe('无障碍审计（四模式 + 棘轮）', () => {
     await wireEmptyConversations(page);
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitAppReady(page);
     await expect(page.locator('html')).toHaveClass(/(^|\s)light(\s|$)/);
 
     const count = await runAxeScan(page, testInfo, 'light-empty');
@@ -120,7 +121,7 @@ test.describe('无障碍审计（四模式 + 棘轮）', () => {
     await pinDefaultTheme(page);
 
     await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
+    await waitSettingsReady(page);
 
     const count = await runAxeScan(page, testInfo, 'dark-settings');
     expect(count, `棘轮：dark-settings 违规类型总数 ${count} 超过上界 ${RATCHET_TOTAL}`).toBeLessThanOrEqual(RATCHET_TOTAL);
@@ -130,7 +131,7 @@ test.describe('无障碍审计（四模式 + 棘轮）', () => {
     await pinDefaultTheme(page);
 
     await page.goto('/global-settings');
-    await page.waitForLoadState('networkidle');
+    await waitGlobalSettingsReady(page);
 
     const count = await runAxeScan(page, testInfo, 'dark-global-settings');
     expect(count, `棘轮：dark-global-settings 违规类型总数 ${count} 超过上界 ${RATCHET_TOTAL}`).toBeLessThanOrEqual(RATCHET_TOTAL);
