@@ -36,6 +36,16 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-20 · 仓库卫生批（AI 工具目录一致化 + docs/architecture 不入库 + IDE 缓存 worktree 全回收、清偿 D-13）
+- **裁决（用户，2026-09-20）**：AI 工具目录「全部删除、只留 qoder」；docs/architecture「留着但不 git」；「工作树可以删了」。
+- **改动**：
+  - `.gitignore`：「系统与编辑器」组补 `.workbuddy/.trae/.zcode`（此前 `.codebuddy/.qoder/.claude` 已忽略，三处漏网致工具目录处理不一致）；加 `docs/architecture/`（架构可视化插件派生的 .structurizr/.dot 图，README 自述「以宪法为准、可再生」，本地保留不入库，同 `scripts/skill_scan_report.md` 运行产物口径）。
+  - 移出误提交：`git rm --cached` `.trae/documents`、`.zcode/plans`（AI 工具自动生成的 session plan、非项目文档、无引用）；本地删 `.codebuddy/.workbuddy/.trae/.zcode` 四目录（文件枚举确认为旧架构/工具残留，`.claude` 本就不存在，`.qoder` 保留）。
+  - **worktree 回收**：`git worktree list` 7 个 detached-HEAD 缓存工作树（`.codex/` ×1 + `.qoder-cn/` ×6）全部 `git worktree remove`。删前体检：两 HEAD（`6af2b21`/`8f3bda3`，08-05/06 旧提交）均可从 main 到达（无独有提交丢失）、无一被锁（无在跑会话占用）；git 报「含 modified/untracked」者为旧架构已退役文件的过期 diff + node_modules/dist 等工具残留，经用户授权 `--force` 清除。清理后 `git worktree list` 只剩主工作树。
+- **清偿**：`docs/未清偿债务清单.md` D-13（IDE 缓存 worktree 未回收）清偿要件达成、整条删除；本文件 §三 R-14 落点指针同步改指本条。
+- **红线**：仅动仓外 IDE 缓存 worktree 与被忽略的工具目录，不碰主工作树源码；**分支未动**（用户未点；D-13 曾列保留的 `backup/pre-repair-0812`/`backup/pre-skillcontext-20260813` 与有 3 独有提交的 `rescue/deepseek-v2-0806` 均原样保留）。
+- **验证**：纯 git/文档卫生，无 Python/前端源码改动（pre-commit 钩子 skip）；`git worktree list` 只剩主工作树。
+
 ### 2026-09-20 · 混乱2 双删批（8888 Q3 病根：iron_rules「不跨阶段预收」 ⟂ 冻结#16「缺项合并一次问询」矛盾两边双删）
 - **背景（审计报告 `docs/指令混乱审计报告-20260920.md` §三混乱2）**：8888 Q3 取证（trace `11f56fcab5ff` step 2）证明模型开场把画幅/时长/风格打包进第一次暂停，不是散文歧义、也不是模型不听话——是平台同时喂它两条互相打架的指令：① `iron_rules_header.md` L3「不跨阶段预收」（禁合并）；② 冻结#16（2026-09-08）「平台侧以缺项合并一次问询收口」（许合并）。模型逐字引用两条后自行裁决「为了效率」选了合并（「为了效率」非任何提示词写死，全库 grep 确认）。flova L987 权威口径：不依赖剧本的全局参数启动可问、依赖剧本的细节分析后问——本就不靠平台级禁令。
 - **裁决（用户，2026-09-20）**：两条都删——「平台侧以缺项合并一次问询收口，这条直接删了呀」「不跨阶段预收，这个否定也删了呀」。矛盾两边一起拿掉，平台不再就「要不要合并问」下发元指令，交回 Skill 流程散文唯一管。用户已接受代价：平台对「提前打包问后阶段参数」不再有任何拦截/禁令，纯靠 Skill 散文自律（flova 同款）。
@@ -692,7 +702,7 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 | R-11 | 失败差异图 / axe 报告不保存，4 张 win32 截图基线保留 | `tests/e2e/` |
 | R-12 | 阶段 6 评测管线**不做**（含降级诊断脚本） | `docs/冻结与暂缓清单.md` #13 |
 | R-13 | interaction 全域 reducer（解释 A）：6 处直写归零、语义逐字等价 | `src/video_agent/core/` 交互归约面 |
-| R-14 | 清理备份分支 / worktree（34 个无独有提交 backup 分支已删） | `docs/未清偿债务清单.md` D-13（IDE 缓存 worktree 残留） |
+| R-14 | 清理备份分支 / worktree（34 个无独有提交 backup 分支已删） | IDE 缓存 worktree 已于 2026-09-20 全部回收（`git worktree list` 只剩主工作树）；原 D-13 已清偿删除，见本文件 §二 2026-09-20 条 |
 
 > 注：右列原「耦合行 RNN」落点随耦合台账根除（本文件 §二 F1）失效，现行语义以左列结论指向的宪法条款 / 模块为准；编号本身仅在本表留痕。
 >
