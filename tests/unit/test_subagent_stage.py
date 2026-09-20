@@ -16,8 +16,8 @@ import src.video_agent.tools.document_tools  # noqa: F401  触发工具注册
 from src.video_agent.core import planner as pmod
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.subagent import (
-    PIPELINE_STAGE_KINDS, STAGE_TOOL_DENY_EXTRA, SUBAGENT_TOOL_DENY,
-    build_subagent_task, child_deny_set, resolve_stage,
+    MAIN_AGENT_DENY, PIPELINE_STAGE_KINDS, STAGE_TOOL_DENY_EXTRA, SUBAGENT_TOOL_DENY,
+    build_subagent_task, child_deny_set, resolve_stage, stage_tools,
 )
 from src.video_agent.state.manager import StateManager
 
@@ -89,21 +89,40 @@ def test_resolve_stage_enum_and_fallback():
 
 def test_stage_deny_drops_read_skill_only():
     """2026-09-15 1111 批（对齐 dsh inherit∩restrict）：子级面 = 主代理面 − deny。
-    stage 仅额外 deny read_skill（断跨阶段预读）；四条硬约束两面均 deny；
-    阶段落点工具（script_analysis_report 等）不在 deny ⇒ 子代理拿得到。"""
-    assert child_deny_set("write_media_prompt") == SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
+    stage 追加 deny read_skill（断跨阶段预读）+ 本阶段未声明的委派专属写入工具
+    （2026-09-21 批0，事故 2222/Q5）；四条硬约束两面均 deny；
+    本阶段落点工具（script_analysis_report 等）不在 deny ⇒ 子代理拿得到。"""
+    # 2026-09-21 批0：带 stage 的子级额外 deny 的 = read_skill + 本阶段未声明的
+    # MAIN_AGENT_DENY 工具（交互类 confirm/media_to_chat 无阶段认领，恒 deny）。
+    assert child_deny_set("write_media_prompt") == (
+        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
+        | (MAIN_AGENT_DENY - stage_tools("write_media_prompt")))
+    # 通用委派（无 stage）不并入 MAIN_AGENT_DENY：无阶段即无阶段边界
     assert child_deny_set("") == SUBAGENT_TOOL_DENY
     assert child_deny_set("未知阶段") == SUBAGENT_TOOL_DENY
-    # 2026-09-19：storyboard 阶段恢复为合法 stage → 额外 deny read_skill
-    assert child_deny_set("storyboard_shots") == (
-        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA)
     for deny in (child_deny_set(""), child_deny_set("write_media_prompt")):
         assert "run_subagent" in deny            # 防递归
         assert "image_generate" in deny and "generate_video" in deny  # 花钱留主线程
         assert "workflow_pause" in deny          # 子级不确认
     # 阶段落点工具必须授予子代理（1111 实证 script_analysis_report 未授予断链）
     assert "script_analysis_report" not in child_deny_set("script_analyze")
-    assert "storyboard_create_group" not in child_deny_set("write_media_prompt")
+    # 本阶段**声明**的工具必须授予（add/patch_draft 正是提示词撰写用的两个）
+    assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
+    assert "storyboard_patch_draft" not in child_deny_set("write_media_prompt")
+    # 未声明的则收走：write_media_prompt 不建组（提示词写进既有草稿卡）
+    assert "storyboard_create_group" in child_deny_set("write_media_prompt")
+    # 2026-09-21 批0（事故 2222/Q5）：本阶段**未声明**的专业写入工具必须 deny——
+    # 2222 实测 key_elements 子代理可见 add_draft/patch_draft，与注入章节散文
+    # 约束冲突，模型被迫自行裁决「算不算越权」并最终越界写提示词。
+    ke_deny = child_deny_set("storyboard_key_elements")
+    assert "storyboard_add_draft" in ke_deny
+    assert "storyboard_patch_draft" in ke_deny
+    # 反之：声明了它们的阶段不得 deny（否则该阶段断链）
+    assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
+    assert "storyboard_patch_draft" not in child_deny_set("storyboard_shots")
+    # 交互类工具（面向用户动作）无任何阶段认领 → 带 stage 一律 deny
+    assert "storyboard_confirm_draft" in child_deny_set("storyboard_shots")
+    assert "storyboard_media_to_chat" in child_deny_set("storyboard_shots")
 
 
 def test_build_subagent_task_stage_header():

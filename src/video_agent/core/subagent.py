@@ -72,9 +72,17 @@ SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
     "run_subagent", "image_generate", "generate_video", "workflow_pause",
 })
 
-# stage 模式额外 deny：read_skill——该阶段章节已由系统全文注入，
-# 结构上关闭跨阶段预读通道（分镜子代理物理看不到其它章节，等效 Flova 隔离）。
-STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({"read_skill"})
+# stage 模式额外 deny（2026-09-21 批0 扩充，事故 2222/Q5）：
+#   read_skill —— 该阶段章节已由系统全文注入，结构上关闭跨阶段预读通道
+#     （分镜子代理物理看不到其它章节，等效 Flova 隔离）；
+#   storyboard_confirm_draft / storyboard_media_to_chat —— 两者都是**面向用户的
+#     交互动作**（把草稿标记「已确认」= 用户裁决；把媒体插入用户输入框 = 给用户
+#     过目），没有任何可委派阶段声明它，故带 stage 的子代理一律不持有。
+#     装载期校验（见下）保证它们永不被任何 _STAGE_TOOLS 阶段认领——若将来某阶段
+#     真要它，fail-loud 会要求先从本集移出，不会静默失效。
+STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({
+    "read_skill", "storyboard_confirm_draft", "storyboard_media_to_chat",
+})
 
 # 阶段执行器：委派可选的生产阶段枚举（与 registry.CAPABILITY_TOOL_STAGES 键
 # 同名）。媒体生成（image_generate/generate_video）花钱确认闸只能主线程发行，
@@ -148,6 +156,20 @@ if _orphan_deny:
         f"_STAGE_TOOLS 阶段工具集（主代理锁掉后不可达，fail-loud）")
 del _all_stage_tools, _orphan_deny
 
+# MAIN_AGENT_DENY 之外还有一组「带 stage 一律 deny」的交互工具
+# （STAGE_TOOL_DENY_EXTRA 非 read_skill 部分）：它们面向用户动作，任何可委派
+# 阶段都不该持有。若将来某阶段真需要（把它写进 _STAGE_TOOLS），本校验在装载期
+# 报错，逼改动者显式做出取舍——不会出现「阶段声明了却拿不到」的静默失效。
+_stage_owned_extra = frozenset(
+    t for t in STAGE_TOOL_DENY_EXTRA
+    if any(t in tools for tools in _STAGE_TOOLS.values()))
+if _stage_owned_extra:
+    raise ValueError(
+        f"[subagent] STAGE_TOOL_DENY_EXTRA 漂移：{sorted(_stage_owned_extra)} "
+        f"已被某可委派阶段声明为必备工具，却同时在 stage deny 集内（自相矛盾，"
+        f"fail-loud）——请先从 STAGE_TOOL_DENY_EXTRA 移出再声明")
+del _stage_owned_extra
+
 
 def stage_tools(stage: str = "") -> FrozenSet[str]:
     """阶段执行器必备工具集（空/未知阶段返回空集）。"""
@@ -170,10 +192,22 @@ def resolve_stage(stage: str = "") -> str:
 
 def child_deny_set(stage: str = "") -> FrozenSet[str]:
     """子级 deny 集（dsh inherit∩restrict 的 restrict 面）：通用 = 四条硬约束；
-    带 stage 追加 read_skill（章节已注入，断跨阶段预读）。子级可见面 =
-    主代理面 − 本集（planner._compute_excluded_tools 据此裁剪）。"""
-    return SUBAGENT_TOOL_DENY | (
-        STAGE_TOOL_DENY_EXTRA if resolve_stage(stage) else frozenset())
+    带 stage 追加 read_skill（章节已注入，断跨阶段预读）+ **本阶段未声明的
+    委派专属写入工具**（2026-09-21 批0，事故 2222/Q5）。子级可见面 =
+    主代理面 − 本集（planner._compute_excluded_tools 据此裁剪）。
+
+    第三项的依据（one visibility = one permission）：MAIN_AGENT_DENY 里的工具
+    主代理结构性不可见，只存在于委派路径上——故只有在自己 `_STAGE_TOOLS` 里
+    声明它的那个阶段拿得到，其余阶段物理不可达。改前实测（2222）：key_elements
+    子代理可见 18/23 个工具，add_draft/patch_draft/script_analysis_report 全在，
+    与注入章节的散文约束冲突，模型被迫自行裁决「算不算越权」并最终越界。
+    修的是「散文宣称了阶段授权、代码没实施」这处不一致，不是新增散文禁令（P2）。
+    """
+    resolved = resolve_stage(stage)
+    if not resolved:
+        return SUBAGENT_TOOL_DENY
+    return (SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
+            | (MAIN_AGENT_DENY - stage_tools(resolved)))
 
 
 def subagent_kind_block(kind: str = "") -> str:

@@ -36,6 +36,27 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批0 子代理工具面按阶段收口（事故 2222/Q5：散文宣称了阶段授权、代码没实施）
+- **事故（2222 实跑取证）**：`storyboard_key_elements` 子代理的推理有 ~21.5% 花在「用 add_draft 算不算越权」的反复摇摆上，最终**越界**写了 17 张提示词卡。取证结论：**不是模型多疑**——平台同时给了它两套互相矛盾的信息：①注入章节 + 任务书散文说「你是 key_elements 阶段，只登记元素」；②**工具面**里 `storyboard_add_draft`/`patch_draft`/`document_write` **真真切切在手**（实测可见 **18/23** 个工具）。散文与工具面投票 1:2，模型按「任务书要求 + 工具在手」越了界。
+- **代码根因**：`_STAGE_TOOLS`（`subagent.py:95-107`）**从未接进执行路径**。`child_deny_set()` 只返回 `SUBAGENT_TOOL_DENY`（与阶段无关的四条硬约束）∪ `STAGE_TOOL_DENY_EXTRA`（仅 `read_skill`）；`stage_tools()` 在生产运行时**零消费者**（全仓仅定义处 + 测试引用），该表只用于装载期 fail-loud 校验与 `MAIN_AGENT_DENY` 子集校验。即：**声明性表格表达了设计意图，但没有约束任何人**。
+- **裁决（用户，2026-09-21）**：同意批0，且置于四批之首——它是本次唯一「消除病根」项，其余为文案对齐。「工具都是子代理该用的工具，为什么子代理会有纠结算不算越权呢？是什么限制了子代理，让它有这样的想法？」（用户 #8）
+- **改动**：
+  - `core/subagent.py::child_deny_set`：带 stage 时并入 **`MAIN_AGENT_DENY − stage_tools(stage)`**（第三项）。原理（one visibility = one permission）：`MAIN_AGENT_DENY` 里的工具主代理结构性不可见、只存在于委派路径上，故**只有在自己 `_STAGE_TOOLS` 里声明它的那个阶段拿得到**，其余阶段物理不可达。通用委派（无 stage）**不并入**（无阶段即无阶段边界，全现状不动）。
+  - `STAGE_TOOL_DENY_EXTRA` 扩充：`read_skill` + `storyboard_confirm_draft` + `storyboard_media_to_chat`（后两者是**面向用户的交互动作**：标记「已确认」= 用户裁决、媒体插入用户输入框 = 给用户过目，无任何可委派阶段认领）。
+  - 新增装载期 fail-loud：若某工具同时进了 `_STAGE_TOOLS` 与 `STAGE_TOOL_DENY_EXTRA`（自相矛盾：阶段声明了却拿不到），import 期即报错，逼改动者显式取舍——**不靠注释承诺**（G3）。
+- **效果（实跑前后对比）**：
+  | 阶段 | 改前可见 | 改后可见 | 越出声明的工具 |
+  |---|---|---|---|
+  | `script_analyze` | 18/23 | **12/23** | 无 |
+  | `storyboard_key_elements` | 18/23 | **13/23** | 无 |
+  | `storyboard_shots` | 18/23 | **15/23** | 无 |
+  | `storyboard_audio` | 18/23 | **14/23** | 无 |
+  | `write_media_prompt` | 18/23 | **13/23** | 无 |
+- **回归测试**：`test_production_prune.py::test_stage_child_face_equals_declared_tools`（各阶段可见面 ∩ `MAIN_AGENT_DENY` ≡ `stage_tools(stage)` ∩ `MAIN_AGENT_DENY`，事故编号 2222/Q5）+ `test_stage_deny_never_starves_declared_tools`（反向钉：**防收得过头**——任何阶段自己声明的工具不得进自己的 deny 集，否则断链；1111 批 `script_analysis_report` 未授予即为前例）+ `test_subagent_stage.py::test_stage_deny_drops_read_skill_only` 更新。集成测试 `test_stage_delegation_injects_only_stage_section` 随语义修正：`write_media_prompt` 不建组（该阶段 `_STAGE_TOOLS` = add/patch_draft），改为预置分镜结构 + `add_draft` 落卡（与 2222 真实顺序一致）。
+- **性质**：这是**约束下沉**（`docs/GOVERNANCE.md` P2「能被代码机械校验的一律实现为代码校验」），排查的是**散文与工具面不一致**，**不是**新增一句「子代理不要越权」的散文禁令。
+- **未改动**：`document_write` / `script_analysis_report` 等非故事板工具**不收**（2222 实证越界恰好发生在故事板写入面；避免误伤未来阶段的落文档需求）；`data/skills` 一行不改（冻结#16）。
+- **验证**：`python scripts/acceptance.py --quick` 全绿；`tests/unit` + `tests/integration` 中受本批影响的 56 个用例全绿（41 个 adapter/网络类失败经 stash 对照确认为**改动前既有**、与本批无关）。
+
 ### 2026-09-20 · 仓库卫生批（AI 工具目录一致化 + docs/architecture 不入库 + IDE 缓存 worktree 全回收、清偿 D-13）
 - **裁决（用户，2026-09-20）**：AI 工具目录「全部删除、只留 qoder」；docs/architecture「留着但不 git」；「工作树可以删了」。
 - **改动**：

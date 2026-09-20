@@ -185,21 +185,30 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     → 子级任务文本精准携带该阶段章节全文，storyboard_shots 章节探针零在场
     （跨阶段污染根除）；子级真建组落账、只回摘要；子线程 meta 记阶段名。
     用真实 Skill（data/skills）验证章节切割。"""
+    # 客观前置：分镜结构已由 storyboard_shots 阶段建好（结构属上一阶段），
+    # write_media_prompt 只往既有草稿卡里写提示词——与 2222 实跑同序。
+    svc.state_dict["shots"] = [{
+        "id": "grp-s01", "title": "Shot_S01 开场", "group_type": "shot",
+        "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
+                "分镜语法：中景+平视+缓推。",
+        "summary": "含内部剪辑（约10s）", "sceneRefs": ["星环号球形舱"], "drafts": [],
+    }]
     adapter = _ScriptedAdapter([
         # 1) 父：委派媒体提示词编写阶段
         {"tool": "run_subagent", "args": {
             "task": "为已建分镜编写媒体提示词",
             "stage": "write_media_prompt"}},
-        # 2) 子：真调建组工具（子级面不含建组 deny；read_skill 不在面也不影响；
-        #    shot 组 sceneRefs 强非空是闸机硬要求，带上引用）
-        {"tool": "storyboard_create_group", "args": {
-            "group_type": "shot", "title": "S01 开场",
-            "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
-                    "分镜语法：中景+平视+缓推。",
-            "summary": "含内部剪辑（约10s）",
-            "scene_refs": ["星环号球形舱"]}},
+        # 2) 子：真调本阶段工具把提示词写进既有草稿卡。
+        #    2026-09-21 批0（事故 2222/Q5）：write_media_prompt 的 _STAGE_TOOLS
+        #    = {add_draft, patch_draft}——建组不属本阶段（分镜结构由
+        #    storyboard_shots 阶段建好），故改用 add_draft 落卡。
+        {"tool": "storyboard_add_draft", "args": {
+            "group_id": "current", "group_type": "shot",
+            "draft": {"label": "S01 提示词", "mediaType": "video", "genType": "video",
+                      "prompt": "[镜头]: Medium waist shot, fixed camera, eye-level",
+                      "desc": "程心苏醒的首镜提示词"}}},
         # 3) 子：摘要收尾
-        {"text": "已建 1 组分镜（S01 开场）。"},
+        {"text": "已为 1 组分镜写入提示词。"},
         # 4) 父：向用户交代
         {"text": "提示词编写已由子代理完成。"},
     ])
@@ -210,7 +219,9 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
 
     # ① 落账与摘要回父（委派链路基本盘）
     shots = svc.state_dict.get("shots") or []
-    assert any(g.get("title") == "Shot_S01 开场" for g in shots), "stage 子级建组未落账"
+    drafts = [d for g in shots for d in (g.get("drafts") or [])]
+    assert drafts, "stage 子级写提示词未落账"
+    assert "Medium waist shot" in str(drafts[0].get("prompt") or "")
     assert "提示词编写已由子代理完成" in (result.text or "")
 
     # ② 章节隔离：子级首轮模型调用的 user 消息（= build_subagent_task 包装文本）

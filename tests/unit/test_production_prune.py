@@ -4,8 +4,9 @@
 钉死断言：
 ① 顶级生产轮主代理结构性缺执行写入工具（MAIN_AGENT_DENY），但保留
    读工具/媒体生成/文档/确认/编排工具；
-② 子级面持生产工具（script_analyze 子级可调 read_uploaded_doc、
-   storyboard 子级可调 storyboard_create_group），不继承主代理 deny；
+② 子级面持本阶段声明的生产工具（script_analyze 子级可调 read_uploaded_doc、
+   storyboard 子级可调 storyboard_create_group），且**只**持本阶段声明的那部分
+   （非本阶段的委派专属写入工具结构性不可见，2026-09-21 批0 事故 2222/Q5）；
 ③ adjust_scope 不裁剪（微调子对话保留 patch/read 工具）；
 ④ 轮内 excluded 误调拒执行（one visibility = one permission）；
 ⑤ stage 映射缺失 fail-loud（装载期校验）；
@@ -109,16 +110,22 @@ def test_child_does_not_inherit_main_agent_deny(svc):
     assert "read_uploaded_doc" not in excluded_script
     assert "script_analysis_report" not in excluded_script
 
-    # storyboard_key_elements 子级：本批恢复为合法阶段 → 持故事板写入工具，
-    # 不继承主代理 MAIN_AGENT_DENY；stage deny 额外去 read_skill。
+    # storyboard_key_elements 子级：本批恢复为合法阶段 → 持本阶段声明的故事板
+    # 写入工具（建组/删组），不继承主代理 MAIN_AGENT_DENY 里**本阶段未声明**的
+    # 部分（add_draft/patch_draft 已由 2026-09-21 批0 收走，事故 2222/Q5）；
+    # stage deny 额外去 read_skill。
     ctx_key = PlannerContext(
         skill_name=SKILL, subagent_depth=1, use_studio_context=True,
         subagent_deny=child_deny_set("storyboard_key_elements"))
     excluded_key = planner._compute_excluded_tools(ctx_key)
     assert "storyboard_create_group" not in excluded_key
     assert "storyboard_delete_group" not in excluded_key
+    # 批0：非本阶段的专业写入工具对本阶段子代理结构性不可见
     assert child_deny_set("storyboard_key_elements") == (
-        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA)
+        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
+        | (MAIN_AGENT_DENY - stage_tools("storyboard_key_elements")))
+    assert "storyboard_add_draft" in excluded_key
+    assert "storyboard_patch_draft" in excluded_key
     # 子代理 read_skill 仍 deny（不能自由读其他章节）
     assert "read_skill" in excluded_key
 
@@ -172,6 +179,60 @@ def test_main_agent_deny_subset_of_stage_tools():
     # 媒体生成不在 deny 集（例外：留主代理带确认闸）
     assert "image_generate" not in MAIN_AGENT_DENY
     assert "generate_video" not in MAIN_AGENT_DENY
+
+
+# ---------- ②b 子代理工具面按阶段收口（事故 2222/Q5） ----------
+
+def test_stage_child_face_equals_declared_tools(svc):
+    """事故 2222/Q5：子代理工具面必须等于「本阶段声明 + 非专业写入工具」。
+
+    2222 实测：storyboard_key_elements 子代理可见 18/23 个工具，
+    storyboard_add_draft / patch_draft / script_analysis_report 全在——
+    而注入章节的散文只说它是"登记元素"。散文说没有、手上却有，
+    模型只能自行裁决「算不算越权」（该子代理 21.5% 推理花在此），
+    最终按"任务书要求 + 工具在手"两票越界写了 17 张提示词卡。
+
+    修法（P2 约束下沉）：让阶段边界由工具面机械保证，不靠散文劝阻。
+    """
+    sb_write = frozenset({
+        "storyboard_create_group", "storyboard_delete_group",
+        "storyboard_add_draft", "storyboard_patch_draft",
+    })
+    planner = Planner(state_manager=svc, llm_adapter=None)
+    for stage in sorted(PIPELINE_STAGE_KINDS):
+        excluded = planner._compute_excluded_tools(PlannerContext(
+            skill_name=SKILL, subagent_depth=1, use_studio_context=True,
+            subagent_deny=child_deny_set(stage)))
+        visible_pro_write = {
+            t for t in MAIN_AGENT_DENY if t not in excluded}
+        assert visible_pro_write == set(stage_tools(stage) & MAIN_AGENT_DENY), (
+            f"阶段 {stage} 的委派专属写入工具面与 _STAGE_TOOLS 声明不一致："
+            f"可见 {sorted(visible_pro_write)}，声明 "
+            f"{sorted(stage_tools(stage) & MAIN_AGENT_DENY)}")
+        # 故事板写入四件套里，未声明的必须不可见（2222 越界的直接通道）
+        assert not ((visible_pro_write & sb_write) - stage_tools(stage))
+    # 反向钉：write_media_prompt 正是用 add/patch_draft 的阶段，不得被误收
+    assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
+    assert "storyboard_patch_draft" not in child_deny_set("write_media_prompt")
+
+
+def test_stage_deny_never_starves_declared_tools():
+    """防过度收口：任何阶段自己声明的工具都不在它的 deny 集里（断链即 FAIL）。
+
+    与 test_stage_child_face_equals_declared_tools 互补——那边防"收得不够"，
+    这边防"收得过头"。2222 之前 1111 批的教训正是过度 allowlist 导致
+    script_analysis_report 未授予、分析结论无法提交。
+    """
+    for stage in sorted(PIPELINE_STAGE_KINDS):
+        deny = child_deny_set(stage)
+        starved = stage_tools(stage) & deny
+        assert not starved, f"阶段 {stage} 的必备工具被自己的 deny 集收走：{sorted(starved)}"
+    # 四条硬约束在任何阶段都不被削弱
+    for stage in sorted(PIPELINE_STAGE_KINDS):
+        assert SUBAGENT_TOOL_DENY <= child_deny_set(stage)
+    # 通用委派（无 stage）不并入 MAIN_AGENT_DENY：无阶段即无阶段边界
+    assert child_deny_set("") == SUBAGENT_TOOL_DENY
+    assert not (MAIN_AGENT_DENY & child_deny_set(""))
 
 
 # ---------- ③ adjust_scope 不裁剪 ----------
