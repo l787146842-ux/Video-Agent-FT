@@ -36,6 +36,24 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批0 回归修复：key_elements 恢复 add_draft（音色卡是该阶段产出）
+- **回归**：批0（`b1f8fc0`）把 `_STAGE_TOOLS` 接进执行路径后，key_elements 阶段的子代理**建不出草稿卡**——该阶段的 `_STAGE_TOOLS` 只声明了 `{create_group, delete_group}`，于是 `add_draft` 被 deny。但**角色音色卡（`key_element_audio`）正是这个阶段的产出**：Skill 明文「角色的声音特征（音色/语气/情绪基调）**单独登记为 key_element_audio**，与角色元素绑定」（`AI-短剧一站式生成/SKILL.md:66`；14 个 Skill 中 **8 个**的 `storyboard_key_elements` 章节含音色/声音/音频字样）。
+- **为什么以前没暴露**：`_STAGE_TOOLS` 里 key_elements **自 `d75a374`（铺满批）起就只写了 `create_group`**，`2778117`（R4 批）曾把三阶段整行删掉，`589cad5`（K1 批）恢复为 `{create_group, delete_group}`——**`add_draft` 从未进过这张表**。而该表在批0 之前**零约束力**（`stage_tools()` 无生产消费者，只用于装载期校验），所以这个纸面遗漏从未产生行为后果；**批0 把它变成强制执行后，纸面错误就变成了真回归**。
+- **实跑取证**（回归确实影响真实产出）：`proj-1789754393` 的关键元素阶段经 `storyboard_add_draft` 建了 **8 张 `mediaType=audio` 音色卡**（`Audio_程心`/`AA`/`曹彬`/`瓦西里`/`白Ice`/`领航员`/`观测员`/`研究员群像`）。另有 `剧情短片音色参考` 等 Skill 明写「通过 `storyboard_patch_draft` 将音色参考注册并绑定到对应角色的 `key_element_audio`」。
+- **裁决（用户，2026-09-21）**：「key_elements 要建组和卡，因为要在某些 skill 的要求下，要建对应的人物的音频卡，并且在音频卡的草稿里填入音频描述的提示词……**如果音频卡是单独的工具或者字段，就提供给子代理**。」
+- **改动**：`core/subagent.py::_STAGE_TOOLS["storyboard_key_elements"]` 补 `storyboard_add_draft` → `{create_group, delete_group, add_draft}`。`patch_draft` **仍 deny**（改既有卡字段 = 提示词撰写阶段的活）。
+- **修正后的工具面**（各阶段可见的专业写入工具）：
+  | 阶段 | 可见 |
+  |---|---|
+  | `script_analyze` | `script_analysis_report` |
+  | `storyboard_key_elements` | `create_group` / `delete_group` / **`add_draft`** |
+  | `storyboard_shots` | `create_group` / `delete_group` / `add_draft` / `patch_draft` |
+  | `storyboard_audio` | `create_group` / `delete_group` / `add_draft` |
+  | `write_media_prompt` | `add_draft` / `patch_draft` |
+- **回归测试**：`test_production_prune.py`（`stage_tools` 映射补 `add_draft`、子级面断言改为 `add_draft` **不**在 deny 集且 `patch_draft` 在）+ `test_subagent_stage.py`（同向修正，注明音色卡依据）。
+- **验证**：`tests/unit` + `tests/integration` **2475 passed / 0 failed**（`acceptance --quick` 全绿）。
+- **未做（登记待裁决）**：用户要求的「想办法让子代理**只能**建音频卡」——即 key_elements 阶段建卡时**只允许 `mediaType=audio`**。经查音频卡**不是独立工具、也不是独立字段**，它与图像卡共用 `add_draft` / `create_group` 内联 `draft` 同一个入口（属用户说的"混在一起"那种），故需另行设计；且**必须避开一處已知前车之鉴**：`fc_tool_runner.py:458-460` 记载 2026-09-12 曾有「无阶段感知的静默剥离 `add_draft` 内联 prompt」的闸机，造成**假成功空提示词卡**（3333 项目实证）而被用户裁决删除——同类"按阶段裁剪入参"的做法有前科，须谨慎。
+
 ### 2026-09-21 · 批2+批3 委派任务书契约 + stage 枚举可见（事故 2222/Q5、2222/Q3b）
 - **批2 背景（2222 实证）**：`SUBAGENT_POLICY` 原文「任务书**只写一句目标**：范围、源文档、产出规范都不写」方向是对的，但 2222 主代理**违反两次**：`storyboard_key_elements` 任务书写「按制片规格登记本项目的**全部关键元素：8 个角色、3 个场景**、核心道具白色薄膜及辅助道具，**并为每个元素编写设定提示词草稿**」（写了范围 + 交付物）；`storyboard_shots` 任务书写「…**编写含景别/机位/运镜/时长的分镜草稿**」（写了产出规范）。**后果实测**：两个子代理对同一个词「草稿」理解**完全相反**——key_elements 子代理 17/17 张卡全写了 prompt（越界到提示词撰写阶段），storyboard_shots 子代理把它实现成 `group.desc` 文本、**0 张卡**。
 - **为什么旧规则拦不住**：①该句在**委派策略段**里，讲的是"怎么委派"而非"任务书写什么"；②它是**纯禁令**（"都不写"），**没给违反的后果、也没说为什么**；③更关键——模型当时**有充分理由写**：它认为自己在做"专业指导"（这正是批1 角色定义病根的行为投射）。

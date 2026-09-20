@@ -102,8 +102,18 @@ PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
 # （MAIN_AGENT_DENY）≠ 本表并集——主代理保留读工具，只锁写入/执行工具。
 _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
     "script_analyze": frozenset({"read_uploaded_doc", "script_analysis_report"}),
+    # 2026-09-21 批0 回归修复：key_elements **必须**能建草稿卡——角色音色卡
+    # （key_element_audio）就是这个阶段的产出。Skill 明文要求「角色的声音特征
+    # （音色/语气/情绪基调）单独登记为 key_element_audio，与角色元素绑定」
+    # （8 个 Skill 的 storyboard_key_elements 章节含音色/声音/音频字样）。
+    # 实跑取证：proj-1789754393 该阶段经 storyboard_add_draft 建了 8 张
+    # mediaType=audio 音色卡（Audio_程心/AA/曹彬/瓦西里/白Ice/领航员/观测员/
+    # 研究员群像）。本表原本只列 create_group——批0 之前该表零约束力（无人消费），
+    # 所以从未暴露；批0 把它接进执行路径后，这个纸面遗漏变成了「该阶段建不出
+    # 音色卡」的真回归（b1f8fc0 引入、本条修复）。
     "storyboard_key_elements": frozenset(
-        {"storyboard_create_group", "storyboard_delete_group"}),
+        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_add_draft"}),
     "storyboard_shots": frozenset(
         {"storyboard_create_group", "storyboard_delete_group",
          "storyboard_add_draft", "storyboard_patch_draft"}),

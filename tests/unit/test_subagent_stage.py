@@ -106,16 +106,18 @@ def test_stage_deny_drops_read_skill_only():
         assert "workflow_pause" in deny          # 子级不确认
     # 阶段落点工具必须授予子代理（1111 实证 script_analysis_report 未授予断链）
     assert "script_analysis_report" not in child_deny_set("script_analyze")
-    # 本阶段**声明**的工具必须授予（add/patch_draft 正是提示词撰写用的两个）
+    # 本阶段**声明**的工具必须授予
     assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
     assert "storyboard_patch_draft" not in child_deny_set("write_media_prompt")
     # 未声明的则收走：write_media_prompt 不建组（提示词写进既有草稿卡）
     assert "storyboard_create_group" in child_deny_set("write_media_prompt")
-    # 2026-09-21 批0（事故 2222/Q5）：本阶段**未声明**的专业写入工具必须 deny——
-    # 2222 实测 key_elements 子代理可见 add_draft/patch_draft，与注入章节散文
-    # 约束冲突，模型被迫自行裁决「算不算越权」并最终越界写提示词。
+    # 2026-09-21 批0（事故 2222/Q5）：非本阶段的专业写入工具结构性不可见。
+    # 2026-09-21 批0 回归修复：key_elements **保留 add_draft**——角色音色卡
+    # （key_element_audio）就是该阶段的产出（Skill 明文；8 个 Skill 的该章节
+    # 含音色字样；proj-1789754393 实证该阶段建过 8 张 mediaType=audio 卡）。
+    # 仍收走的是 patch_draft（改既有卡字段=提示词撰写阶段的活）。
     ke_deny = child_deny_set("storyboard_key_elements")
-    assert "storyboard_add_draft" in ke_deny
+    assert "storyboard_add_draft" not in ke_deny
     assert "storyboard_patch_draft" in ke_deny
     # 反之：声明了它们的阶段不得 deny（否则该阶段断链）
     assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")

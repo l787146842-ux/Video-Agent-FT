@@ -111,20 +111,22 @@ def test_child_does_not_inherit_main_agent_deny(svc):
     assert "script_analysis_report" not in excluded_script
 
     # storyboard_key_elements 子级：本批恢复为合法阶段 → 持本阶段声明的故事板
-    # 写入工具（建组/删组），不继承主代理 MAIN_AGENT_DENY 里**本阶段未声明**的
-    # 部分（add_draft/patch_draft 已由 2026-09-21 批0 收走，事故 2222/Q5）；
-    # stage deny 额外去 read_skill。
+    # 写入工具（建组/删组/加卡），不继承主代理 MAIN_AGENT_DENY 里**本阶段未声明**
+    # 的部分（patch_draft 已由 2026-09-21 批0 收走）；stage deny 额外去 read_skill。
+    # 2026-09-21 批0 回归修复：add_draft **必须**留——角色音色卡
+    # （key_element_audio）是该阶段产出（Skill 明文「声音特征单独登记为
+    # key_element_audio」；proj-1789754393 实证该阶段建过 8 张 mediaType=audio 卡）。
     ctx_key = PlannerContext(
         skill_name=SKILL, subagent_depth=1, use_studio_context=True,
         subagent_deny=child_deny_set("storyboard_key_elements"))
     excluded_key = planner._compute_excluded_tools(ctx_key)
     assert "storyboard_create_group" not in excluded_key
     assert "storyboard_delete_group" not in excluded_key
+    assert "storyboard_add_draft" not in excluded_key
     # 批0：非本阶段的专业写入工具对本阶段子代理结构性不可见
     assert child_deny_set("storyboard_key_elements") == (
         SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
         | (MAIN_AGENT_DENY - stage_tools("storyboard_key_elements")))
-    assert "storyboard_add_draft" in excluded_key
     assert "storyboard_patch_draft" in excluded_key
     # 子代理 read_skill 仍 deny（不能自由读其他章节）
     assert "read_skill" in excluded_key
@@ -137,8 +139,10 @@ def test_stage_tools_mapping():
     assert stage_tools("write_media_prompt") == frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"})
     # 2026-09-19 主代理纯编排批：故事板三阶段恢复委派集 → 非空工具集
+    # 2026-09-21 批0 回归修复：key_elements 补 add_draft（音色卡是该阶段产出）
     assert stage_tools("storyboard_key_elements") == frozenset(
-        {"storyboard_create_group", "storyboard_delete_group"})
+        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_add_draft"})
     assert stage_tools("storyboard_shots") == frozenset(
         {"storyboard_create_group", "storyboard_delete_group",
          "storyboard_add_draft", "storyboard_patch_draft"})
