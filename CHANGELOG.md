@@ -36,6 +36,44 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-20 · 混乱2 双删批（8888 Q3 病根：iron_rules「不跨阶段预收」 ⟂ 冻结#16「缺项合并一次问询」矛盾两边双删）
+- **背景（审计报告 `docs/指令混乱审计报告-20260920.md` §三混乱2）**：8888 Q3 取证（trace `11f56fcab5ff` step 2）证明模型开场把画幅/时长/风格打包进第一次暂停，不是散文歧义、也不是模型不听话——是平台同时喂它两条互相打架的指令：① `iron_rules_header.md` L3「不跨阶段预收」（禁合并）；② 冻结#16（2026-09-08）「平台侧以缺项合并一次问询收口」（许合并）。模型逐字引用两条后自行裁决「为了效率」选了合并（「为了效率」非任何提示词写死，全库 grep 确认）。flova L987 权威口径：不依赖剧本的全局参数启动可问、依赖剧本的细节分析后问——本就不靠平台级禁令。
+- **裁决（用户，2026-09-20）**：两条都删——「平台侧以缺项合并一次问询收口，这条直接删了呀」「不跨阶段预收，这个否定也删了呀」。矛盾两边一起拿掉，平台不再就「要不要合并问」下发元指令，交回 Skill 流程散文唯一管。用户已接受代价：平台对「提前打包问后阶段参数」不再有任何拦截/禁令，纯靠 Skill 散文自律（flova 同款）。
+- **改动**：① `prompts/shared/iron_rules_header.md` L3 删「、不跨阶段预收」（保留「先问再做、不擅自补全」防幻觉补全核心）；② `docs/冻结与暂缓清单.md` #16 **部分翻案**——删「平台侧以缺项合并一次问询收口」句（#16 其余「data/skills 一行不改 / 装载期校验记长期规划」维持冻结），条目内标注翻案日期与 CHANGELOG 指针。
+- **混乱4 自动消解（无需改动）**：删「不跨阶段预收」后，「该不该停/合并问」轴上只剩 `skill_runtime.md` DISCIPLINE #1「按流程散文自主推进」一个口径；`subagent.md`「连续推进、不权衡」属委派轴（要不要连续委派子代理），与「合并问用户」不同轴、且同偏模型自主，不再打架。
+- **回归**：`test_prompt_relocation_batch3.py` 新增 `test_iron_rules_header_drops_cross_stage_precollect`（断言 iron_rules_header 不含「不跨阶段预收」防回潮 + 钉死「先问再做/不擅自补全」核心条款未被误删）。
+- **验证**：定点 pytest 39 绿（test_prompt_relocation_batch3 / test_trace_sse_consistency / test_iron_rules_migration / test_industry_baseline_fixes）；全量 unit 2355 绿；`acceptance.py --quick` 全绿（GATES 14 + tsc，exit 0）。
+- **红线**：Skill 零改动（#16 主旨仍冻结）；不加机械闸（不选审计报告选项 C，09-08「不加机械闸」维持）；只删不增说服性 prose（合 P2/G3）。
+
+### 2026-09-20 · Q3② 规格收集向导残留清退批（8888 指令混乱审计：消「收集=一次收齐」退役前提）
+- **背景（审计报告 `docs/指令混乱审计报告-20260920.md`）**：8888 Q3 取证发现已退役的「规格收集向导」残骸仍在架构层把「规格收集」定义为「一次性多维度收齐」，与 iron_rules「不跨阶段预收」正面对立。退役史：2026-08-31 向导机械落盘管线退役（D-08）、2026-09-12 `skill_runtime` DISCIPLINE #3「一次性分组收集」整条退役（裁决明写 group 分页交互唯一家 = `workflow_pause` options 参数描述）。
+- **裁决（用户，2026-09-20）**：「Q3 的 ②，既然是残留，就彻底清理」。
+- **改动（真残留 R1-R5）**：① `core/workflow_contract.py` 删 `NODE_TITLES["collect_spec"]`「制片规格收集」；② `core/workflow_runtime.py` 删 `collect_spec` 探针映射 + `_FLAT_NODES` 条目 + 同证同源注释（`collect_spec` 与 `write_spec` 同挂 "spec" 探针、功能重复；删后扫描序 `analyze_script→write_spec→review_spec`，对齐 flova「无独立收集阶段、直接写规格」）；③ **整模块删除** `core/option_groups.py`（`fill_option_groups`/`classify_option` 运行时零消费者、仅测试调用；docstring「规格收集恒为多维度×候选≥5」为退役前提）+ 删 `tests/unit/test_option_groups.py` + `test_task_transport_robustness.py::TestNewWizardDimensions` 死测试类 + `scripts/check_prompt_literals.py` 3 条陈旧维度登记；④ `skill_runtime/manifest_schema.py` docstring 删 `spec_wizard/spec_gate/script_required` 死形状声明（校验器实际不检查、data/skills 零声明）；⑤ `scripts/check_legacy_orchestration.py` 陈旧豁免注记改为退役注记。
+- **改动（陈旧注释/framing C1-C9 + 混乱6）**：`planner.py`（advance_signal "wizard" 分句，该值从未被赋值）、`routes/agent.py`、`agent_loop.py`、`history_compact.py`、`fc_tool_runner.py`、`stage_probes.py`、前端 `chat-cards.css`「多维度一次性收集」/`ConfirmPicker.tsx`「规格向导」framing 中性化、`test_888_fixes.py` 退役注释更新；`prompts/gates/messages.md` TOOL_RISK_BLOCKED_OTHER 删「与制片规格写入」陈旧表述（document_write 2026-09-07 降 medium、§2.7 明写历史条款；copy ⊆ 章程仍成立，consent_copy 门禁绿）。
+- **存活机制明确不删（防误伤）**：`workflow_pause` options 的 `group` 字段 + 前端 `confirm-wizard` 分页组件（09-12 裁决指定唯一家，通用分组能力，与退役规格向导无关）；`read_uploaded_doc` 读能力（flova「能读而又不读」）。
+- **未动（待用户拍板）**：审计报告 §五 混乱 2（iron_rules「不跨阶段预收」⟂ 冻结#16「缺项合并一次问询」⟂ flova L987 三源口径统一）与混乱 4（裁量/硬规则/连续推进口吻收敛）触及冻结#16，本批不擅动。
+- **回归**：`test_workflow_v2_contract.py` 新增 `test_spec_collect_wizard_residual_retired`（断言 collect_spec 不在 NODE_TITLES/_FLAT_NODES/_NODE_PROBE_KEYS、write_spec 仍承载 spec 探针、option_groups 模块 ImportError 防复活）；`test_stage_gate.py`/`test_workflow_v2_contract.py` 的 collect_spec 断言同步改 write_spec（语义不变）。
+- **验证**：定点 pytest 118 绿；全量 unit 2354 绿；前端 vitest 996 绿；`acceptance.py --quick` 全绿（GATES 14 + tsc，exit 0）。
+- **红线**：Skill 零改动（G1/冻结#16）；未加说服性 prose（P2/G3）；CONSENT_CHARTER spec_write 条目按 §2.7 用户裁决保留不动。
+- **清偿**：附件正文预览退役批（本日）§二「待办：Q3 规格收集向导残留」本批清偿。
+
+### 2026-09-20 · 附件正文预览退役批（8888 Q1：对齐 flova「剧本正文不因上传自动进主会话」）
+- **背景（8888 取证 trace `11f56fcab5ff`）**：主代理开场亲读剧本全文、抢跑启动协议。根因 = `web/attachments.py::attachment_context` 向主会话首条消息注入剧本 **200 字预览** + 催读文案（“需要全文时调用 read_uploaded_doc…不要声称看不到该文档”），与 09-19 纯编排批「分析委派子代理」相反。flova 转录十 L900-907 实证：主会话只得知文档**存在/标识**，正文不因上传自动进主会话（“能读而又不读”）。
+- **裁决（用户，2026-09-20）**：附件说明改为“只报存在、正文靠委派”（flova 同款）；**读能力完整保留**（非剥夺）。
+- **改动**：`web/attachments.py`（删 `_DOC_PREVIEW_CHARS` 与 200 字预览注入 + 删“不要声称看不到”说教（P3 状态即数据）；文本附件只注入名称+字数+中性按需读取声明）；`tests/unit/test_attachments.py`（新增回归：正文/预览均不进主会话——断言剧本正文字串不在 ctx）。
+- **“能读而又不读”机制保留（三重硬保证，本批未触）**：① `read_uploaded_doc` 仍常驻、`risk=low`、**不在 `MAIN_AGENT_DENY`**（只锁写入类），主代理任意轮可自取；② `store_uploaded_docs` 仍将全文持久化入 `state.uploadedDocs`（只删预览注入、不删存储）；③ 注入文案仍声明“正文未注入上下文，需要原文时经 read_uploaded_doc 按需读取”（防“我看不到”幻觉）。“不读”= 移除预览+催读后主会话无正文、无可抢跑对象，纯编排委派分析成自然路径。
+- **验证**：定点 pytest 32 绿（test_attachments 9 + test_chat_multimodal/test_video_multimodal 23）；`acceptance.py --quick` 全绿（GATES 14 + tsc）。
+- **红线**：`read_uploaded_doc` 不锁不删（能读而又不读）；Skill 零改动；非 Skill 自由对话同样按需读、行为不退化（flova 不区分场景，本批也不加技能门控分支）。
+- **待办（同批取证、未动）**：Q3 规格收集向导残留（`workflow_contract.collect_spec` “制片规格收集”节点 / `option_groups` “规格收集恒为多维度一次性收齐”前提 / 前端分页向导）与 iron_rules “不跨阶段预收” 互相打架，待用户裁决是否整体清退。
+
+### 2026-09-20 · K8 规格骨架退役批（8888 取证：规格文档臃肿根因；对齐 flova 精简散文）
+- **背景（8888 取证 proj-1789839470，Skill「AI-短剧一站式生成」+《三体简短版.md》）**：用户诉「全局设定的规格文档有剧本分析的一大坨，flova 很精简」。取证 `制片规格.md`（1084 字）= K8 骨架占位节（`## 一、全局制作参数（待用户补充）`…从未被替换）+ 模型 `## 剧本结构` 剧本分析 + 两次写入重复堆积 + `。## 全局参数` 同行拼接。复现（`_merge_sections`+`_load_spec_scaffold`）钉死三 bug：①骨架编号节名与模型自由标题（`## 全局参数`）精确匹配不上 → 占位符永不替换、每次写入追加（540→1084 字）；②`_load_spec_scaffold` `.strip()` 去尾换行 + `_merge_sections` `"".join()` → 末节与首节同行粘连（粘连后不再被当标题解析）；③骨架含 `## 二、关键元素要点`/`## 三、分镜要点` 招灰节，诱导模型把剧本分析写进规格——**直接违背 `protocol.md` L13「规格只承载全局决策参数，实体细节归元素/故事板」与 09-16 R1「flova 不用结构化字段、全为自由散文」**。trace `1bb459eb6430` 实证：模型见占位 preview 困惑「也许系统自动生成了模板？」→ 重写 → 二次合并 → 臃肿翻倍。flova 对照：规格文档（20 行）= 仅全局参数 + 高层分集结构，剧本分析在独立「原始回执」，无骨架。
+- **裁决（用户，2026-09-20）**：删 `spec_scaffold.md` + `_load_spec_scaffold` + `document_write` 骨架分支；规格文档回归 `protocol.md` L13 的模型自由散文（对齐 flova）；`_merge_sections` 只留 R14「保护用户手改节」用途。K8 骨架（2026-09-16「对齐 flova」）实为背离 flova，本批翻案退役。
+- **改动**：删 `prompts/shared/spec_scaffold.md`；`tools/document_tools.py`（删 `_load_spec_scaffold` + 收窄 prompts 导入为 `render_prompt_section`（`load_prompt`/`load_prompt_section` 已无消费方）+ `DocumentWriteTool.aexecute` 去骨架注入/新建分支，规格新建=模型正文原样、存量仍走 R14 节级合并）；删 `tests/unit/test_spec_scaffold.py`、新增 `tests/unit/test_spec_doc_write.py`（5 例：正文原样落盘 / 8888 回归无占位无拼接无招灰节 / R14 保护用户手改节 / 非规格整篇覆盖 / 规格写入补铁律）。
+- **验证**：定点 pytest 74 绿（test_spec_doc_write 5 + test_skill_flow_batch1 7 + test_hybrid_boundaries/test_skill_smoke_harness/test_subagent_stage/test_subagent_delegation 62）；`acceptance.py --quick` 全绿（GATES 14 + tsc）。
+- **同批取证（未改代码，待裁决）**：8888 的 Q1（开场主代理亲读剧本、抢跑启动协议）与 Q3（首次暂停把阶段2规格参数并进启动确认）根因 = 默认 `ai_decide` 档不注入执行模式、无机械阶段闸，`skill_runtime.md` DISCIPLINE #1「顺序由你按流程散文自主推进」授予模型裁量；trace `11f56fcab5ff` 实证模型**读懂流程后仍「为了效率」主动抢跑/合并**（非散文歧义，推翻 09-08「散文歧义」定性）。flova 主代理同样持读工具但不主动读、启动暂停只问输出语言。修复方向待用户裁决，本批不动。
+- **红线**：Skill 文件零改动；`_merge_sections` R14 语义不变；protocol.md L13 为规格内容唯一表述源（本批只删与之矛盾的骨架，未新增表述源）。
+
 ### 2026-09-19 · 主代理纯编排批（翻案 R4 +「工具要给全」；A' 退役）
 - **裁决（用户，2026-09-19）**：①主代理改为纯编排角色——**结构性**缺少各执行阶段专业写入工具（`subagent.MAIN_AGENT_DENY` = 素材分析产出 `script_analysis_report` + 故事板结构写入 `storyboard_create_group`/`storyboard_delete_group` + 提示词草稿 `storyboard_add_draft`/`storyboard_patch_draft`），只能经 `run_subagent(stage=…)` 委派触达（`planner._compute_excluded_tools` 在 depth==0 且有 Skill 且非微调子对话时并入；one visibility = one permission）；②翻案 R4（2026-09-16「故事板翻回主代理直做」）——委派集恢复故事板三阶段（key_elements/shots/audio），并翻案「工具要给全」（2026-09-18）的执行工具部分（读工具/媒体生成仍全保留）；③**媒体生成（`image_generate`/`generate_video`）作为唯一例外留主代理、不锁不委派**——花钱生成确认卡只能主线程发行（子代理 `subagent_no_confirm`+`workflow_pause` deny 无法发卡）；④**提示词撰写与媒体生成是两个独立顺序阶段**（先撰写→再生成，非包含关系），故提示词撰写属委派集；⑤**子代理 read_skill 保持 deny**（`STAGE_TOOL_DENY_EXTRA` 不动）——子代理只能用注入的对应 Skill 分区 + 共享项目状态 + 明确传递的资源，不能自由读其他章节（规则按职责隔离、项目状态按需共享）；⑥放弃引入 dsh agent-teams（横向对等协作框架、工具面统一，与「主代理结构性缺工具」相反）；⑦时间线组装（video_assembler）本项目暂无对应工具，延后到工具落地同批登记（fail-loud 要求 _STAGE_TOOLS 非空）。
 - **RC1 修复方式修正**：R4 曾以「主代理亲做 + 解禁 read_skill」修 4444 取证的分镜规则不可达（RC1）。本批改由「按正确 stage 粒度委派 + 精准章节注入 + 跨阶段数据经共享项目状态可见」化解（分镜子代理注入 storyboard_shot 章节、KE 数据在共享 StateManager），**不靠解禁 read_skill**。

@@ -53,13 +53,6 @@ DECLARED_DATA: List[Tuple[str, str]] = [
      "prune marker: read_* tools (structural template with format params)"),
     ("\u27e6PRUNE: \u4e2d\u6bb5\u7701\u7565 {n} \u5b57\uff0c\u6309\u5df2\u6709\u5934\u5c3e\u4fe1\u606f\u7ee7\u7eed\uff0c\u52ff\u91cd\u590d\u751f\u6210\u27e7",
      "prune marker: generation tools (structural template with format params)"),
-    # --- dimension/group UI labels (option_groups.py) ---
-    ("\u51fa\u56feAPI\u4e0e\u6a21\u578b",
-     "wizard dimension label (settings UI, non-prose)"),
-    ("\u51fa\u89c6\u9891API\u4e0e\u6a21\u578b",
-     "wizard dimension label (settings UI, non-prose)"),
-    ("\u7cfb\u7edf\u6ce8\u5165\uff08\u4e0d\u5165\u89c4\u683c\u6587\u6863\uff09",
-     "wizard dimension label for system-injected group (option_groups.py, non-prose)"),
     # --- gate/policy status constants ---
     ("\u5df2\u6309\u4f60\u7684\u8981\u6c42\u5168\u901f\u63a8\u8fdb\uff1a\u672c\u8f6e\u672a\u5f39\u51fa\u6d41\u7a0b\u6682\u505c\u786e\u8ba4\u5361\uff08\u603b\u7ed3/\u89c4\u683c\u5ba1\u9605\uff09\uff0c\u5df2\u5199\u5165\u7684\u5185\u5bb9\u7167\u5e38\u751f\u6548\uff1b\u5982\u9700\u8865\u770b\u6216\u8c03\u6574\uff0c\u968f\u65f6\u544a\u8bc9\u6211\u3002",
      "full-speed override notice (user card; exact literal = core/prompt_gates.FLOW_PAUSE_OVERRIDE_WARNING)"),

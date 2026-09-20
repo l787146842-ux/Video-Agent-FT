@@ -68,7 +68,6 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 # 节点 → 客观探针键映射（账本无自报）：completed_nodes 全量由 stage_done
 # 探针重算；turn_commit 的自报 completed_node 降级为非权威提示——下次
 # sync 即被本重算覆盖，不再具有账本效力。
-# - collect_spec 与 write_spec 同证同源：规格文档在场即证明收集已发生；
 # - 媒体阶段挂同键阶段探针；
 # - storyboard 三个结构节点用节点级探针（key_elements/shots_groups/
 #   audio_groups，运行时内部键，不可声明覆盖）；
@@ -77,7 +76,6 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 #   （fail-closed：不因文档存在而跳过评审暂停）。
 _NODE_PROBE_KEYS = {
     "analyze_script": "analysis",
-    "collect_spec": "spec",
     "write_spec": "spec",
     "ke_media": "ke_media",
     "shot_media": "shot_media",
@@ -108,7 +106,6 @@ _REVIEW_NODES = tuple(_REVIEW_NODE_PREREQ)
 # 里程碑（机械停闸 _apply_stage_gate 的「本轮翻转」判据来源）。
 _FLAT_NODES: Tuple[str, ...] = (
     "analyze_script",
-    "collect_spec",
     "write_spec",
     "review_spec",
     "storyboard_key_elements",

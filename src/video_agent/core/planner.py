@@ -150,8 +150,8 @@ class PlannerContext:
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None
     # 轮始客观推进信号（输入类 decision 消费/闸预检分诊；
     # runtime 不据此自主行动）：
-    # "pause"=上轮暂停被消费；"wizard"=规格向导回应被消费；
-    # "continue"=点选系统派生继续选项；"attachment"=本轮带附件。
+    # "pause"=上轮暂停被消费；"continue"=点选系统派生继续选项；
+    # "attachment"=本轮带附件。
     # 空串 = 自由对话轮（提问等），交接模型循环。
     advance_signal: str = ""
     # 协作式停止标志作用域（端到端中断协议）：

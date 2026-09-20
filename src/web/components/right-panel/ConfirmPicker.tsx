@@ -28,7 +28,7 @@ export function pickDimension(title: string, opts: ConfirmOptionItem[]): PickDim
   // 方向词，先精确判死防被下方渠道正则误判成厂商/模型下拉
   if (/分辨率/.test(titleText)) return '';
   if (/最大时长|单镜头|分镜时长/.test(titleText)) return '';
-  // 规格向导的出图/出视频渠道维度（一次要选厂商+模型）
+  // 分组选项的出图/出视频渠道维度（一次要选厂商+模型）
   if (/(出图|生图|图像|图片)/.test(titleText) && /(渠道|API|厂商|供应商|模型)/.test(titleText)) {
     return 'image-channel';
   }

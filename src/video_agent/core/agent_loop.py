@@ -714,7 +714,7 @@ async def run_agent_loop(
             if _re_ctx.result_warnings:
                 result.warnings.extend(_re_ctx.result_warnings)
             if _re_ctx.confirmation or _re_ctx.hard_break:
-                # 轮末策略注入的暂停卡（规格审阅/规格收集等）：带回前端
+                # 轮末策略注入的暂停卡（规格审阅等）：带回前端
                 result.confirmation = _re_ctx.confirmation
                 result.confirmation_options = _re_ctx.confirmation_options
                 tracer.end_step(

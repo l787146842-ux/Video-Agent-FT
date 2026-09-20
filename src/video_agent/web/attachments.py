@@ -4,7 +4,7 @@
 职责：
 1. 将上传素材登记进服务端资产列表（bind）
 2. 文本类附件文档（故事/剧本）正文存入 state.uploadedDocs，供 read_uploaded_doc 按需检索
-3. 为 LLM 构建素材上下文说明（文档只注入清单+预览，其他类型能力说明）
+3. 为 LLM 构建素材上下文说明（文档只注入清单：名称+字数，正文不注入、按需经 read_uploaded_doc 检索；其他类型能力说明）
 4. 从附件中提取图片 URL（多模态 vision 注入）
 """
 from datetime import datetime, timezone
@@ -26,8 +26,6 @@ _PDF_EXTS = {".pdf"}
 _PDF_MAX_PAGES = 100
 _MAX_DOC_CHARS = settings.max_doc_chars
 _MAX_ATTACHMENTS = settings.max_attachments
-# 清单预览长度：让模型能判断文档内容性质，全文靠 read_uploaded_doc
-_DOC_PREVIEW_CHARS = 200
 
 # PDF 抽取结果缓存：(mtime, text)，同一文件多轮对话不重复抽取
 _PDF_CACHE: Dict[str, Any] = {}
@@ -150,9 +148,10 @@ def bind_attachments(svc: StateManager, attachments: List[Dict[str, str]]) -> No
 
 def attachment_context(attachments: List[Dict[str, str]]) -> str:
     """
-    为 LLM 构建素材说明：文本类文档（.md/.txt）默认只注入清单（名称+字数+前 200 字预览），
-    正文已存入 uploadedDocs，需要全文时调用 read_uploaded_doc 按需检索；
-    其他类型给出明确的能力说明，避免 LLM 乱猜「我看不到素材」或假装看过。
+    为 LLM 构建素材说明：文本类文档（.md/.txt/.pdf）只注入清单（名称+字数），
+    正文存入 uploadedDocs、不注入上下文（对齐 flova「剧本正文不因上传自动进
+    主会话」）；需要原文时模型经 read_uploaded_doc 按需自取，或按 Skill 分工委派
+    分析阶段读取（能读而又不读）。其他类型给出能力说明，避免 LLM 乱猜「我看不到素材」。
     """
     parts: List[str] = []
     for att in attachments[:_MAX_ATTACHMENTS]:
@@ -176,12 +175,13 @@ def attachment_context(attachments: List[Dict[str, str]]) -> str:
                 else:
                     parts.append(f"（素材文档《{name}》未在服务器上找到，请让用户重新上传）")
                 continue
-            preview = content[:_DOC_PREVIEW_CHARS].replace("\n", " ")
+            # 对齐 flova「能读而又不读」：只报存在（名/字数），不注入正文预览、
+            # 不催读——正文进主会话会诱导主代理抢跑通读、背离「分析委派子代理」。
+            # 读能力完整保留（read_uploaded_doc 常驻 + 正文已存 uploadedDocs），
+            # 需要原文时按需自取或按 Skill 分工委派分析阶段读取。
             parts.append(
-                f"（用户上传了素材文档《{name}》，共 {len(content)} 字，已存档。"
-                f"开头预览：{preview}…"
-                f"正文未自动注入上下文，需要全文时调用 read_uploaded_doc（name=\"{name}\"）读取，"
-                f"不要声称看不到该文档。）"
+                f"（用户上传了素材文档《{name}》，共 {len(content)} 字，已存档；"
+                f"正文未注入上下文，需要原文时经 read_uploaded_doc（name=\"{name}\"）按需读取。）"
             )
         elif ext == ".docx":
             parts.append(

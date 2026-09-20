@@ -195,5 +195,5 @@ def test_feedback_template_no_contradiction():
 
 # test_script_analyze_generates_soft_candidates 已随任务#36 B5 执行器一步退役删除：
 # 被测对象（executors.ScriptAnalyzeTool + exec_spec.run_collect_spec_node 候选落盘）
-# 不复存在。平台不再机械出题，规格收集改由模型按 skill_runtime 用 workflow_pause
-# 分组向导完成。
+# 不复存在。平台不再机械出题，规格参数改由模型按 Skill 流程用 workflow_pause
+# 选项向用户收集（group 分页交互唯一家 = workflow_pause options 参数描述，2026-09-12 裁决）。

@@ -250,8 +250,8 @@ async def get_agent_gates(limit: int = 50):
 async def get_agent_degradations():
     """核心探测点意外降级计数（接线断裂可观测）。
 
-    与 /agent/traces、/agent/gates 并列的调试端点：探测点（规格向导探测/
-    闸机装配/流程检查点解析等）异常回落默认值时计数 +1，运行期健康信号。"""
+    与 /agent/traces、/agent/gates 并列的调试端点：探测点（闸机装配/
+    流程检查点解析等）异常回落默认值时计数 +1，运行期健康信号。"""
     return {"degradations": get_degradations()}
 
 

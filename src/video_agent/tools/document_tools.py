@@ -31,22 +31,7 @@ from src.video_agent.core.provider_config import (
     spec_production_params,
 )
 from src.video_agent.utils import gen_id
-from src.video_agent.utils.prompts import (
-    render_prompt_section, load_prompt_section, load_prompt,
-)
-
-
-def _load_spec_scaffold() -> str:
-    """K8 批：读取规格脚手架全文（`## SCAFFOLD` 标记行之后到文件末尾）。
-
-    骨架正文自带 `## ` 子节（_merge_sections 切块所需），故不能用
-    load_prompt_section（分节遇下一个 `## ` 即止）；标记行前的说明头不注入。"""
-    text = load_prompt("shared/spec_scaffold.md")
-    marker = "\n## SCAFFOLD\n"
-    idx = text.find(marker)
-    if idx < 0:
-        return ""
-    return text[idx + len(marker):].strip()
+from src.video_agent.utils.prompts import render_prompt_section
 
 
 # ---------- Input Schemas ----------
@@ -217,12 +202,6 @@ class DocumentWriteTool(BaseTool):
         content = str(params.content or "")
         # 规格文档判定唯一口径（prompt_gates.is_spec_doc_name）：规格写入后同批补铁律
         is_spec = prompt_gates.is_spec_doc_name(str(params.name or ""))
-        # K8 批（2026-09-16 对齐 flova）：规格文档天生带标准骨架——新建或存量
-        # 内容为空时先注入骨架（唯一源 = shared/spec_scaffold.md::SCAFFOLD）再按
-        # 同名节合并；骨架不含系统注入四维度（出图/出视频 API 与分辨率/渠道）。
-        scaffold = ""
-        if is_spec:
-            scaffold = _load_spec_scaffold()
         # 铁律文档保护：铁律由系统维护 + 用户在文档面板手改，
         # 模型只读不得整篇重写（会盖掉用户编辑）
         if IRON_RULES_HEADING in str(params.name or ""):
@@ -238,14 +217,12 @@ class DocumentWriteTool(BaseTool):
             for d in docs:
                 if d.get("name") == params.name:
                     # R14：规格文档按 `## ` 节级合并写入（用户手改的节不被盖掉）；
-                    # 非规格文档行为零变更（整篇覆盖）；K8：存量空规格且本次写入
-                    # 带 `## ` 节（或空写）时先注骨架再合并；模型散文无 `## ` 时
-                    # 维持现状整篇（不吞散文）
+                    # 非规格文档整篇覆盖。规格正文由模型按 Skill/协议自由散文撰写
+                    # （protocol.md：规格只承载全局决策参数，实体细节归元素/故事板），
+                    # 平台不注入骨架——K8 骨架已退役：其占位节诱导模型把剧本分析写进
+                    # 规格、且编号节名与模型自由标题匹配不上导致占位符堆积，双重背离
+                    # flova「规格=精简自由散文」。
                     old_content = str(d.get("content") or "")
-                    if (is_spec and scaffold and not old_content.strip()
-                            and (not content.strip()
-                                 or re.search(r"(?m)^## ", content))):
-                        old_content = scaffold
                     d["content"] = (
                         _merge_sections(old_content, content)
                         if is_spec else content
@@ -261,18 +238,10 @@ class DocumentWriteTool(BaseTool):
                         "revisions": int(d.get("revisions") or 0),
                     })
 
-            # K8：规格新建——空写=骨架；带 `## ` 节=先注骨架再同名节合并；
-            # 模型散文无 `## ` 时维持现状整篇（不吞散文）
-            new_content = content
-            if is_spec and scaffold:
-                if not content.strip():
-                    new_content = scaffold
-                elif re.search(r"(?m)^## ", content):
-                    new_content = _merge_sections(scaffold, content)
             docs.append({
                 "id": gen_id("doc"),
                 "name": params.name,
-                "content": new_content,
+                "content": content,
                 "created_at": now,
                 "updated_at": now,
                 "revisions": 0,

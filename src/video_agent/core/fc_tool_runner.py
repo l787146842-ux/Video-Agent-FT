@@ -607,7 +607,7 @@ class FCToolRunner:
                         "[FlowGate] pause 卡问句=系统模板，模型原文（{}字）进正文通道",
                         len(st.pause_overflow),
                     )
-                # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
+                # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页选择）
                 opts = args.get("options")
                 if isinstance(opts, list):
                     for o in opts:

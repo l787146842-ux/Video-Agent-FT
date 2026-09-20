@@ -134,6 +134,17 @@ def test_f2_prompt_dual_source_merge():
         "裁决链措辞未对齐唯一源"
 
 
+def test_iron_rules_header_drops_cross_stage_precollect():
+    """混乱2 双删批（2026-09-20，8888/Q3 取证）防回潮：iron_rules「不跨阶段
+    预收」与冻结#16「缺项合并一次问询」互相打架（模型「为了效率」自行合并
+    的根因），用户裁决两边双删——平台不再就「要不要合并问」下发元指令，
+    交回 Skill 流程散文唯一管（对齐 flova L987）。本断言防「不跨阶段预收」回潮；
+    同时钉死「先问再做、不擅自补全」（防幻觉补全核心）不在删除范围。"""
+    header = load_prompt("shared/iron_rules_header.md")
+    assert "不跨阶段预收" not in header, "退役禁令回潮（混乱2 双删批）"
+    assert "先问再做" in header and "不擅自补全" in header, "缺信息处置核心条款误删"
+
+
 def test_b3_agent_loop_templates_wired():
     """agent_loop 运行时文案走 feedback.md 分节（分节在场即接线有效；
     代码内置兜底允许保留但不得作为唯一来源）。

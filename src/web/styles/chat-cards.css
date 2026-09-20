@@ -19,7 +19,7 @@
   .confirm-btn:hover { filter: brightness(1.15); }
   .confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
-  /* 分页选择向导（多维度一次性收集：逐页选择，末页发送）；
+  /* 分组选项分页选择（逐页选择，末页发送）；
      边框/圆角/底色由下方「确认卡片配色」亮橙族统一接管，此处只留布局档 */
   .confirm-wizard { margin-top: 8px; padding: 10px 12px; }
   .confirm-wizard-question { font-size: var(--font-md); font-weight: 600; color: var(--text-main); margin-bottom: 8px; }

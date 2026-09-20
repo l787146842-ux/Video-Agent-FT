@@ -31,7 +31,7 @@
 - pause 声明化石链（2026-09-05 整链删除）：parse_pause_rules /
   _PAUSE_RULES_BLOCK_RE / _lint_prose_obligations —— frontmatter pause 声明与
   正文 pause_rules 块均无运行时消费者，旧机械卡/闸兜底从未存在
-spec_pause_card/spec_collect_card（规格向导，不变基线）不在清单内。
+（spec_pause_card/spec_collect_card 规格向导卡已随 2026-08-31 D-08 退役删除，符号不复存在）。
 输出纯 ASCII（验收乱码误读教训）。用法：python scripts/check_legacy_orchestration.py
 """
 import pathlib

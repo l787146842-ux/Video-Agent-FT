@@ -161,31 +161,10 @@ class TestSpecProductionParams:
         assert p["shot_max_duration"] == 12
 
 
-class TestNewWizardDimensions:
-    """规格向导新维度归组：图片分辨率/视频分辨率/分镜最大时长"""
-
-    def test_classify_image_resolution(self):
-        from src.video_agent.core.option_groups import classify_option
-
-        assert classify_option("2K 高清") == "图片分辨率"
-        assert classify_option("图片分辨率选 1K") == "图片分辨率"
-
-    def test_classify_video_resolution(self):
-        from src.video_agent.core.option_groups import classify_option
-
-        assert classify_option("720p 标准") == "视频分辨率"
-        assert classify_option("1080p 高消") == "视频分辨率"
-
-    def test_classify_shot_max_duration_before_total_duration(self):
-        from src.video_agent.core.option_groups import classify_option
-
-        assert classify_option("单镜头 12 秒") == "分镜最大时长"
-        assert classify_option("分镜最大时长 8 秒") == "分镜最大时长"
-
-    def test_total_duration_still_classified(self):
-        from src.video_agent.core.option_groups import classify_option
-
-        assert classify_option("3-5 分钟") == "时长"
+# TestNewWizardDimensions（option_groups.classify_option 规格向导维度归组）
+# 已随 Q3② 规格收集向导残留清退批（2026-09-20）整体删除：option_groups
+# 模块运行时零消费者（仅测试调用）已退役，group 分页交互唯一家 =
+# workflow_pause options 参数描述（2026-09-12 裁决）。
 
 
 # TestProductionParamNote（executors._production_param_note 制作参数注入）

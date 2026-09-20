@@ -15,7 +15,6 @@ DEFAULT_V2_REVIEW_NODES: Tuple[str, ...] = (
 # 平铺节点 → 人类可读标题（机械停卡文案 + 账本回放展示；无 DAG 语义）。
 NODE_TITLES: Dict[str, str] = {
     "analyze_script": "剧本分析",
-    "collect_spec": "制片规格收集",
     "write_spec": "制片规格撰写",
     "review_spec": "规格审核",
     "storyboard_key_elements": "关键元素拆解",

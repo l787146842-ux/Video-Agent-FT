@@ -17,19 +17,21 @@ def assets_dir(tmp_path, monkeypatch):
 
 
 def test_md_manifest_injected_not_full_text(assets_dir):
-    """新契约：文本附件只注入清单（名称/字数/预览），正文靠 read_uploaded_doc 检索"""
+    """新契约（对齐 flova）：文本附件只报存在（名称/字数），正文与预览均不注入，靠 read_uploaded_doc 按需检索"""
     (assets_dir / "story.md").write_text("# 太阳系二维化\n二向箔来袭。", encoding="utf-8")
     ctx = attachment_context([
         {"name": "太阳系逐渐二维化.md", "url": "/workspace/assets/story.md", "kind": "doc"},
     ])
     assert "太阳系逐渐二维化.md" in ctx
     assert "已存档" in ctx and "read_uploaded_doc" in ctx
+    # 正文/预览均不进主会话（flova「剧本正文不因上传自动进主会话」）
+    assert "二向箔" not in ctx
     # 不再以「=== 全文 ===」段落形式注入正文
     assert "=== 文档结束 ===" not in ctx
 
 
 def test_long_doc_manifest_small(assets_dir):
-    """超大文档的清单注入体积恒定（预览 200 字上限），不再随正文长度膨胀"""
+    """超大文档的清单注入体积恒定（只报名/字数，无正文预览），不随正文长度膨胀"""
     (assets_dir / "big.txt").write_text("x" * 50000, encoding="utf-8")
     ctx = attachment_context([
         {"name": "big.txt", "url": "/workspace/assets/big.txt", "kind": "doc"},

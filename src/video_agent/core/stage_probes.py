@@ -88,8 +88,8 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     if key == "analysis":
         return bool((state.get("analysis") or {}).get("summary"))
     if key == "spec":
-        # D-18 清偿（2026-09-06）：workflow_runtime 节点映射把 collect_spec/
-        # write_spec 指向 "spec" 探针，spec 机械阶段退役后本键一直缺分支
+        # D-18 清偿（2026-09-06）：workflow_runtime 节点映射把 write_spec
+        # 指向 "spec" 探针，spec 机械阶段退役后本键一直缺分支
         # （恒 False，规格落盘也不收纳）。客观判据 = 规格文档在盘
         # （单一判定口 prompt_gates.has_spec_document，与 gen/spec 闸同源）。
         return prompt_gates.has_spec_document(state)

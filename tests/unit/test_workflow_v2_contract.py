@@ -42,6 +42,26 @@ def test_definition_dag_contract_retired():
     assert workflow_runtime.compile_definition("任意 Skill") is None
 
 
+def test_spec_collect_wizard_residual_retired():
+    """Q3② 规格收集向导残留清退批（2026-09-20，8888 取证）防复活：
+    ① collect_spec「制片规格收集」节点退役——与 write_spec 同探针 "spec"、
+       功能重复，且「收集」语义属已退役的规格向导概念（对齐 flova
+       「无独立收集阶段、直接写规格」）；
+    ② option_groups 兜底归组模块退役——运行时零消费者（group 分页
+       交互唯一家 = workflow_pause options 参数描述，2026-09-12 裁决）。"""
+    from src.video_agent.core import workflow_contract, workflow_runtime
+
+    # collect_spec 不再出现在任何节点词表/探针映射
+    assert "collect_spec" not in workflow_contract.NODE_TITLES
+    assert "collect_spec" not in workflow_runtime._FLAT_NODES
+    assert "collect_spec" not in workflow_runtime._NODE_PROBE_KEYS
+    # write_spec 仍承载 spec 探针（收集与撰写同证同源，删冗余节点不丢探针）
+    assert workflow_runtime._NODE_PROBE_KEYS.get("write_spec") == "spec"
+    # option_groups 模块已退役（防复活：不得重新引入兜底归组）
+    with pytest.raises(ImportError):
+        import src.video_agent.core.option_groups  # noqa: F401
+
+
 # ---------- ② EventLedger ----------
 
 def test_ledger_sequence_monotonic_per_run():
@@ -107,10 +127,10 @@ def test_commit_turn_artifact_and_transition():
         turn_id="t1", body="分析完成",
         artifacts=[{"name": "analysis.json", "kind": "artifact"}],
         next_transition={"completed_node": "analyze_script",
-                         "next_node": "collect_spec"}), persist=False)
+                         "next_node": "write_spec"}), persist=False)
     run = st["workflow_run"]
     assert "analyze_script" in run["completed_nodes"]
-    assert run["current_node"] == "collect_spec"
+    assert run["current_node"] == "write_spec"
     assert "analysis.json" in run["artifacts"]
     types = [e.event_type for e in c.events]
     assert "ArtifactCommitted" in types and "StageSucceeded" in types \

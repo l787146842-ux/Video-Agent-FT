@@ -80,7 +80,7 @@ def test_key_steps_gate_fires_at_spec_milestone(svc, restore_mode):
     _set_mode("key_steps_confirm")
     svc.state_dict["analysis"] = {"summary": "三体水滴", "report": "报告"}
     run0 = _run_at_first_stage(svc)
-    assert run0.get("current_node") == "collect_spec"
+    assert run0.get("current_node") == "write_spec"
     # 本轮写入规格文档 → spec 探针翻转，current 推进到 review_spec
     svc.state_dict["documents"] = [{
         "name": "制片规格.md", "content": "时长：60 秒\n画幅：21:9",
@@ -100,7 +100,7 @@ def test_key_steps_gate_fires_at_spec_milestone(svc, restore_mode):
 
 
 def test_key_steps_gate_skips_non_approval_node(svc, restore_mode):
-    """key_steps_confirm：翻转后新当前节点非审批节点（如 collect_spec）
+    """key_steps_confirm：翻转后新当前节点非审批节点（如 write_spec）
     → 不签发（里程碑口径）。"""
     _set_mode("key_steps_confirm")
     run0 = _run_at_first_stage(svc)  # current = analyze_script
@@ -108,9 +108,9 @@ def test_key_steps_gate_skips_non_approval_node(svc, restore_mode):
     planner = Planner(state_manager=svc, llm_adapter=None)
     resp = PlannerResponse()
     planner._apply_stage_gate(resp, _mk_ctx(svc, run0))
-    # 翻转后 current = collect_spec（spec 未落盘，非审批节点）
+    # 翻转后 current = write_spec（spec 未落盘，非审批节点）
     run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("current_node") == "collect_spec"
+    assert run.get("current_node") == "write_spec"
     assert resp.confirmation == ""
 
 
@@ -141,7 +141,7 @@ def test_gate_skips_when_pause_slot_occupied(svc, restore_mode):
     _set_mode("key_steps_confirm")
     svc.state_dict["analysis"] = {"summary": "三体水滴", "report": "报告"}
     run0 = _run_at_first_stage(svc)
-    run0["current_node"] = "collect_spec"
+    run0["current_node"] = "write_spec"
     svc.state_dict["documents"] = [{
         "name": "制片规格.md", "content": "时长：60 秒",
     }]
@@ -164,7 +164,7 @@ def test_resolved_decision_completes_review_node(svc, restore_mode):
     _set_mode("key_steps_confirm")
     svc.state_dict["analysis"] = {"summary": "三体水滴", "report": "报告"}
     run0 = _run_at_first_stage(svc)
-    run0["current_node"] = "collect_spec"
+    run0["current_node"] = "write_spec"
     svc.state_dict["documents"] = [{
         "name": "制片规格.md", "content": "时长：60 秒",
     }]
