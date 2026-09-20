@@ -55,6 +55,9 @@ diag-session.mjs
 # B6/F45：恢复现场归档副本不入库（本地保留，备份盘另存）
 docs/archive/
 
+# 架构可视化插件产出的派生图（.structurizr/.dot 等，本地保留、可再生、以宪法为准不入库）
+docs/architecture/
+
 # 临时测试目录
 .pytest_tmp/
 .pytest_tmp_run*/
