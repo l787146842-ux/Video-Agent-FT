@@ -12,6 +12,10 @@ from src.video_agent.config import settings
 from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 from src.video_agent.core import ports, prompt_gates
+# 批3（事故 2222/Q3b）：run_subagent.stage 的 description 动态拼接枚举值——
+# 单一事实源 = core.subagent 的 PIPELINE_STAGE_KINDS/STAGE_LABELS（顶层引用，
+# 只读常量；core.subagent 仅依赖 utils.prompts + skill_runtime，无环）。
+from src.video_agent.core.subagent import PIPELINE_STAGE_KINDS, STAGE_LABELS
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import (
@@ -38,6 +42,24 @@ from src.video_agent.utils.prompts import render_prompt_section
 
 # 写类 Input 继承 StrictToolInput（extra="forbid"，批 4b）；
 # 只读/交互控制面（workflow_pause）保持 BaseModel 原样。
+
+
+def _stage_hint() -> str:
+    """run_subagent.stage 的 description（2026-09-21 批3，事故 2222/Q3b）。
+
+    运行时从 `subagent.PIPELINE_STAGE_KINDS` + `registry.STAGE_LABELS` 拼接
+    可选值（含中文标签），**单一事实源仍是那张枚举表**——本函数只引用不复制，
+    改枚举不会漏改描述（同 storyboard_tools._DRAFT_FIELDS_HINT 先例）。
+    """
+    pairs = "、".join(
+        f"{k}（{STAGE_LABELS.get(k, k)}）"
+        for k in sorted(PIPELINE_STAGE_KINDS))
+    return (
+        f"本次委派推进的生产阶段名。可选值：{pairs}；留空 = 通用委派。"
+        "填写后系统自动把所选 Skill 对应阶段的章节全文注入子代理（章节即产出规范），"
+        "任务书里不用复述规范。"
+    )
+
 
 class WriteDocumentInput(StrictToolInput):
     name: str = Field(..., description="文档名称（如 Final_Video_Spec.md）")
@@ -881,20 +903,29 @@ class WorkflowPauseTool(BaseTool):
 class RunSubagentInput(BaseModel):
     # Skill 正文由平台随任务自动注入、文档与工作台状态与子级共享（见 planner
     # ._launch_subagent），子代理自看工作台/自读源（2026-09-15 1111 批对齐 flova），
-    # 故任务书只需一句目标；description 只写正面契约（2026-09-12
+    # 故任务书只需目标/用途/新决定三段；description 只写正面契约（2026-09-12
     # 裁决：说明层堆否定/解释会吓退模型、且撞指令体量上限）。
+    # 三段式完整表述与"为什么"唯一源 = prompts/planner/subagent.md :: SUBAGENT_POLICY
+    # （2026-09-21 批2，事故 2222/Q5）；本处只留可照抄的字段用法，不复述策略全文。
     task: str = Field(
         ...,
-        description="交给子代理的目标：一句话写清要产出什么即可；"
-        "范围/源文档/产出规范不用写（子代理自看工作台、自读文档、章节已注入）。",
+        description="交给子代理的目标。三段：①一句目标（要产出什么）；"
+        "②下游用途（谁会用、用来干什么）；③尚未落入规格文档的新决定。"
+        "剧本与规格文档里的既有内容不用复述（子代理自看工作台、自读文档、"
+        "章节已注入）。",
     )
     # 阶段执行器铺满批（2026-09-15）：可选生产阶段名，成员唯一枚举 =
-    # core/subagent.py::PIPELINE_STAGE_KINDS；描述不硬编码阶段名单（单一事实源）。
+    # core/subagent.py::PIPELINE_STAGE_KINDS。2026-09-21 批3（事故 2222/Q3b）：
+    # 改为**运行时动态拼接**枚举值 + 中文标签下发（同 _DRAFT_FIELDS_HINT 先例：
+    # 白名单唯一源 = _STAGE_TOOLS/STAGE_LABELS，此处只引用不复制，P1 不破）。
+    # 依据：2222 实测模型**必猜错一次**（先填中文「剧本分析」被 fail-loud 拒收
+    # → 改 script_analyze），花 3.5s + 一次失败往返，且每个新会话都会重犯——
+    # 等于"考完试才给答案"（fail-loud 列白名单只发生在报错时）。对齐 dsh
+    # tools.restrict() 理念：能让模型不猜的地方就不要让它猜（其报错同样列出
+    # known global tools）。description 是引导、fail-loud 校验仍在（两层都在）。
     stage: str = Field(
         "",
-        description="本次委派推进的生产阶段名（可委派阶段名单由系统枚举，"
-        "非法值将被拒收并列白名单）。填写后系统自动把所选 Skill 对应阶段的章节全文"
-        "注入子代理（章节即产出规范），任务书里不用复述规范；非阶段委派留空即可。",
+        description=_stage_hint(),
     )
 
 
