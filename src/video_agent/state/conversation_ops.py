@@ -465,6 +465,7 @@ def build_chat_entry(
     pause_header: str = "",
     pause_detail: str = "",
     pause_multi_select: bool = False,
+    pause_questions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """构建单条聊天记录条目（纯函数，不落盘）。
 
@@ -524,6 +525,10 @@ def build_chat_entry(
         entry["pauseDetail"] = str(pause_detail).strip()
     if pause_multi_select:
         entry["pauseMultiSelect"] = True
+    # 2026-09-21 批F（事故 4444/Q2③+Q3，对齐 dsh questions[]）：问题级列表。
+    # 非空才落字段（缺省不产生空键，防类型退化）；旧消息无此键 → 前端回落扁平面。
+    if pause_questions:
+        entry["pauseQuestions"] = [dict(q) for q in pause_questions]
     if pause_answered:
         entry["pauseAnsweredId"] = str(pause_answered.get("pause_id") or "")
         entry["pauseAnsweredValue"] = str(pause_answered.get("value") or "")
@@ -570,6 +575,7 @@ def add_chat_message(
     pause_header: str = "",
     pause_detail: str = "",
     pause_multi_select: bool = False,
+    pause_questions: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，
     防止状态文件无上限增长。写入目标：绑定会话优先、无绑定回落活跃对话
@@ -584,6 +590,7 @@ def add_chat_message(
         pause_header=pause_header,
         pause_detail=pause_detail,
         pause_multi_select=pause_multi_select,
+        pause_questions=pause_questions,
     )
     msgs.append(entry)
     if len(msgs) > CHAT_HISTORY_LIMIT:

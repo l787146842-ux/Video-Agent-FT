@@ -55,6 +55,9 @@ async def merge_fc_response(
         fc_pause_header = str(_fc_res[11] or "") if len(_fc_res) > 11 else ""
         fc_pause_detail = str(_fc_res[12] or "") if len(_fc_res) > 12 else ""
         fc_pause_multi = bool(_fc_res[13]) if len(_fc_res) > 13 else False
+        # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表（第 15 位，同上按长取值）
+        # ——一次可问 N 个问题，各带自己的问句/选项/多选标志（对齐 dsh questions[]）
+        fc_pause_questions = _fc_res[14] if len(_fc_res) > 14 else None
         if image_urls_collector is not None:
             image_urls_collector.extend(image_urls)
         if chat_inserts_collector is not None:
@@ -84,6 +87,9 @@ async def merge_fc_response(
                 confirmation_collector["header"] = fc_pause_header
                 confirmation_collector["detail"] = fc_pause_detail
                 confirmation_collector["multi_select"] = fc_pause_multi
+                # 2026-09-21 批F：问题级列表（非空才落，旧形态零变化）
+                if fc_pause_questions:
+                    confirmation_collector["questions"] = list(fc_pause_questions)
             # 空正文兜底：FC 模型常只发暂停工具不带正文，确认文案作可见正文
             visible = (response.content or "").strip()
             if not visible:

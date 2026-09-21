@@ -768,6 +768,15 @@ export interface SseDoneConfirmationOption {
   value?: string;
 }
 
+export interface SseDonePauseQuestion {
+  id?: string;
+  question?: string;
+  header?: string;
+  detail?: string;
+  multi_select?: boolean;
+  options?: SseDoneConfirmationOption[];
+}
+
 export interface SseDoneSuggestedAction {
   kind?: string;
   label?: string;
@@ -791,6 +800,7 @@ export interface SseDonePayload {
   pause_header?: string;
   pause_detail?: string;
   pause_multi_select?: boolean;
+  pause_questions?: SseDonePauseQuestion[];
   snapshot_id?: string;
   stopped?: boolean;
   stop_phase?: string;

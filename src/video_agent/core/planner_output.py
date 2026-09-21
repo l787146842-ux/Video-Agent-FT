@@ -143,4 +143,9 @@ def assemble_response(
         _factory_kwargs["pause_detail"] = _detail
     if getattr(loop_result, "pause_multi_select", False):
         _factory_kwargs["pause_multi_select"] = True
+    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表非空才透传
+    # （同批B 口径：旧桩不接受这些关键字，getattr 兜底）
+    _questions = list(getattr(loop_result, "pause_questions", None) or [])
+    if _questions:
+        _factory_kwargs["pause_questions"] = _questions
     return response_factory(**_factory_kwargs)

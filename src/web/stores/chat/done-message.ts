@@ -59,6 +59,10 @@ export function buildDoneMessage(
     pauseHeader: payload.pause_header || undefined,
     pauseDetail: payload.pause_detail || undefined,
     pauseMultiSelect: payload.pause_multi_select || undefined,
+    // 2026-09-21 批F（事故 4444/Q2③+Q3，对齐 dsh `questions[]`）：问题级列表。
+    // 非空才落（一次问 N 个问题）；空 = 旧形态，渲染回落扁平面。
+    pauseQuestions: (payload.pause_questions || []).length
+      ? payload.pause_questions : undefined,
     // E1：轮末快照指针 live 落账（done 同轮下发，当前会话即可挂回档动作，无需刷新）
     snapshotId: payload.snapshot_id || undefined,
     // 结构化决策表单（workflow 投影 pending_decision_payload，schema→表单数据驱动；与确认卡同源同消息，不另起卡片）

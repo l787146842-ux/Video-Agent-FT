@@ -244,7 +244,7 @@ export interface ChatMessage {
   /** 本轮已执行操作的中文描述清单（「阶段完成」卡片展开查看具体操作） */
   actionLog?: string[];
   /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送； value 机械消费） */
-  confirmOptions?: Array<{ label: string; description?: string; group?: string; value?: string }>;
+  confirmOptions?: ConfirmOptionItem[];
   /** 结构化决策表单（workflow pending_decision schema→表单数据驱动；
    *  提交走既有暂停回应/消息通道，留痕同普通用户消息） */
   decisionForm?: PendingDecisionPayload;
@@ -274,6 +274,11 @@ export interface ChatMessage {
   pauseDetail?: string;
   /** 该问题是否允许多选（缺省 false=单选；对齐 dsh 的 multi_select） */
   pauseMultiSelect?: boolean;
+  /** 问题级列表（2026-09-21 批F，事故 4444/Q2③+Q3，对齐 dsh `questions[]`）：
+   *  非空 = 一次问 N 个问题（逐问渲染，各带自己的选项与多选标志）；
+   *  空/缺省 = 旧形态（回落 pauseHeader/pauseDetail/pauseMultiSelect/
+   *  confirmOptions 扁平面，旧消息零变化）。 */
+  pauseQuestions?: PauseQuestion[];
   /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
   pauseAnsweredId?: string;
   /** E1 消息级快照指针（后端轮末打快照挂最后一条 agent 消息；
@@ -286,6 +291,32 @@ export interface ChatMessage {
   /** 本地产生时刻（epoch ms，悬停工具条 HH:MM 展示）；
    *  后端持久化消息无此字段 → 工具条不显示时间 */
   ts?: number;
+}
+
+/** 确认卡的一个候选选项（与后端 SseDoneConfirmationOption 同形） */
+export interface ConfirmOptionItem {
+  label: string;
+  description?: string;
+  group?: string;
+  value?: string;
+}
+
+/** 暂停卡的一个问题（2026-09-21 批F，事故 4444/Q2③+Q3，对齐 dsh
+ *  `AskUserQuestionItem`）：一次可问 N 个问题，各带自己的选项与多选标志。
+ *  全字段可选（与生成物 SseDonePauseQuestion 同形：后端用空串/False 兜底）。 */
+export interface PauseQuestion {
+  /** 稳定标识（回答回携用；模型未给时后端补 q1/q2…） */
+  id?: string;
+  /** 该问题的问句正文 */
+  question?: string;
+  /** 短标题（可选，显示在问句上方） */
+  header?: string;
+  /** 辅助说明（可选，**不变成可选项**） */
+  detail?: string;
+  /** 该问题是否可多选（缺省 false=单选） */
+  multi_select?: boolean;
+  /** 该问题的选项列表 */
+  options?: ConfirmOptionItem[];
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
@@ -444,6 +475,7 @@ export type SseActionsAppliedEvent = Omit<GenSseActionsAppliedEvent, 'payload'> 
 export type SseDonePayload = Omit<GenSseDonePayload,
   'text' | 'elapsed_ms' | 'steps' | 'applied_actions'
   | 'chat_inserts' | 'confirmation_options' | 'suggested_actions'
+  | 'pause_questions'
   | 'trace' | 'state' | 'workflow'> & {
   text: string;
   elapsed_ms: number;
@@ -451,6 +483,8 @@ export type SseDonePayload = Omit<GenSseDonePayload,
   applied_actions: number;
   chat_inserts?: Array<{ kind: MediaType; url: string; name: string; thumb?: string }>;
   confirmation_options?: Array<{ label: string; description?: string; group?: string; value?: string }>;
+  /** 问题级列表（批F）：非空 = 一次问 N 个问题（收窄为视图态字段形态） */
+  pause_questions?: PauseQuestion[];
   suggested_actions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
   trace?: AgentTrace;
   state?: ServerStateSnapshot | null;

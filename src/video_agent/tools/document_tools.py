@@ -118,20 +118,38 @@ class GenerateImageInput(StrictToolInput):
 
 
 class WorkflowPauseInput(BaseModel):
+    # 2026-09-21 批F（事故 4444/Q2③+Q3，对齐 dsh ask_user_question 的 questions[]）：
+    # 一次可问 N 个问题。4444 实证：模型有 5 个维度要问，只有一组扁平 options +
+    # 一个 multi_select，只能自创"套餐"把 4 维压成互斥预设、第 5 维塞进 detail
+    # （detail 不是可选项 → 用户结构上答不了 → 该决策被写成既定规格）。
+    questions: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="要问的问题列表（可一次问多个，各自独立作答）。"
+        "每项 {id: 稳定标识（回答回携用）, question: 该问题的问句, "
+        "header: 短标题（可选）, detail: 该问题的补充说明（可选，不会变成可选项）, "
+        "options: 该问题的选项列表（格式同下方 options）, "
+        "multi_select: 该问题是否可多选（可选，默认 false）}。"
+        "留空则用下方的 question/options 问一个问题。"
+    )
     question: str = Field(
         "",
         description="要向用户提出的问题本身（确认卡标题行的问句，对齐 dsh ask_user_question）。"
         "写成用户能直接读懂的疑问句，如「角色三视图的卡应由哪个阶段构建？」。"
         "留空则回落系统的阶段完成模板句。"
+        "questions 非空时本字段被忽略（作为首问的兼容投影）。"
     )
     header: str = Field(
-        "", description="问题短标题（可选，如「确认」「选择模式」），显示在问句上方。")
+        "", description="问题短标题（可选，如「确认」「选择模式」），显示在问句上方。"
+        "questions 非空时本字段被忽略。")
     detail: str = Field(
         "",
         description="随问题一起展示的补充说明（可选）。这段文本只作说明，不会变成可选项。"
+        "**要用户拍板的事请放进 options，不要只写在 detail 里**——"
+        "detail 不是可选项，用户无法对它作答。questions 非空时本字段被忽略。"
     )
     multi_select: bool = Field(
-        False, description="用户是否可多选（默认 false=单选）。")
+        False, description="用户是否可多选（默认 false=单选）。"
+        "questions 非空时本字段被忽略。")
     message: str = Field(
         "", description="给用户的补充说明（展示在正文；确认卡的问句请用 question 字段）。"
         "阶段成果（剧本分析要点等）由系统自动渲染进正文，"
@@ -142,7 +160,8 @@ class WorkflowPauseInput(BaseModel):
         default_factory=list,
         description="引导选项（前端渲染为选择卡片，用户选择后作为回复发送），暂停时原则上必须提供："
         "每项 {label: 具体可选值（如「硬科幻」「16:9」）, description: 一句话说明, "
-        "group: 所属维度标题（可选，用于前端归类显示）}。",
+        "group: 所属维度标题（可选，用于前端归类显示）}。"
+        "questions 非空时本字段被忽略（改用每题自己的 options）。",
     )
 
 

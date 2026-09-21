@@ -210,6 +210,17 @@ class SseDoneConfirmationOption(BaseModel):
     value: str = ""
 
 
+class SseDonePauseQuestion(BaseModel):
+    """暂停卡的一个问题（2026-09-21 批F，事故 4444/Q2③+Q3，对齐 dsh
+    `AskUserQuestionItem`）：一次可问 N 个问题，各带自己的选项与多选标志。"""
+    id: str = ""
+    question: str = ""
+    header: str = ""
+    detail: str = ""
+    multi_select: bool = False
+    options: List[SseDoneConfirmationOption] = Field(default_factory=list)
+
+
 class SseDoneSuggestedAction(BaseModel):
     kind: str = ""             # retry | continue | next
     label: str = ""
@@ -238,6 +249,10 @@ class SseDonePayload(BaseModel):
     pause_header: str = ""
     pause_detail: str = ""
     pause_multi_select: bool = False
+    # 2026-09-21 批F（事故 4444/Q2③+Q3，对齐 dsh `questions[]`）：问题级列表。
+    # 非空 = 一次问 N 个问题（前端逐问渲染）；空 = 旧形态（回落
+    # confirmation/confirmation_options 扁平面，旧消息零变化）。
+    pause_questions: List[SseDonePauseQuestion] = Field(default_factory=list)
     # E1 消息级快照指针：轮末快照挂最后一条 agent 消息后同轮下发，
     # 前端 live 消息凭此挂「回到此刻/从此刻新开项目」（刷新前可见）
     snapshot_id: str = ""
@@ -321,6 +336,9 @@ TS_EVENT_FRAMES: List[tuple] = [
     ("SseGuidanceInjectedEvent", SseGuidanceInjectedEvent),
     ("SseDoneChatInsert", SseDoneChatInsert),
     ("SseDoneConfirmationOption", SseDoneConfirmationOption),
+    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级子模型须**显式登记**才被渲染
+    # （生成器只渲染本表条目；仅在 $defs 里出现的名字会产出悬空引用）
+    ("SseDonePauseQuestion", SseDonePauseQuestion),
     ("SseDoneSuggestedAction", SseDoneSuggestedAction),
     ("SseDonePayload", SseDonePayload),
     ("SseDoneEvent", SseDoneEvent),

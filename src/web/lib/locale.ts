@@ -228,6 +228,10 @@ const zhCN = {
   'rp.confirm.next': '下一步',
   'rp.confirm.hintCustom': '将发送自定义内容',
   'rp.confirm.hintPick': '选择后点击发送',
+  // 2026-09-21 批F（事故 4444/Q2③+Q3）：多问题卡（一次问 N 问）
+  'rp.confirm.hintAnswerAll': '请回答全部问题后发送',
+  'rp.confirm.hintSendAll': '将按问题顺序发送所选',
+  'rp.confirm.qNoOptions': '请在下方输入你的答复',
   'rp.confirm.pickProvider': '请选择 API 厂商…',
 
   // ---------- 结构化决策表单（schema→表单数据驱动） ----------

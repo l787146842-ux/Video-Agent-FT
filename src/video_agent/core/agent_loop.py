@@ -163,6 +163,10 @@ class AgentLoopResult:
     pause_header: str = ""
     pause_detail: str = ""
     pause_multi_select: bool = False
+    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级**列表**——一次可问 N 个问题，
+    # 每项 {id, question, header, detail, multi_select, options}（对齐 dsh）。
+    # 空列表 = 旧形态（消费方回落扁平字段）。
+    pause_questions: List[Dict[str, Any]] = field(default_factory=list)
     # 推理模型思考内容（五项修法批 4）：本循环最后一轮的 reasoning（数据源
     # = llm_call 第 5 元组 extra.reasoning_content）。回传/持久化由
     # settings.llm_reasoning_passthrough 统一闸门控制，默认关不外流
@@ -576,6 +580,8 @@ async def run_agent_loop(
             fc_pause_header = str((fc_extra or {}).get("pause_header") or "")
             fc_pause_detail = str((fc_extra or {}).get("pause_detail") or "")
             fc_pause_multi = bool((fc_extra or {}).get("pause_multi_select"))
+            # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表
+            fc_pause_questions = list((fc_extra or {}).get("pause_questions") or [])
             # 批 9 · 回合终止盲区修复：模型本轮是否发起过工具调用
             #（全拒收轮 fc_applied=0 但调用发生过，不能按纯文本轮收尾）
             had_fc_calls = _had_fc_calls
@@ -620,6 +626,8 @@ async def run_agent_loop(
                     result.pause_header = fc_pause_header
                     result.pause_detail = fc_pause_detail
                     result.pause_multi_select = fc_pause_multi
+                    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表（一次问 N 问）
+                    result.pause_questions = fc_pause_questions
                     # 问即停：暂停发行成功 = 本轮结束、控制流冻结；
                     # 复用协作式停止通道标记（stop_phase="pause"，非用户停止；
                     # web 层对 pause 相位豁免，照常走成功路径发 done）

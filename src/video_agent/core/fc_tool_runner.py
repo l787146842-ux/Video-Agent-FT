@@ -86,6 +86,9 @@ class FCExecuteResult(NamedTuple):
     pause_header: str = ""
     pause_detail: str = ""
     pause_multi_select: bool = False
+    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表（尾部追加，同上契约）。
+    # 每项 {id, question, header, detail, multi_select, options}。
+    pause_questions: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -129,6 +132,10 @@ class _BatchState:
     pause_header: str = ""
     pause_detail: str = ""
     pause_multi_select: bool = False
+    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级**列表**——一次可问 N 个问题，
+    # 各带自己的问句/选项/多选标志（对齐 dsh `questions[]`）。空列表 = 旧形态
+    # （消费方回落扁平的 confirmation/confirmation_options 面）。
+    pause_questions: List[Dict[str, Any]] = field(default_factory=list)
 
     batch_tool_names: set = field(default_factory=set)
     last_stage_label: str = ""
@@ -626,36 +633,39 @@ class FCToolRunner:
                     header=args.get("header", ""),
                     detail=args.get("detail", ""),
                     multi_select=args.get("multi_select", False),
+                    questions=args.get("questions"),
+                    options=args.get("options"),
                 )
                 st.confirmation = _card.question
                 st.pause_overflow = _card.overflow
                 st.pause_header = _card.header
                 st.pause_detail = _card.detail
                 st.pause_multi_select = _card.multi_select
+                # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表随卡上抛——
+                # 一次可问 N 个问题，各带自己的选项与多选标志（对齐 dsh）。
+                st.pause_questions = [
+                    {
+                        "id": q.id, "question": q.question,
+                        "header": q.header, "detail": q.detail,
+                        "multi_select": q.multi_select,
+                        # 选项深拷贝（防下游改动同一 dict 串到别处）
+                        "options": [dict(o) for o in q.options],
+                    }
+                    for q in _card.questions
+                ]
                 if _card.overflow:
                     logger.info(
-                        "[FlowGate] pause 卡问句={}，模型原文（{}字）进正文通道",
-                        "模型撰写" if str(args.get("question") or "").strip()
-                        else "系统模板",
+                        "[FlowGate] pause 卡问句={}，问题数={}，模型原文（{}字）进正文通道",
+                        "模型撰写" if (
+                            str(args.get("question") or "").strip()
+                            or args.get("questions")) else "系统模板",
+                        len(_card.questions),
                         len(_card.overflow),
                     )
-                # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页选择）
-                opts = args.get("options")
-                if isinstance(opts, list):
-                    for o in opts:
-                        if isinstance(o, dict) and str(o.get("label") or "").strip():
-                            item = {
-                                "label": str(o.get("label")).strip(),
-                                "description": str(o.get("description") or "").strip(),
-                            }
-                            if str(o.get("group") or "").strip():
-                                item["group"] = str(o.get("group")).strip()
-                            # 选项 value 机械消费
-                            if str(o.get("value") or "").strip():
-                                item["value"] = str(o.get("value")).strip()
-                            st.confirmation_options.append(item)
-                        elif isinstance(o, str) and o.strip():
-                            st.confirmation_options.append({"label": o.strip(), "description": ""})
+                # 候选选项（前端渲染为选择卡片；多问时用首问选项作兼容面，
+                # 真正的多问渲染走 pause_questions）
+                for item in st.pause_questions[0]["options"] if st.pause_questions else []:
+                    st.confirmation_options.append(dict(item))
                 # 验收缺失清单在场 → 暂停卡附「补拆/维持」结构化选项
                 # （落实 Skill「先与用户确认是否修改」；附后清除登记）
                 try:
@@ -1093,6 +1103,7 @@ class FCToolRunner:
             pause_header=st.pause_header,
             pause_detail=st.pause_detail,
             pause_multi_select=st.pause_multi_select,
+            pause_questions=st.pause_questions,
         )
 
 

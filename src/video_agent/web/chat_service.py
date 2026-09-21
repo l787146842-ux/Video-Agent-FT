@@ -667,6 +667,9 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                     pause_header=str(ctx.final_payload.get("pause_header") or ""),
                     pause_detail=str(ctx.final_payload.get("pause_detail") or ""),
                     pause_multi_select=bool(ctx.final_payload.get("pause_multi_select")),
+                    # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表持久化
+                    # （刷新后多问题卡不丢；空列表 = 旧形态，前端回落扁平面）
+                    pause_questions=list(ctx.final_payload.get("pause_questions") or []),
                 )
             # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
             for doc_name in (ctx.final_payload.get("documents_written") or []):
@@ -948,6 +951,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                     pause_header=str(getattr(result, "pause_header", "") or ""),
                     pause_detail=str(getattr(result, "pause_detail", "") or ""),
                     pause_multi_select=bool(getattr(result, "pause_multi_select", False)),
+                    # 2026-09-21 批F：问题级列表（非流式同流式契约；getattr 同口径）
+                    pause_questions=list(getattr(result, "pause_questions", None) or []),
                 )
             if result.image_urls:
                 svc.add_chat_message("agent", "", image_urls=result.image_urls, turn_id=ns_turn_id)

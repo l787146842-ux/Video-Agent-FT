@@ -608,5 +608,7 @@ class TurnExecutor:
                 "pause_header": _confirm_holder.get("header") or "",
                 "pause_detail": _confirm_holder.get("detail") or "",
                 "pause_multi_select": bool(_confirm_holder.get("multi_select")),
+                # 2026-09-21 批F（事故 4444/Q2③+Q3）：问题级列表（一次可问 N 问）
+                "pause_questions": list(_confirm_holder.get("questions") or []),
             })
         return content, finish, fc_applied, plan_ms, _extra

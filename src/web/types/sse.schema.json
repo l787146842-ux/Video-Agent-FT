@@ -756,6 +756,76 @@
       }
     },
     {
+      "name": "SseDonePauseQuestion",
+      "schema": {
+        "$defs": {
+          "SseDoneConfirmationOption": {
+            "properties": {
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "description": {
+                "default": "",
+                "title": "Description",
+                "type": "string"
+              },
+              "group": {
+                "default": "",
+                "title": "Group",
+                "type": "string"
+              },
+              "value": {
+                "default": "",
+                "title": "Value",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneConfirmationOption",
+            "type": "object"
+          }
+        },
+        "description": "暂停卡的一个问题（2026-09-21 批F，事故 4444/Q2③+Q3，对齐 dsh\n`AskUserQuestionItem`）：一次可问 N 个问题，各带自己的选项与多选标志。",
+        "properties": {
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "question": {
+            "default": "",
+            "title": "Question",
+            "type": "string"
+          },
+          "header": {
+            "default": "",
+            "title": "Header",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "multi_select": {
+            "default": false,
+            "title": "Multi Select",
+            "type": "boolean"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/$defs/SseDoneConfirmationOption"
+            },
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "title": "SseDonePauseQuestion",
+        "type": "object"
+      }
+    },
+    {
       "name": "SseDoneSuggestedAction",
       "schema": {
         "properties": {
@@ -833,6 +903,45 @@
               }
             },
             "title": "SseDoneConfirmationOption",
+            "type": "object"
+          },
+          "SseDonePauseQuestion": {
+            "description": "暂停卡的一个问题（2026-09-21 批F，事故 4444/Q2③+Q3，对齐 dsh\n`AskUserQuestionItem`）：一次可问 N 个问题，各带自己的选项与多选标志。",
+            "properties": {
+              "id": {
+                "default": "",
+                "title": "Id",
+                "type": "string"
+              },
+              "question": {
+                "default": "",
+                "title": "Question",
+                "type": "string"
+              },
+              "header": {
+                "default": "",
+                "title": "Header",
+                "type": "string"
+              },
+              "detail": {
+                "default": "",
+                "title": "Detail",
+                "type": "string"
+              },
+              "multi_select": {
+                "default": false,
+                "title": "Multi Select",
+                "type": "boolean"
+              },
+              "options": {
+                "items": {
+                  "$ref": "#/$defs/SseDoneConfirmationOption"
+                },
+                "title": "Options",
+                "type": "array"
+              }
+            },
+            "title": "SseDonePauseQuestion",
             "type": "object"
           },
           "SseDoneSuggestedAction": {
@@ -952,6 +1061,13 @@
             "default": false,
             "title": "Pause Multi Select",
             "type": "boolean"
+          },
+          "pause_questions": {
+            "items": {
+              "$ref": "#/$defs/SseDonePauseQuestion"
+            },
+            "title": "Pause Questions",
+            "type": "array"
           },
           "snapshot_id": {
             "default": "",
@@ -1104,6 +1220,45 @@
             "title": "SseDoneConfirmationOption",
             "type": "object"
           },
+          "SseDonePauseQuestion": {
+            "description": "暂停卡的一个问题（2026-09-21 批F，事故 4444/Q2③+Q3，对齐 dsh\n`AskUserQuestionItem`）：一次可问 N 个问题，各带自己的选项与多选标志。",
+            "properties": {
+              "id": {
+                "default": "",
+                "title": "Id",
+                "type": "string"
+              },
+              "question": {
+                "default": "",
+                "title": "Question",
+                "type": "string"
+              },
+              "header": {
+                "default": "",
+                "title": "Header",
+                "type": "string"
+              },
+              "detail": {
+                "default": "",
+                "title": "Detail",
+                "type": "string"
+              },
+              "multi_select": {
+                "default": false,
+                "title": "Multi Select",
+                "type": "boolean"
+              },
+              "options": {
+                "items": {
+                  "$ref": "#/$defs/SseDoneConfirmationOption"
+                },
+                "title": "Options",
+                "type": "array"
+              }
+            },
+            "title": "SseDonePauseQuestion",
+            "type": "object"
+          },
           "SseDonePayload": {
             "description": "done.payload 全家桶（core PlannerResponse 核心字段 + web 层富化；\ntrace/state/workflow 为既有 dataclass 投影的 dict 透传）。",
             "properties": {
@@ -1200,6 +1355,13 @@
                 "default": false,
                 "title": "Pause Multi Select",
                 "type": "boolean"
+              },
+              "pause_questions": {
+                "items": {
+                  "$ref": "#/$defs/SseDonePauseQuestion"
+                },
+                "title": "Pause Questions",
+                "type": "array"
               },
               "snapshot_id": {
                 "default": "",

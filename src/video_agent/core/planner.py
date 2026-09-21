@@ -245,6 +245,10 @@ class PlannerResponse:
     pause_header: str = ""
     pause_detail: str = ""
     pause_multi_select: bool = False
+    # 2026-09-21 批F（事故 4444/Q2③+Q3，对齐 dsh `questions[]`）：问题级列表——
+    # 一次可问 N 个问题，每项 {id, question, header, detail, multi_select, options}。
+    # 空列表 = 旧形态（前端回落扁平的 confirmation/confirmation_options 面）。
+    pause_questions: List[Dict[str, Any]] = field(default_factory=list)
     # 正文来源（批 C3）：mechanical = 轮末机械占位替换产出；随 done payload
     # 下发，web 层落 kind="mechanical"，线程装载历史时压成固定短句
     text_source: str = ""
@@ -1057,6 +1061,8 @@ class Planner:
             "pause_header": result.pause_header,
             "pause_detail": result.pause_detail,
             "pause_multi_select": result.pause_multi_select,
+            # 2026-09-21 批F：问题级列表随 done payload 下发（一次可问 N 问）
+            "pause_questions": result.pause_questions,
             "trace": result.trace,
             "suggested_actions": result.suggested_actions,
             "pause_kind": result.pause_kind,
