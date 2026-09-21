@@ -66,8 +66,8 @@ def test_spec_clause_has_four_write_criteria():
     assert "已由用户确认" in clause, "缺判据①：已由用户确认的全局一致性决策"
     assert "剧本分析得到" in clause and "全局且稳定" in clause, \
         "缺判据②：剧本分析得到、属于全局且稳定的制作约束"
-    assert "逐条细节" in clause and "故事板元素" in clause, \
-        "缺判据③：只影响某镜头/某角色的逐条细节归故事板"
+    assert "故事板元素" in clause and "不写规格" in clause, \
+        "缺判据③：清单/逐条明细归故事板元素"
     assert "未确认" in clause and "待定" in clause, \
         "缺判据④：未确认的创作选择不得写成既定规格"
 
@@ -76,6 +76,32 @@ def test_spec_clause_carries_narrative_direction():
     """判据②的举例含「角色方向」——对齐 flova 规格文档的实际字段名。"""
     assert "角色方向" in _spec_clause(), \
         "判据②缺「角色方向」举例（flova 规格文档字段名，实体细节落盘的直接证据）"
+
+
+def test_spec_clause_criterion_two_is_policy_level():
+    """判据②举例收窄到**方针级**（2026-09-21 批D，事故 5555/Q7）。
+
+    旧举例含「叙事驱动、核心视觉母题」——5555 实证模型据此把整个分析叙事
+    搬进规格（「叙事结构」整节：3 场次逐行 + 8 角色逐名 + 道具 8.5×5.2cm +
+    25–31 镜，716 字 vs flova 460 字）。收窄为方针级表述后，判据②只说
+    "写成方针级一两句"，不再给出会被误读成"章节清单"的词。
+    """
+    clause = _spec_clause()
+    assert "方针级" in clause, "判据②缺「方针级」限定（防回潮成实体明细入口）"
+    for leak in ("核心视觉母题", "叙事结构"):
+        assert leak not in clause, (
+            f"判据②回潮成会被读成实体清单的举例「{leak}」——5555/Q7 已收窄")
+
+
+def test_spec_clause_criterion_three_names_lists():
+    """判据③必须**点名清单类**（2026-09-21 批D，事故 5555/Q7）。
+
+    旧措辞只有「逐条细节」——模型不认为「8 个角色**名单**」是"逐条细节"，
+    它读成"范围"，于是整节写进规格。点名场次/角色/道具/镜头数后才无歧义。
+    """
+    clause = _spec_clause()
+    for item in ("场次清单", "角色名单", "道具清单", "镜头数预估"):
+        assert item in clause, f"判据③未点名清单类「{item}」（5555/Q7 直接病根）"
 
 
 def test_spec_clause_has_no_fixed_dimension_ceiling():
