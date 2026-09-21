@@ -157,6 +157,29 @@ def test_batching_discipline_actually_reachable_by_child():
     assert "3~5" in task
 
 
+def test_subagent_task_text_carries_no_parent_side_antiexample_list():
+    """子级任务文本不得夹带**父侧反例清单**（2026-09-21 批E，事故 4444/Q2①）。
+
+    4444 实证：模型在思考里说「章节里会说明**是否建卡**等」，而 `建卡` 在
+    `data/skills/*/SKILL.md` 零命中——该词是平台反例清单喂进父级上下文的，
+    不是章节里读到的。
+
+    ⚠️ 边界（本钉只锁父侧反例短语，不锁裸名词）：`DELEGATION_CONTEXT` 里的
+    「大批量登记（建组/建卡/写提示词）分批做」是批A/A3 **刻意**补的分批纪律，
+    描述子代理**自己要做的事**（5555/Q8 的直接修复），删除它会回归。
+    两者的区别是**句式**：反例清单用「要不要…／…怎么写／交不交…」这种
+    揣测章节内容的疑问式列举；分批纪律是陈述式子代理行动指引。
+    """
+    task = sub.build_subagent_task("登记关键元素", stage=_STAGE)
+    for leak in ("要不要建卡", "字段怎么写", "交不交提示词", "几个场景"):
+        assert leak not in task, (
+            f"子级任务文本夹带父侧反例短语「{leak}」——会被模型当成事实复述"
+            f"（4444/Q2①）")
+    # 反向确认：分批纪律本身仍在（防本钉误伤批A/A3 的修复）
+    assert "分批" in task and "3~5" in task, \
+        "分批纪律被误删——本钉只应排除父侧反例清单，不得动批A 的分批契约"
+
+
 # ---------- A4：委派阶段回填父级阶段标签（Q3） ----------
 
 def test_stage_display_label_maps_enum_to_label():

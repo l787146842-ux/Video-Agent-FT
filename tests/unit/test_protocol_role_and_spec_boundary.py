@@ -179,22 +179,67 @@ def _policy() -> str:
 
 
 def test_task_brief_is_two_parts():
-    """任务书两段式：①目标（执行所选 Skill 本章节）＋②尚未落入规格文档的新决定。
+    """任务书两段式：①目标（执行所选 Skill 本章节）＋②只有子代理用得上、它读不到的东西。
 
     2026-09-21 批C（事故 5555/Q5）由三段改两段：**删「②下游用途」**。
     删除依据（5555 实跑取证）：子代理 `history=[]`、阶段章节已由
     `planner._launch_subagent` 全量注入——它**真的不需要**知道下游用途；
     而该段实测被用作复述章节内容的入口（任务书①把 `SKILL.md:16` 原文
     「提取角色、场景、关键道具，识别剧本类型」整句抄了一遍）。
+    2026-09-21 批E（事故 4444/Q5）：段②判据口径由「尚未落入规格文档的新决定」
+    改为「只有这个子代理用得上、而它自己读不到的东西」——旧口径相对
+    **规格文档这一个载体**定义，导致规格尚未创建时按字面**必须**把语言偏好
+    写进剧本分析任务书（剧本分析子代理用它不着）。
     """
     policy = _policy()
     assert "任务书只写两段" in policy, "缺任务书两段式契约"
     assert "一句目标" in policy, "缺第①段：一句目标"
-    assert "尚未落入规格文档的新决定" in policy, \
-        "缺第②段：尚未落入规格文档的新决定"
+    assert "用得上" in policy and "读不到" in policy, \
+        "缺第②段新口径：只有这个子代理用得上、而它自己读不到的东西"
     # 用户 #6 已否决的「框太死」方向：不得回退成复述既有内容
     assert "子代理自己读得到" in policy, \
         "缺「子代理自己读得到」的正向读取授权认知（用户 #6）"
+
+
+def test_task_brief_drops_stale_spec_relative_criterion():
+    """反向钉：段②不得回潮成「尚未落入规格文档的新决定」（4444/Q5 直接病根）。
+
+    旧口径把判据锚在**规格文档**上，与「子代理要不要」无关：4444 派
+    script_analyze 时规格尚未创建，语言偏好按字面必须附上，模型只能照章办事
+    （其思考原文「委派任务书里告诉子代理这个新决定」）。
+    """
+    policy = _policy()
+    assert "尚未落入规格文档的新决定" not in policy, (
+        "段②回潮成「尚未落入规格文档的新决定」——该口径相对规格文档定义，"
+        "与子代理相关性无关（4444/Q5）")
+    assert "没有就整段不写" in policy, (
+        "缺「没有就整段不写」——该槽位若是必须存在的，模型只能写占位句填坑")
+
+
+def test_task_brief_bans_placeholder_sentence():
+    """段②禁止占位句（4444/Q6 实证）。
+
+    模型自己决定过「只写①」（seq50 思考原文），最终仍写下
+    「本阶段无新增未落盘决定。」——因为段② 是一个必须交代的槽位。
+    """
+    policy = _policy()
+    assert "占位句" in policy, "缺「不要写占位句填坑」"
+
+
+def test_task_brief_bans_restating_spec_params_and_downstream():
+    """段①不得复述规格参数现值/源文档出处/章节自带的下游依赖（4444/Q6）。
+
+    实跑取证（key_elements 任务书原文）：「制片规格已写入「制片规格.md」
+    （16:9、约 4 分钟、电影级写实科幻冷调、中文台词+中文提示词、角色按原著
+    气质写实设计），剧本为已上传的《三体简短版.md》」——括号内是规格内容
+    第二份复述；同句还有「供后续镜头设计与设定图生成使用」= 批C 已删的
+    「下游用途」换了位置回来（Skill 自己的依赖图仍在供料，批E 只能从
+    判据侧收窄）。
+    """
+    policy = _policy()
+    assert "规格参数的现值与源文档出处都不必转告" in policy, \
+        "缺「不复述规格参数现值/源文档出处」"
+    assert "下游依赖关系" in policy, "缺「不必交代章节自带的下游依赖关系」"
 
 
 def test_task_brief_drops_downstream_use():
@@ -208,6 +253,23 @@ def test_task_brief_drops_downstream_use():
         "回潮成三段式「下游用途」——5555/Q5 已删除（子代理不需要知道，"
         "且该段被用作复述章节内容的入口）")
     assert "任务书三段" not in policy, "回潮成三段式表述"
+
+
+def test_task_brief_examples_do_not_leak_internal_terms():
+    """反向钉：反例清单不得含系统内部机制词（4444/Q2① 直接病根）。
+
+    批2/批C 为表达「不要复述什么」，在括注里列了四个内部机制词
+    （范围几个角色/几个场景、字段怎么写、**要不要建卡**、交不交提示词）。
+    4444 实证模型抓的正是其中之一：「章节里会说明**是否建卡**等」
+    （conv-main seq25）——而 `建卡` 在 `data/skills/*/SKILL.md` **零命中**，
+    说明该词是平台自己喂进去的，不是它从章节里读到的。
+    改法：删举例、只留因果——不靠穷举反例表达「别复述」。
+    """
+    policy = _policy()
+    for leak in ("建卡", "字段怎么写", "交不交提示词", "几个场景"):
+        assert leak not in policy, (
+            f"反例清单回潮内部机制词「{leak}」——平台词会被模型当成事实复述"
+            f"（4444/Q2①）")
 
 
 def test_task_brief_points_at_section_as_the_basis():
@@ -251,16 +313,37 @@ def test_task_field_description_matches_policy():
     """工具 schema 的 task 描述与策略段同向（不产生第二份契约）。
 
     工具描述只留可照抄的字段用法，两段式完整表述与"为什么"唯一源 = SUBAGENT_POLICY。
+    2026-09-21 批E（事故 4444/Q5）同批改口径：描述不得再复述「尚未落入规格
+    文档的新决定」（旧口径锚在规格文档上，见 test_task_brief_drops_stale_...）。
     """
     from src.video_agent.tools.document_tools import RunSubagentInput
 
     desc = RunSubagentInput.model_fields["task"].description
-    assert "①一句目标" in desc and "②尚未落入规格文档的新决定" in desc, \
-        "task 字段描述未承载两段式（与策略段不同向）"
+    assert "①一句目标" in desc, "task 字段描述未承载①段（与策略段不同向）"
     assert "下游用途" not in desc, "task 字段回潮成三段式（含下游用途）"
+    assert "尚未落入规格文档的新决定" not in desc, \
+        "task 字段回潮成旧口径「尚未落入规格文档的新决定」（4444/Q5）"
+    assert "用得上" in desc and "读不到" in desc, "task 字段缺②段新口径"
     assert "执行所选 Skill 的本阶段章节" in desc, \
         "task 字段缺「执行依据＝所选 Skill 本章节」"
     assert "不用复述" in desc, "task 字段缺「既有内容不用复述」事实"
+
+
+# ---------- ④ 规格落盘时机（事故 4444/Q2②，批E） ----------
+
+def test_spec_clause_declares_when_to_write():
+    """规格条目须声明**落盘时机**（4444/Q2②：规则留了时机空档）。
+
+    4444 实证：模型逐条过了四条判据、结论全对，但在「规格文档还没建」上
+    反复权衡（conv-main seq47/49/50）——因为旧条款只说「必须落盘…未落盘的
+    细节对下游不可见」（一条带因果的硬职责），**未声明相对 Skill 规格阶段的
+    时机**。模型自行解开（「但阶段2才写规格…我可以先记着」），属规则空档。
+    """
+    clause = _spec_clause()
+    assert "落盘时机" in clause, "缺规格落盘时机声明（4444/Q2②）"
+    assert "不必提前创建" in clause, \
+        "缺「不必提前创建」——不写则模型会在更早阶段抢建规格文档"
+    assert "到规格阶段一并写入" in clause, "缺时机落点（规格阶段一并写入）"
 
 
 # ---------- ④ run_subagent.stage 枚举可见（事故 2222/Q3b，批3） ----------
