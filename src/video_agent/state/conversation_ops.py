@@ -462,6 +462,9 @@ def build_chat_entry(
     video_items: Optional[List[Dict[str, Any]]] = None,
     suggested_actions: Optional[List[Dict[str, Any]]] = None,
     reasoning_content: str = "",
+    pause_header: str = "",
+    pause_detail: str = "",
+    pause_multi_select: bool = False,
 ) -> Dict[str, Any]:
     """构建单条聊天记录条目（纯函数，不落盘）。
 
@@ -513,6 +516,14 @@ def build_chat_entry(
         entry["turnId"] = turn_id
     if pause_id:
         entry["pauseId"] = pause_id
+    # 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：问题级字段。
+    # 非空/非缺省才落字段（缺省不产生空键，防类型退化）。
+    if str(pause_header or "").strip():
+        entry["pauseHeader"] = str(pause_header).strip()
+    if str(pause_detail or "").strip():
+        entry["pauseDetail"] = str(pause_detail).strip()
+    if pause_multi_select:
+        entry["pauseMultiSelect"] = True
     if pause_answered:
         entry["pauseAnsweredId"] = str(pause_answered.get("pause_id") or "")
         entry["pauseAnsweredValue"] = str(pause_answered.get("value") or "")
@@ -556,6 +567,9 @@ def add_chat_message(
     video_items: Optional[List[Dict[str, Any]]] = None,
     suggested_actions: Optional[List[Dict[str, Any]]] = None,
     reasoning_content: str = "",
+    pause_header: str = "",
+    pause_detail: str = "",
+    pause_multi_select: bool = False,
 ) -> None:
     """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，
     防止状态文件无上限增长。写入目标：绑定会话优先、无绑定回落活跃对话
@@ -567,6 +581,9 @@ def add_chat_message(
         skill_blocks, confirm_options, turn_id, error_detail, pause_id,
         pause_answered, kind, video_items, suggested_actions,
         reasoning_content=reasoning_content,
+        pause_header=pause_header,
+        pause_detail=pause_detail,
+        pause_multi_select=pause_multi_select,
     )
     msgs.append(entry)
     if len(msgs) > CHAT_HISTORY_LIMIT:

@@ -327,13 +327,13 @@ def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "请审阅规格"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow, _pause_id = asyncio.run(
+    res = asyncio.run(
         # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
-    assert docs_written == ["制片规格.md"]
-    # v2 批4：卡问句系统组装（不没收暂停），模型原文进正文通道
-    assert "请过目以上成果" in confirmation
-    assert _overflow == "请审阅规格"
+    assert res.docs_written == ["制片规格.md"]
+    # v2 批4：卡问句不入正文（不没收暂停），模型原文进正文通道
+    assert "请过目以上成果" in res.confirmation
+    assert res.pause_overflow == "请审阅规格"
 
 
 def test_fc_non_spec_doc_written_no_pause(monkeypatch):
@@ -346,12 +346,12 @@ def test_fc_non_spec_doc_written_no_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "大纲.md", "content": "正文"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow, _pause_id = asyncio.run(
+    res = asyncio.run(
         # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
-    assert applied == 1
-    assert docs_written == ["大纲.md"]
-    assert confirmation == ""
+    assert res.applied == 1
+    assert res.docs_written == ["大纲.md"]
+    assert res.confirmation == ""
 
 
 def test_options_group_passthrough_fc(monkeypatch):
@@ -620,9 +620,9 @@ def test_honest_pause_kept_when_generation_failed(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "提示词草案已写好，请审阅确认。"})}},
     ])
-    applied, confirmation, *_rest, _warns, _overflow, _pause_id = asyncio.run(runner.execute(response))
+    res = asyncio.run(runner.execute(response))
     # C1a 裁决后：诚实暂停不被没收，模型原文在确认/正文通道可见
-    assert "提示词草案已写好，请审阅确认。" in (confirmation + _overflow)
+    assert "提示词草案已写好，请审阅确认。" in (res.confirmation + res.pause_overflow)
 
 
 # ---------- 新建草稿按规格偏好补印供应商（防前端默认回填污染） ----------
@@ -815,10 +815,10 @@ def test_fc_idempotency_key_short_circuits_same_key(monkeypatch):
         _idem_add_draft_call("idem-2", "c3"),  # 异键照常执行
         _idem_add_draft_call("", "c4"),        # 空键直通过
     ])
-    applied, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = asyncio.run(
-        runner.execute(response, injected_skill=""))
-    assert applied == 4
+    res = asyncio.run(runner.execute(response, injected_skill=""))
+    assert res.applied == 4
     assert tm.calls == 3  # 同键第二次被短路，未真实执行
+    tool_results = res.tool_results
     assert tool_results[0]["data"] == {"seq": 1}
     assert tool_results[1]["data"] == {"seq": 1}  # 命中返回首次结果
     assert tool_results[2]["data"] == {"seq": 2}

@@ -54,6 +54,11 @@ export function buildDoneMessage(
       : undefined),
     // 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携，对勾不再靠文本反推）
     pauseId: payload.pause_id || undefined,
+    // 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：问题级字段
+    // 非空/非缺省才落（缺省不产生空键，防类型退化）
+    pauseHeader: payload.pause_header || undefined,
+    pauseDetail: payload.pause_detail || undefined,
+    pauseMultiSelect: payload.pause_multi_select || undefined,
     // E1：轮末快照指针 live 落账（done 同轮下发，当前会话即可挂回档动作，无需刷新）
     snapshotId: payload.snapshot_id || undefined,
     // 结构化决策表单（workflow 投影 pending_decision_payload，schema→表单数据驱动；与确认卡同源同消息，不另起卡片）

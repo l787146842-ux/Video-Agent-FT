@@ -14,10 +14,18 @@ const SINGLE_KEY = '__single__';
  * 组容器，按三段式问卷卡组织（批次C）：① 题面（msg.confirm）独立成行；② 选项区
  * 紧随（带 group → 分页向导；无 group → 单选卡片；厂商/模型 → 下拉框 888 反馈）；
  * ③ 「其它（自定义输入）」兜底段组内展开输入框直接发送；无选项时渲染「确认，继续 / 我要调整」按钮。
+ *
+ * 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：题面之上可再有
+ * 短标题（pauseHeader）+ 辅助说明（pauseDetail，**不变成可选项**）。
+ * 问句本身仍走 msg.confirm（后端 question 字段落此）。
  */
 export function ConfirmActions(props: { message: ChatMessage }) {
   const msg = () => props.message;
   const options = () => (msg().confirmOptions || []) as ConfirmOptionItem[];
+  /** 问题级短标题（dsh header；缺省不渲染，防空行） */
+  const header = () => (msg().pauseHeader || '').trim();
+  /** 问题级辅助说明（dsh detail；**只作说明文本，不参与选项**） */
+  const detail = () => (msg().pauseDetail || '').trim();
 
   const focusChatInput = () => document.getElementById('chatInputTextarea')?.focus();
 
@@ -107,6 +115,18 @@ export function ConfirmActions(props: { message: ChatMessage }) {
     />
   );
 
+  /** 问题级短标题 + 辅助说明（dsh header/detail；两分支共用，缺省不渲染） */
+  const headerBlock = () => (
+    <>
+      <Show when={header()}>
+        <div class="confirm-wizard-header">{header()}</div>
+      </Show>
+      <Show when={detail()}>
+        <div class="confirm-wizard-detail">{detail()}</div>
+      </Show>
+    </>
+  );
+
   return (
     <>
       <Show when={options().length > 0}>
@@ -117,6 +137,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                厂商/模型维度直接下拉选择（888 反馈） */
             <div class="confirm-wizard">
               {/* 批次C 三段式①题面独立成行（StageCard 判重同步调位防双显） */}
+              {headerBlock()}
               <Show when={msg().confirm}><div class="confirm-wizard-question">{msg().confirm}</div></Show>
               <Show
                 when={singleDim()}
@@ -153,6 +174,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
         >
           <div class="confirm-wizard">
             {/* 批次C 三段式①总题面独立成行；与页内子题面（组标题）同句时隐去防双显 */}
+            {headerBlock()}
             <Show
               when={msg().confirm && (msg().confirm || '').trim() !== (curGroup().title || '').trim()}
             ><div class="confirm-wizard-question">{msg().confirm}</div></Show>

@@ -268,6 +268,12 @@ export interface ChatMessage {
   suggestedActions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
   /** 暂停卡结构化标识（后端三个 confirm 产生源统一签发，随 done payload 下发） */
   pauseId?: string;
+  /** 问题短标题（2026-09-21 批B，对齐 dsh ask_user_question 的 header） */
+  pauseHeader?: string;
+  /** 问题辅助说明（渲染为说明文本，**不变成可选项**；对齐 dsh 的 detail） */
+  pauseDetail?: string;
+  /** 该问题是否允许多选（缺省 false=单选；对齐 dsh 的 multi_select） */
+  pauseMultiSelect?: boolean;
   /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
   pauseAnsweredId?: string;
   /** E1 消息级快照指针（后端轮末打快照挂最后一条 agent 消息；

@@ -210,9 +210,10 @@ async def test_read_skill_always_dispatched(monkeypatch):
                          "function": {"name": "read_skill", "arguments": '{"name": "分镜师"}'}}],
         )
         # 已注入同名 Skill → 仍真读（短路已废）
-        applied, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = await planner._execute_fc_tools(
+        _res = await planner._execute_fc_tools(
             response, injected_skill="分镜师"
         )
+        tool_results = _res.tool_results
         assert invoked == ["分镜师"], "已注入同名 Skill 也必须派发真读"
         assert tool_results[0]["ok"] and not tool_results[0]["data"].get("already_injected")
 
@@ -263,8 +264,8 @@ async def test_read_skill_non_numeric_start_no_batch_abort():
                          "function": {"name": "read_skill",
                                       "arguments": '{"name": "分镜师", "start": "开头"}'}}],
         )
-        _applied, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = \
-            await planner._execute_fc_tools(resp, injected_skill="分镜师")
+        _res2 = await planner._execute_fc_tools(resp, injected_skill="分镜师")
+        tool_results = _res2.tool_results
         assert invoked == [("分镜师", "开头")], "非数字 start 不得中断整批，调用照常派发"
         assert tool_results[0]["ok"]
 

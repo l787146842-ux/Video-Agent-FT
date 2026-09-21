@@ -81,6 +81,11 @@ class FCExecuteResult(NamedTuple):
     warnings: List[str]
     pause_overflow: str
     pause_id: str
+    # 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：问题级字段。
+    # 尾部新增，位置解包兼容契约不变（同 pause_id 先例）。
+    pause_header: str = ""
+    pause_detail: str = ""
+    pause_multi_select: bool = False
 
 
 @dataclass
@@ -120,6 +125,10 @@ class _BatchState:
     pause_overflow: str = ""
     pause_fallback_message: str = ""
     pause_break: bool = False
+    # 2026-09-21 批B（事故 5555/Q4）：问题级字段（对齐 dsh ask_user_question）
+    pause_header: str = ""
+    pause_detail: str = ""
+    pause_multi_select: bool = False
 
     batch_tool_names: set = field(default_factory=set)
     last_stage_label: str = ""
@@ -606,14 +615,29 @@ class FCToolRunner:
                     "scope 子对话内 workflow_pause 自动放行（不发起确认，直接执行）")
             elif name == "workflow_pause":
                 st.paused_this_batch = True
-                # workflow_pause 只提交审批事实——卡问句系统
-                # 组装，模型原文一律进正文通道（无阈值补丁）
-                st.confirmation, st.pause_overflow = pause_composer.split_pause_channels(
-                    args.get("message", ""), st.last_stage_label)
-                if st.pause_overflow:
+                # 2026-09-21 批B（事故 5555/Q4，翻案 2026-08-31「卡问句系统
+                # 组装」裁决）：问句改由模型撰写（对齐 dsh ask_user_question），
+                # 模型 message 原文仍进正文通道；未写 question 时回落系统模板
+                # （不静默丢弃——2026-09-12 静默剥离事故红线）。
+                _card = pause_composer.compose_pause_card(
+                    model_question=args.get("question", ""),
+                    model_message=args.get("message", ""),
+                    stage_label=st.last_stage_label,
+                    header=args.get("header", ""),
+                    detail=args.get("detail", ""),
+                    multi_select=args.get("multi_select", False),
+                )
+                st.confirmation = _card.question
+                st.pause_overflow = _card.overflow
+                st.pause_header = _card.header
+                st.pause_detail = _card.detail
+                st.pause_multi_select = _card.multi_select
+                if _card.overflow:
                     logger.info(
-                        "[FlowGate] pause 卡问句=系统模板，模型原文（{}字）进正文通道",
-                        len(st.pause_overflow),
+                        "[FlowGate] pause 卡问句={}，模型原文（{}字）进正文通道",
+                        "模型撰写" if str(args.get("question") or "").strip()
+                        else "系统模板",
+                        len(_card.overflow),
                     )
                 # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页选择）
                 opts = args.get("options")
@@ -1066,6 +1090,9 @@ class FCToolRunner:
             warnings=list(self.gate_warnings),
             pause_overflow=st.pause_overflow,
             pause_id=pause_id_issued,
+            pause_header=st.pause_header,
+            pause_detail=st.pause_detail,
+            pause_multi_select=st.pause_multi_select,
         )
 
 

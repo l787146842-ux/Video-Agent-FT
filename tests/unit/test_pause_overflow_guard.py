@@ -1,9 +1,18 @@
 # -*- coding: utf-8 -*-
-"""三通道分离 B 回归（v2 批4）：workflow_pause 只提交审批事实。
+"""暂停卡两通道契约回归（v2 批4 立，2026-09-21 批B 改写）。
 
-契约：确认通道 = 系统组装问句（带真实阶段标签）；模型原文一律进
-正文通道（pause_overflow），无阈值补丁——通道分离是契约不是压缩。
-不没收暂停与选项。
+**契约变更（事故 5555/Q4，用户裁决「照搬 dsh」，翻案 2026-08-31「卡问句系统
+组装」）**：
+- 旧：卡问句恒为系统模板；模型 message 一律进正文通道（模型永不撰写问句）。
+- 新：**模型撰写 question**（对齐 dsh `ask_user_question`）当卡问句；
+  模型 message 仍进正文通道；模型**未写** question 时**回落系统模板**
+  （「「阶段名」已完成，请过目以上成果并选择下一步。」）。
+
+两条不变的红线（本文件继续钉死）：
+① **不静默丢弃**——`fc_tool_runner` 记载 2026-09-12 曾有「静默剥离字段造成
+   假成功空提示词卡」的闸机被用户裁决删除；本改动同理：宁可回落模板，
+   不可丢空卡。模型没写 question 时卡上必须有问句。
+② **正文通道不没收**——模型 message 原文照旧进正文，不被吞。
 """
 import asyncio
 import json
@@ -31,43 +40,83 @@ def _fc(*calls):
     ])
 
 
-def _unpack(res):
-    (applied, confirmation, _urls, _inserts, _log, opts,
-     _tr, _docs, _warn, overflow, _pause_id) = res
-    return applied, confirmation, opts, overflow
-
-
-def test_model_dump_goes_to_body_channel(monkeypatch):
-    """模型 dump 成果 → 卡问句系统组装，原文进第 10 元组（正文通道）。"""
+def _run(*calls, monkeypatch=None):
     runner = FCToolRunner(tool_manager=_TM())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    if monkeypatch is not None:
+        monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    return asyncio.run(runner.execute(_fc(*calls)))
+
+
+def test_model_message_goes_to_body_channel(monkeypatch):
+    """模型 message 原文进正文通道（不被没收、不被塞进问句行）。"""
     long_msg = "✅ 阶段一「剧本分析」已完成。" + "结构化要点内容。" * 30
-    _applied, confirmation, _opts, overflow = _unpack(asyncio.run(
-        runner.execute(_fc(("workflow_pause", {"message": long_msg})))))
-    assert overflow == long_msg
-    assert "已完成" in confirmation and "请过目以上成果" in confirmation
-    assert long_msg not in confirmation, "模型原文不得进确认通道"
+    res = _run(("workflow_pause", {"message": long_msg}), monkeypatch=monkeypatch)
+    assert res.pause_overflow == long_msg, "模型 message 原文必须进正文通道"
+    assert long_msg not in res.confirmation, "模型 message 不得进确认通道"
+
+
+def test_model_question_becomes_card_question(monkeypatch):
+    """2026-09-21 批B：模型撰写 question → 它就是卡问句（对齐 dsh）。"""
+    res = _run(
+        ("workflow_pause", {
+            "question": "角色三视图的卡由哪个阶段构建？",
+            "message": "本轮已完成关键元素拆分。",
+        }),
+        monkeypatch=monkeypatch)
+    assert res.confirmation == "角色三视图的卡由哪个阶段构建？", \
+        "模型撰写的 question 未成为卡问句（批B 契约）"
+    assert res.pause_overflow == "本轮已完成关键元素拆分。"
+    assert "请过目以上成果" not in res.confirmation, \
+        "模型写了 question 时不应再回落系统模板"
+
+
+def test_missing_question_falls_back_not_silently_dropped(monkeypatch):
+    """红线：模型没写 question → 回落系统模板，**绝不留空卡**。
+
+    对齐 2026-09-12 静默剥离事故的教训：宁可回落，不可静默丢。
+    """
+    res = _run(("workflow_pause", {"message": "请确认"}), monkeypatch=monkeypatch)
+    assert res.confirmation, "无 question 时卡问句不得为空（静默丢弃红线）"
+    assert "请过目以上成果" in res.confirmation, "缺系统模板回落"
+    assert res.pause_overflow == "请确认", "model message 仍进正文通道"
+
+
+def test_empty_message_still_yields_question(monkeypatch):
+    """空 message + 空 question → 仍有系统模板问句（审批事实语义），overflow 空串。"""
+    res = _run(("workflow_pause", {"message": ""}), monkeypatch=monkeypatch)
+    assert res.pause_overflow == ""
+    assert "请过目以上成果" in res.confirmation
 
 
 def test_system_question_carries_stage_label(monkeypatch):
-    """同批先跑 script_analyze → 系统问句带真实阶段标签「剧本分析」。"""
-    runner = FCToolRunner(tool_manager=_TM())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    """回落模板带真实阶段标签（同批先跑 script_analyze → 「剧本分析」）。"""
     long_msg = "成果dump。" * 60
-    _applied, confirmation, _opts, overflow = _unpack(asyncio.run(
-        runner.execute(_fc(
-            ("script_analyze", {"skill_name": "任意"}),
-            ("workflow_pause", {"message": long_msg}),
-        ))))
-    assert "「剧本分析」已完成" in confirmation
-    assert overflow == long_msg
+    res = _run(
+        ("script_analyze", {"skill_name": "任意"}),
+        ("workflow_pause", {"message": long_msg}),
+        monkeypatch=monkeypatch)
+    assert "「剧本分析」已完成" in res.confirmation
+    assert res.pause_overflow == long_msg
 
 
-def test_empty_model_message_still_system_question(monkeypatch):
-    """v2：无模型原文也发系统问句（审批事实语义），overflow 为空串。"""
-    runner = FCToolRunner(tool_manager=_TM())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    _applied, confirmation, _opts, overflow = _unpack(asyncio.run(
-        runner.execute(_fc(("workflow_pause", {"message": ""})))))
-    assert overflow == ""
-    assert "请过目以上成果" in confirmation
+def test_question_level_fields_propagate(monkeypatch):
+    """2026-09-21 批B：header / detail / multi_select 随结果上抛（对齐 dsh）。"""
+    res = _run(
+        ("workflow_pause", {
+            "question": "选哪个方向？",
+            "header": "选择模式",
+            "detail": "这会决定后续所有镜头的基调。",
+            "multi_select": True,
+        }),
+        monkeypatch=monkeypatch)
+    assert res.pause_header == "选择模式"
+    assert res.pause_detail == "这会决定后续所有镜头的基调。"
+    assert res.pause_multi_select is True
+
+
+def test_defaults_for_question_level_fields(monkeypatch):
+    """未提供问题级字段 → 空/False（缺省不伪造，前端按缺省渲染）。"""
+    res = _run(("workflow_pause", {"message": "确认"}), monkeypatch=monkeypatch)
+    assert res.pause_header == ""
+    assert res.pause_detail == ""
+    assert res.pause_multi_select is False

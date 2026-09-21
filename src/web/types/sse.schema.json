@@ -938,6 +938,21 @@
             "title": "Pause Kind",
             "type": "string"
           },
+          "pause_header": {
+            "default": "",
+            "title": "Pause Header",
+            "type": "string"
+          },
+          "pause_detail": {
+            "default": "",
+            "title": "Pause Detail",
+            "type": "string"
+          },
+          "pause_multi_select": {
+            "default": false,
+            "title": "Pause Multi Select",
+            "type": "boolean"
+          },
           "snapshot_id": {
             "default": "",
             "title": "Snapshot Id",
@@ -1170,6 +1185,21 @@
                 "default": "",
                 "title": "Pause Kind",
                 "type": "string"
+              },
+              "pause_header": {
+                "default": "",
+                "title": "Pause Header",
+                "type": "string"
+              },
+              "pause_detail": {
+                "default": "",
+                "title": "Pause Detail",
+                "type": "string"
+              },
+              "pause_multi_select": {
+                "default": false,
+                "title": "Pause Multi Select",
+                "type": "boolean"
               },
               "snapshot_id": {
                 "default": "",

@@ -232,6 +232,12 @@ class SseDonePayload(BaseModel):
     confirmation_options: List[SseDoneConfirmationOption] = Field(default_factory=list)
     suggested_actions: List[SseDoneSuggestedAction] = Field(default_factory=list)
     pause_kind: str = ""
+    # 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：问题级字段。
+    # header = 短标题（如「确认」）；detail = 辅助说明（渲染时**不变成选项标签**）；
+    # multi_select = 用户是否可多选。
+    pause_header: str = ""
+    pause_detail: str = ""
+    pause_multi_select: bool = False
     # E1 消息级快照指针：轮末快照挂最后一条 agent 消息后同轮下发，
     # 前端 live 消息凭此挂「回到此刻/从此刻新开项目」（刷新前可见）
     snapshot_id: str = ""

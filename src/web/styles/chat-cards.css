@@ -23,6 +23,10 @@
      边框/圆角/底色由下方「确认卡片配色」亮橙族统一接管，此处只留布局档 */
   .confirm-wizard { margin-top: 8px; padding: 10px 12px; }
   .confirm-wizard-question { font-size: var(--font-md); font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+  /* 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：
+     问题短标题（header）+ 辅助说明（detail，只作说明不参与选项） */
+  .confirm-wizard-header { font-size: var(--font-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
+  .confirm-wizard-detail { font-size: var(--font-sm); line-height: 1.6; color: var(--text-muted); margin-bottom: 8px; }
   .confirm-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
   .confirm-wizard-actions { display: flex; align-items: center; gap: 6px; }
   .confirm-wizard-hint { font-size: var(--font-xs); color: var(--text-dim); }

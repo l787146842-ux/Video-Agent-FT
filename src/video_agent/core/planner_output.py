@@ -133,4 +133,14 @@ def assemble_response(
     _reasoning = str(getattr(loop_result, "reasoning_content", "") or "")
     if _reasoning:
         _factory_kwargs["reasoning_content"] = _reasoning
+    # 2026-09-21 批B（事故 5555/Q4）：问题级字段非空/非缺省才透传
+    # （测试 stub factory 兼容——旧桩不接受这些关键字）
+    _header = str(getattr(loop_result, "pause_header", "") or "")
+    if _header:
+        _factory_kwargs["pause_header"] = _header
+    _detail = str(getattr(loop_result, "pause_detail", "") or "")
+    if _detail:
+        _factory_kwargs["pause_detail"] = _detail
+    if getattr(loop_result, "pause_multi_select", False):
+        _factory_kwargs["pause_multi_select"] = True
     return response_factory(**_factory_kwargs)

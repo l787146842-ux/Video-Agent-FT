@@ -662,6 +662,11 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                     suggested_actions=ctx.final_payload.get("suggested_actions") or None,
                     # 推理模型思考内容（五项修法批 4）：payload 仅在回传闸门开时携带
                     reasoning_content=str(ctx.final_payload.get("reasoning_content") or ""),
+                    # 2026-09-21 批B（事故 5555/Q4）：问题级字段随历史持久化
+                    # （刷新后暂停卡标题/说明/多选不丢）
+                    pause_header=str(ctx.final_payload.get("pause_header") or ""),
+                    pause_detail=str(ctx.final_payload.get("pause_detail") or ""),
+                    pause_multi_select=bool(ctx.final_payload.get("pause_multi_select")),
                 )
             # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
             for doc_name in (ctx.final_payload.get("documents_written") or []):
@@ -937,6 +942,12 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                     pause_id=result.pause_id,
                     kind=result.pause_kind or "",
                     suggested_actions=result.suggested_actions or None,
+                    # 2026-09-21 批B（事故 5555/Q4）：问题级字段（非流式同流式契约）。
+                    # getattr 取值：测试桩 SimpleNamespace 可能不带这些字段
+                    # （与 planner_output 的同款兼容口径一致）。
+                    pause_header=str(getattr(result, "pause_header", "") or ""),
+                    pause_detail=str(getattr(result, "pause_detail", "") or ""),
+                    pause_multi_select=bool(getattr(result, "pause_multi_select", False)),
                 )
             if result.image_urls:
                 svc.add_chat_message("agent", "", image_urls=result.image_urls, turn_id=ns_turn_id)

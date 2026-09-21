@@ -118,8 +118,22 @@ class GenerateImageInput(StrictToolInput):
 
 
 class WorkflowPauseInput(BaseModel):
+    question: str = Field(
+        "",
+        description="要向用户提出的问题本身（确认卡标题行的问句，对齐 dsh ask_user_question）。"
+        "写成用户能直接读懂的疑问句，如「角色三视图的卡应由哪个阶段构建？」。"
+        "留空则回落系统的阶段完成模板句。"
+    )
+    header: str = Field(
+        "", description="问题短标题（可选，如「确认」「选择模式」），显示在问句上方。")
+    detail: str = Field(
+        "",
+        description="随问题一起展示的补充说明（可选）。这段文本只作说明，不会变成可选项。"
+    )
+    multi_select: bool = Field(
+        False, description="用户是否可多选（默认 false=单选）。")
     message: str = Field(
-        "", description="给用户的补充说明（展示在正文；暂停卡上的问句由系统按阶段自动生成，无需撰写）。"
+        "", description="给用户的补充说明（展示在正文；确认卡的问句请用 question 字段）。"
         "阶段成果（剧本分析要点等）由系统自动渲染进正文，"
         "message 中不要复述成果内容，只写与本次确认相关的补充说明，保持简短。"
     )

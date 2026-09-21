@@ -604,5 +604,9 @@ class TurnExecutor:
                 # 问即停（决策史见 git tag adr-archive-20260901）：发行点签发的 pause_id 随 5 元组上抛，
                 # 供 agent_loop 带回前端与 _issue_pause 幂等登记
                 "pause_id": _confirm_holder.get("pause_id") or "",
+                # 2026-09-21 批B（事故 5555/Q4）：问题级字段随 5 元组上抛
+                "pause_header": _confirm_holder.get("header") or "",
+                "pause_detail": _confirm_holder.get("detail") or "",
+                "pause_multi_select": bool(_confirm_holder.get("multi_select")),
             })
         return content, finish, fc_applied, plan_ms, _extra

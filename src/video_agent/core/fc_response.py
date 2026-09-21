@@ -50,6 +50,11 @@ async def merge_fc_response(
          fc_tool_results, fc_docs_written, fc_warnings,
          fc_pause_overflow) = _fc_res[:10]
         fc_pause_id = str(_fc_res[10] or "") if len(_fc_res) > 10 else ""
+        # 2026-09-21 批B（事故 5555/Q4）：问题级字段（header/detail/multi_select），
+        # 尾部第 12-14 位，按长取值兼容旧测试桩元组
+        fc_pause_header = str(_fc_res[11] or "") if len(_fc_res) > 11 else ""
+        fc_pause_detail = str(_fc_res[12] or "") if len(_fc_res) > 12 else ""
+        fc_pause_multi = bool(_fc_res[13]) if len(_fc_res) > 13 else False
         if image_urls_collector is not None:
             image_urls_collector.extend(image_urls)
         if chat_inserts_collector is not None:
@@ -75,6 +80,10 @@ async def merge_fc_response(
                 # 问即停：发行点签发的 pause_id 随同上抛（幂等登记依据）
                 if fc_pause_id:
                     confirmation_collector["pause_id"] = fc_pause_id
+                # 2026-09-21 批B：问题级字段随同上抛（对齐 dsh ask_user_question）
+                confirmation_collector["header"] = fc_pause_header
+                confirmation_collector["detail"] = fc_pause_detail
+                confirmation_collector["multi_select"] = fc_pause_multi
             # 空正文兜底：FC 模型常只发暂停工具不带正文，确认文案作可见正文
             visible = (response.content or "").strip()
             if not visible:

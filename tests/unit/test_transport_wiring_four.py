@@ -65,16 +65,16 @@ def test_b0_f3_fc_gate_warnings_returned_in_tuple(monkeypatch):
     }
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
     runner = FCToolRunner(_StubToolManager())
-    applied, confirmation, _urls, _inserts, _log, _opts, _results, docs, warnings, _overflow, _pause_id = asyncio.run(
+    _res = asyncio.run(
         runner.execute(
             _fc_response("image_generate", {"target": "all_keyElements"}),
             injected_skill="测试技能",
         )
     )
-    assert applied == 0
-    assert confirmation == ""
-    assert docs == []
-    assert any("生成确认闸拦截" in w for w in warnings)
+    assert _res.applied == 0
+    assert _res.confirmation == ""
+    assert _res.docs_written == []
+    assert any("生成确认闸拦截" in w for w in _res.warnings)
 
 
 def test_b0_f3_fc_warnings_flow_into_handle_fc_response(monkeypatch):

@@ -788,6 +788,9 @@ export interface SseDonePayload {
   confirmation_options?: SseDoneConfirmationOption[];
   suggested_actions?: SseDoneSuggestedAction[];
   pause_kind?: string;
+  pause_header?: string;
+  pause_detail?: string;
+  pause_multi_select?: boolean;
   snapshot_id?: string;
   stopped?: boolean;
   stop_phase?: string;

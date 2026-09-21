@@ -239,6 +239,12 @@ class PlannerResponse:
     pause_id: str = ""
     # 暂停卡语义种类（remind/collect/stage_done/confirm，前端标题渲染唯一依据）
     pause_kind: str = ""
+    # 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：问题级字段。
+    # header = 短标题；detail = 辅助说明（不变成选项）；multi_select = 多选标志。
+    # 随 done payload 下发；缺省时前端按缺省渲染（空串/False）。
+    pause_header: str = ""
+    pause_detail: str = ""
+    pause_multi_select: bool = False
     # 正文来源（批 C3）：mechanical = 轮末机械占位替换产出；随 done payload
     # 下发，web 层落 kind="mechanical"，线程装载历史时压成固定短句
     text_source: str = ""
@@ -1047,6 +1053,10 @@ class Planner:
             "chat_inserts": result.chat_inserts,
             "action_log": result.action_log,
             "confirmation_options": result.confirmation_options,
+            # 2026-09-21 批B：问题级字段随 done payload 下发（对齐 dsh）
+            "pause_header": result.pause_header,
+            "pause_detail": result.pause_detail,
+            "pause_multi_select": result.pause_multi_select,
             "trace": result.trace,
             "suggested_actions": result.suggested_actions,
             "pause_kind": result.pause_kind,

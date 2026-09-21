@@ -157,6 +157,12 @@ class AgentLoopResult:
     stop_phase: str = ""
     # 问即停：发行点签发的暂停卡标识（随 done payload 下发）
     pause_id: str = ""
+    # 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）：
+    # 问题级字段——header 短标题 / detail 辅助说明（不变成选项）/
+    # multi_select 多选标志。未提供时为空/False（前端按缺省渲染）。
+    pause_header: str = ""
+    pause_detail: str = ""
+    pause_multi_select: bool = False
     # 推理模型思考内容（五项修法批 4）：本循环最后一轮的 reasoning（数据源
     # = llm_call 第 5 元组 extra.reasoning_content）。回传/持久化由
     # settings.llm_reasoning_passthrough 统一闸门控制，默认关不外流
@@ -566,6 +572,10 @@ async def run_agent_loop(
             fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
             fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
             fc_pause_id = str((fc_extra or {}).get("pause_id") or "")
+            # 2026-09-21 批B（事故 5555/Q4，对齐 dsh ask_user_question）
+            fc_pause_header = str((fc_extra or {}).get("pause_header") or "")
+            fc_pause_detail = str((fc_extra or {}).get("pause_detail") or "")
+            fc_pause_multi = bool((fc_extra or {}).get("pause_multi_select"))
             # 批 9 · 回合终止盲区修复：模型本轮是否发起过工具调用
             #（全拒收轮 fc_applied=0 但调用发生过，不能按纯文本轮收尾）
             had_fc_calls = _had_fc_calls
@@ -606,6 +616,10 @@ async def run_agent_loop(
                     result.confirmation = fc_confirmation
                     result.confirmation_options = fc_confirmation_options
                     result.pause_id = fc_pause_id
+                    # 2026-09-21 批B（事故 5555/Q4）：问题级字段随结果上抛
+                    result.pause_header = fc_pause_header
+                    result.pause_detail = fc_pause_detail
+                    result.pause_multi_select = fc_pause_multi
                     # 问即停：暂停发行成功 = 本轮结束、控制流冻结；
                     # 复用协作式停止通道标记（stop_phase="pause"，非用户停止；
                     # web 层对 pause 相位豁免，照常走成功路径发 done）
