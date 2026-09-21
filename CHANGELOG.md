@@ -36,6 +36,16 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批I 阶段展示标签口径统一：按英文 tag 直译（事故 4444/Q6①，**翻案** 同批方案待决-1 的 H-a）
+- **背景（用户两次纠正，均成立）**：①「所有都是一样的字段……本项目每个阶段都是同样的字段啊」——**实测确认**：Skill 用 `<tag>…</tag>` 字段分章节（`web/skill_docs.py:120-128` 正则取），`tool_sections(skill, "storyboard_key_elements")` **16/16 全部命中**，字段名完全一致；注入一直是对的。②「`storyboard_key_elements`，标签是这个，名字直接给中文翻译就行了啊。**『关键元素拆解』只是我平常跟 ai 沟通的术语**，结果就写上去了。」
+- **翻案说明**：同批方案 §五 待决-1 原采纳 H-a（不改），理由是「16 个 Skill 对同一阶段叫法各不相同，改了只服务 1/16」——**该前提是误读**：我把「该 tag 下正文的第一行文字」（如「设计 key_element」「全局风格锁定」「如何设计关键元素」）当成了「章节名」。前提推翻后，H-b 的正确形态（**直译**，非"改成某个 Skill 的措辞"）代价小、收益实在，故本批执行；H-c 仍不做（会翻案 2222/Q3b）。
+- **改动（四张表统一为英文 tag 直译）**：`registry.STAGE_LABELS`（关键元素拆解→**关键元素**、分镜设计→**分镜**、音频层设计→**音频层**、媒体提示词编写→**提示词编写**、时间线组装→**组装导出**）；`workflow_contract.NODE_TITLES`（同前三键对齐 + assembly）；`stage_probes.CANONICAL_STAGES`（assembly）；`src/web/lib/skill-structure.ts::SECTION_META`（分镜设计→**分镜**）。
+- **关键发现**：前端 `SECTION_META` **早就是直译口径**（关键元素/音频层/组装导出），**只有后端是异类**——同一阶段在前端卡片与后端下发上各叫一个名字。本次把后端对齐到前端已有口径。
+- **未动（刻意保留）**：`write_spec`/`review_*`/`ke_media`/`shot_media` 等**没有对应 Skill 章节字段**的平台节点保持原措辞（平台动作，直译无从谈起）。
+- **性质**：纯文案变更、**零逻辑风险**——标签值只参与显示与下发（`stage_label_for_tool` 仅查表返回），不参与任何判定。
+- **防回潮钉** = `tests/unit/test_stage_label_vocabulary.py`（7 条）：不得回潮自造术语 / 前后端对同源 tag 必须同名 / 同名键两条展示链一致 / 核心三键确为直译 / 平台自有节点未被扩大打击面。**突变验证已做**：注入回潮值「关键元素拆解」后 **4 条钉立即失败**（证明非空转测试）。
+- **验证**：`tests/unit` + `tests/integration` **2528 passed / 0 failed**（含 7 条新钉）；vitest **124 files / 1019 passed**；**acceptance 全量 18/18 PASS**；`npm run build` 通过（首屏 378.81 kB）；`data/skills` 零 diff。
+
 ### 2026-09-21 · 批G 子代理走流式通道 + 思考进 actor 卡（事故 4444/Q4）
 - **背景（4444 实跑取证，日志逐行）**：`15:27:59.4` 子代理启动 → `15:28:01.9` step1 成功（读素材 2.5s）→ `15:29:02.0` 504 重试 1/2（距上一步 **60.1s**）→ `15:30:03.1` 504 重试 2/2（**61.1s**）→ `15:31:05.2` `kind=upstream → escalate`、子代理 `turn/end reason=error`。**一张卡未建**——批A3 补的「每批 3~5 个」纪律**根本没轮到使用**，它死在第一次要出产出的那次调用上。
 - **根因**：`planner._launch_subagent` **不传 `stream_hook`** → `turn_executor.llm_call` 走 `else` 分支（非流式 `call_llm`）。**三条独立证据**：① 日志是 `[Retry] chat HTTP 504`（`retry.py:79`），而 `with_retry` **只被非流式 `chat()` 调用**（`openai_compat.py:553`），流式路径打的是 `[OpenAICompat] 流式瞬时故障`（`:707`）；② `data/sse_capture/` 在 4444 窗口只有 **5 个文件**，时间戳全对应主代理的流式调用，子代理（`1789975679+`）**零个**（落盘只在 `_stream_once` 内）；③ 子会话 `assistant/partial` **0 条** vs 主会话 **28 条**。

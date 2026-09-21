@@ -36,12 +36,16 @@ class StageSpec:
 
 CANONICAL_STAGES: Tuple[StageSpec, ...] = (
     StageSpec("analysis", "剧本分析", ("script_analyze",)),
+    # 2026-09-21 批I（事故 4444/Q6①）：标题口径对齐 registry.STAGE_LABELS 的
+    # 「英文 tag 直译」（组装导出 ← 时间线组装），同一阶段不在两条展示链上
+    # 各叫一个名字。`structure` 是平台自己的合并节点（无同名 Skill 章节），
+    # 保持「故事板拆解」（它是"关键元素+分镜+音频"三章的合称）。
     StageSpec("structure", "故事板拆解",
               ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")),
     StageSpec("ke_media", "关键元素设定图", (), deterministic=False),
     StageSpec("shot_media", "逐镜视频生成", (), deterministic=False),
     StageSpec("audio_assets", "音频资产", ("audio_generate",)),
-    StageSpec("assembly", "时间线组装", ("video_assembler",)),
+    StageSpec("assembly", "组装导出", ("video_assembler",)),
 )
 
 

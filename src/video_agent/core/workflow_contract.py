@@ -13,13 +13,18 @@ DEFAULT_V2_REVIEW_NODES: Tuple[str, ...] = (
 )
 
 # 平铺节点 → 人类可读标题（机械停卡文案 + 账本回放展示；无 DAG 语义）。
+#
+# 2026-09-21 批I（事故 4444/Q6①）：与 `registry.STAGE_LABELS` **同名的节点**一律
+# 对齐到「英文 tag 直译」口径（关键元素/分镜/音频层/组装导出），避免同一个阶段
+# 在两条展示链上各叫一个名字。`review_*` / `write_spec` / `ke_media` 等**没有
+# 对应 Skill 章节字段**的平台节点保持原措辞（它们是平台动作，不是 Skill 阶段）。
 NODE_TITLES: Dict[str, str] = {
     "analyze_script": "剧本分析",
     "write_spec": "制片规格撰写",
     "review_spec": "规格审核",
-    "storyboard_key_elements": "关键元素拆解",
-    "storyboard_shots": "分镜拆解",
-    "storyboard_audio": "音频拆解",
+    "storyboard_key_elements": "关键元素",
+    "storyboard_shots": "分镜",
+    "storyboard_audio": "音频层",
     "review_key_elements": "关键元素审核",
     "review_storyboard": "故事板审核",
     "ke_media": "关键元素出图",
@@ -27,7 +32,7 @@ NODE_TITLES: Dict[str, str] = {
     "review_shot_media": "镜头视频审核",
     "audio_assets": "音频资产",
     "review_audio": "音频审核",
-    "assembly": "时间线组装",
+    "assembly": "组装导出",
     "review_assembly": "成片审核",
 }
 

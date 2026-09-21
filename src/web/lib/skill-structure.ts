@@ -48,7 +48,10 @@ export const SECTION_TAGS = [
   'image_generate', 'generate_video', 'audio_generate', 'video_assembler',
 ] as const;
 
-/** 章节显示名/提示映射（未命中时 label 回退 tag/标题原文） */
+/** 章节显示名/提示映射（未命中时 label 回退 tag/标题原文）。
+ *  2026-09-21 批I（事故 4444/Q6①）：label 口径 = **英文 tag 直译**，与后端
+ *  `registry.STAGE_LABELS` 对齐（本表原本就是直译口径，本次只把
+ *  storyboard_shots 由「分镜设计」收成「分镜」，与后端一致）。 */
 const SECTION_META: Record<string, { label: string; hint?: string }> = {
   planner: { label: '流程规划', hint: '告诉 AI 按什么顺序推进、步骤之间有什么依赖，以及应该怎样和用户交互。' },
   script_analyze: { label: '素材分析', hint: '告诉 AI 看完素材后要产出什么，比如提取分镜、整理人物描述，或做裁切这类基础处理。' },
@@ -56,7 +59,7 @@ const SECTION_META: Record<string, { label: string; hint?: string }> = {
   multimodal_analyze_tool: { label: '素材分析', hint: '告诉 AI 看完素材后要产出什么，比如提取分镜、整理人物描述，或做裁切这类基础处理。' },
   text_editor: { label: '文档编写', hint: '告诉 AI 要写哪些项目文档、文档里必须包含哪些条目。' },
   storyboard_key_elements: { label: '关键元素', hint: '角色/场景/道具分组的创建与描述规范。' },
-  storyboard_shots: { label: '分镜设计', hint: '分镜分组的创建与描述规范（景别/运镜/时长/引用元素）。' },
+  storyboard_shots: { label: '分镜', hint: '分镜分组的创建与描述规范（景别/运镜/时长/引用元素）。' },
   storyboard_audio: { label: '音频层', hint: '台词/BGM/旁白音频层的建立规范。' },
   storyboard_designer: { label: '故事板设计', hint: '关键元素/分镜/音频的故事板整体规范。' },
   write_media_prompt: { label: '提示词写法', hint: '图/视频提示词的语言与内容规范。' },

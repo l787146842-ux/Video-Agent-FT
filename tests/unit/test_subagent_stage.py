@@ -129,7 +129,8 @@ def test_stage_deny_drops_read_skill_only():
 
 def test_build_subagent_task_stage_header():
     msg = build_subagent_task("拆解剧本为分镜", stage="write_media_prompt")
-    assert "本次委派阶段：媒体提示词编写" in msg      # STAGE_LABELS 展示标签
+    # 2026-09-21 批I（事故 4444/Q6①）：展示标签口径 = 英文 tag 直译
+    assert "本次委派阶段：提示词编写" in msg            # STAGE_LABELS 展示标签
     # P1-D/R3（2026-09-16）：阶段标注只留事实行，旧解释性括号措辞退役
     assert "章节即产出规范的全部依据" not in msg
     assert "（系统已注入该阶段 Skill 章节全文" not in msg
@@ -175,7 +176,7 @@ async def test_launch_stage_injects_section_precisely(svc, monkeypatch):
     msg = captured["msg"]
     assert SHOTS_SECTION in msg                       # 章节全文在场
     assert f"注入 Skill 章节（{SKILL} · write_media_prompt）" in msg
-    assert "本次委派阶段：媒体提示词编写" in msg              # 阶段标注行
+    assert "本次委派阶段：提示词编写" in msg              # 阶段标注行（批I 直译口径）
     assert sd.calls == 0                              # 未走全文截断回落
     assert "章节内容截断" not in msg
     # 工具面 deny + 子会话 meta 记 stage

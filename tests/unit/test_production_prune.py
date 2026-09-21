@@ -270,7 +270,7 @@ def test_card_media_gate_rejects_image_card_in_key_elements():
     from src.video_agent.core.fc_gates import GateContext, card_media_gate
 
     ctx = GateContext(stage_card_media=frozenset({"audio"}),
-                      stage_label="关键元素拆解")
+                      stage_label="关键元素")
     # 图像卡拒收，且文案要指向正确阶段
     err = card_media_gate(ctx, "storyboard_add_draft",
                           {"draft": {"mediaType": "image"}})
@@ -329,7 +329,7 @@ def test_stage_card_media_reaches_gate_ctx_end_to_end(svc):
         skill_name=SKILL, subagent_depth=1, subagent_stage="storyboard_key_elements")
     planner._apply_stage_card_media(ctx_ke)
     assert runner.stage_card_media == frozenset({"audio"})
-    assert runner.stage_label == "关键元素拆解"
+    assert runner.stage_label == "关键元素"
     g = runner._gate_ctx()
     assert card_media_gate(g, "storyboard_add_draft",
                            {"draft": {"mediaType": "image"}}) is not None

@@ -183,8 +183,12 @@ def test_subagent_task_text_carries_no_parent_side_antiexample_list():
 # ---------- A4：委派阶段回填父级阶段标签（Q3） ----------
 
 def test_stage_display_label_maps_enum_to_label():
-    """纯函数：阶段枚举 → 展示标签（空/未知回落空串）。"""
-    assert sub.stage_display_label(_STAGE) == "关键元素拆解"
+    """纯函数：阶段枚举 → 展示标签（空/未知回落空串）。
+
+    2026-09-21 批I（事故 4444/Q6①）：标签口径改为**英文 tag 直译**
+    （「关键元素拆解」→「关键元素」），与前端 skill-structure 对齐。
+    """
+    assert sub.stage_display_label(_STAGE) == "关键元素"
     assert sub.stage_display_label("script_analyze") == "剧本分析"
     assert sub.stage_display_label("") == ""
     assert sub.stage_display_label("not_a_stage") == ""
@@ -228,7 +232,7 @@ def test_delegated_stage_fills_parent_stage_label():
     ])
     res = asyncio.run(runner.execute(resp))
     confirmation = res[1]
-    assert "关键元素拆解" in confirmation, (
+    assert "关键元素" in confirmation, (
         f"暂停卡未带真实阶段标签（实得：{confirmation!r}）——"
         f"run_subagent 的阶段未回填父级 last_stage_label（5555/Q3）")
     assert "本阶段" not in confirmation, "仍回落系统模板的「本阶段」"

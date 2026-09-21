@@ -236,7 +236,7 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     child_first = adapter.calls[1]
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
-    assert "本次委派阶段：媒体提示词编写" in task_text
+    assert "本次委派阶段：提示词编写" in task_text
     assert "内切镜时长估算" in task_text, "write_media_prompt 章节未精准注入"
     assert "分镜语法三件套" not in task_text, "storyboard_shots 章节泄漏进子代理"
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
@@ -291,7 +291,7 @@ async def test_stage_delegation_storyboard_shots(svc, fakestop_off):
     child_first = adapter.calls[1]
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
-    assert "本次委派阶段：分镜设计" in task_text
+    assert "本次委派阶段：分镜" in task_text
     # ② 章节隔离：storyboard_shot 章节真身在场、write_media_prompt 章节零在场
     assert "分镜语法三件套" in task_text, "storyboard_shots 章节未精准注入"
     assert "内切镜时长估算" not in task_text, "write_media_prompt 章节泄漏进分镜子代理"

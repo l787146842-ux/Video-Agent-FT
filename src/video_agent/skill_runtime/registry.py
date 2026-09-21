@@ -50,14 +50,24 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
 
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
 # 前端不再按工具名硬编码推断，工具改名不会导致卡片退化）
+#
+# 2026-09-21 批I（事故 4444/Q6①）：**标签口径统一为「英文 tag 的直译」**。
+# 旧值是一套与 Skill 章节字段对不上的自造术语（「关键元素拆解」「媒体提示词
+# 编写」），模型手里拿的是 `<storyboard_key_elements>` / `write_media_prompt`，
+# 两边对不上号，只能自己推断"这俩是不是一回事"——这正是 Q6① 的诱导源。
+# 前端 `lib/skill-structure.ts::SECTION_META` 早就是直译口径（关键元素/音频层/
+# 组装导出），本次把后端对齐到同一口径，两边不再各叫各的。
+# 注意：值只参与**显示与下发**，不参与任何判定（stage_label_for_tool 仅查表
+# 返回），故本批为纯文案变更、零逻辑风险。
+# 防回潮钉 = tests/unit/test_stage_label_vocabulary.py。
 STAGE_LABELS: Dict[str, str] = {
     "script_analyze": "剧本分析",
-    "storyboard_key_elements": "关键元素拆解",
-    "storyboard_shots": "分镜设计",
-    "storyboard_audio": "音频层设计",
-    "write_media_prompt": "媒体提示词编写",
+    "storyboard_key_elements": "关键元素",
+    "storyboard_shots": "分镜",
+    "storyboard_audio": "音频层",
+    "write_media_prompt": "提示词编写",
     "audio_generate": "音频生成",
-    "video_assembler": "时间线组装",
+    "video_assembler": "组装导出",
     "image_generate": "生图",
     "generate_video": "视频生成",
     # 分析写入工具（A1 批）：能力词 script_analyze 的真身落点
