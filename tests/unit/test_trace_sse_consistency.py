@@ -345,7 +345,7 @@ def test_summary_display_no_platform_injection(tmp_path, monkeypatch):
         analysis_summary="人类 intercept 薄片",
     )
     assert "人类 intercept 薄片" not in resp["confirmation"]
-    assert "剧本分析已完成" in resp["text"]
+    assert "素材分析已完成" in resp["text"]
 
 
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------

@@ -281,6 +281,9 @@ export interface ChatMessage {
   pauseQuestions?: PauseQuestion[];
   /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
   pauseAnsweredId?: string;
+  /** 问题级回答（2026-09-21 批J，对齐 dsh `answers[]`）：多问题卡逐问回填的
+   *  `{id, selected[], custom?}`。旧消息无此键 → 前端回落扁平 value 匹配。 */
+  pauseAnsweredAnswers?: PauseAnswer[];
   /** E1 消息级快照指针（后端轮末打快照挂最后一条 agent 消息；
    *  有值即可挂「回到此刻/从此刻新开项目」动作） */
   snapshotId?: string;
@@ -317,6 +320,18 @@ export interface PauseQuestion {
   multi_select?: boolean;
   /** 该问题的选项列表 */
   options?: ConfirmOptionItem[];
+}
+
+/** 暂停卡的一个**问题级回答**（2026-09-21 批J，对齐 dsh
+ *  `AskUserQuestionAnswerItem`）：多问题卡逐问作答后按此结构化回携，
+ *  取代「逐行拼接文本」的隐式位置约定。 */
+export interface PauseAnswer {
+  /** 对应 `PauseQuestion.id`（后端按 id 精确回填「当时所选」） */
+  id: string;
+  /** 选中的选项 label（多选题可多个；**空数组**表示该问用 custom 作答） */
+  selected: string[];
+  /** 自由文本回答（"其它（自定义输入）"；不用时省略，对齐 dsh） */
+  custom?: string;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */

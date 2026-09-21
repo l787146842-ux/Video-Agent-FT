@@ -688,8 +688,8 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
             _analysis_digest = str(ctx.final_payload.get("analysis_digest") or "").strip()
             if _analysis_digest:
                 ctx.svc.add_chat_message(
-                    "agent", f"剧本分析已完成，摘要：{_analysis_digest}",
-                    meta="剧本分析", turn_id=turn_id)
+                    "agent", f"素材分析已完成，摘要：{_analysis_digest}",
+                    meta="素材分析", turn_id=turn_id)
             # E1 消息级快照：轮末打快照挂最后一条 agent 消息（指针化：
             # 消息存 snapshotId，本体存 stateSnapshots；媒体只有 URL 指针）
             snap_id = ctx.svc.attach_snapshot_to_last_agent_message(label=f"轮次完成 {turn_id}")

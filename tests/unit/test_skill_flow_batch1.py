@@ -108,10 +108,10 @@ async def test_analysis_event_card_carries_full_report():
     cards = product_event_card("script_analysis_report", payload, 0)
     assert len(cards) == 1
     name, detail, to_ctx, detail_md = cards[0]
-    assert name == "剧本分析已完成"
+    assert name == "素材分析已完成"
     assert detail == "太阳系确认遭遇疑似二向箔的白色薄片打击。"
     assert to_ctx is False
-    assert "## 剧本分析《三体简短版.md》" in detail_md
+    assert "## 素材分析《三体简短版.md》" in detail_md
     assert "**一句话总结**：太阳系确认遭遇疑似二向箔的白色薄片打击。" in detail_md
     assert "**剧本分类**：A 类（成熟分镜剧本）" in detail_md
     assert "- 程心：出场于太空电梯" in detail_md

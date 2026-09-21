@@ -35,7 +35,7 @@ class StageSpec:
 
 
 CANONICAL_STAGES: Tuple[StageSpec, ...] = (
-    StageSpec("analysis", "剧本分析", ("script_analyze",)),
+    StageSpec("analysis", "素材分析", ("script_analyze",)),
     # 2026-09-21 批I（事故 4444/Q6①）：标题口径对齐 registry.STAGE_LABELS 的
     # 「英文 tag 直译」（组装导出 ← 时间线组装），同一阶段不在两条展示链上
     # 各叫一个名字。`structure` 是平台自己的合并节点（无同名 Skill 章节），

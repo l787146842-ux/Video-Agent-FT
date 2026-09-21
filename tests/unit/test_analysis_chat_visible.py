@@ -100,7 +100,7 @@ def _make_ctx(svc, final_payload, final_text="分析已完成并存档。"):
 
 def _digest_messages(svc):
     return [m for m in (svc.get_chat_messages() or [])
-            if m.get("meta") == "剧本分析"]
+            if m.get("meta") == "素材分析"]
 
 
 async def test_finalize_appends_digest_message(svc):

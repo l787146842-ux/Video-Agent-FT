@@ -108,10 +108,17 @@ class ChatRequest(BaseModel):
     # ""=默认（模型原生能力，不下发 reasoning_effort）
     thinking_level: str = ""
     # 暂停回应结构化回携（对标 AskUserQuestion 范式）：用户点选暂停卡选项时
-    # 携带 {"pause_id", "value", "label"}；后端校验与 interaction.active_pause
-    # 匹配后随用户消息持久化 pauseAnsweredId/Value，前端对勾不再靠文本反推。
-    # 自由打字回应不携带，LLM 语义不变（消息正文仍是唯一输入）
-    pause_response: Dict[str, str] = {}
+    # 携带 {"pause_id", "value", "label"[,"decision"]}；后端校验与
+    # interaction.active_pause 匹配后随用户消息持久化，前端对勾不再靠文本反推。
+    # 自由打字回应不携带，LLM 语义不变（消息正文仍是唯一输入）。
+    #
+    # 2026-09-21 批J（用户要求，对齐 dsh `pause_response.answers[]`）：
+    # 新增可选 `answers` —— **问题级**结构化回携，每项
+    # {id: 问题 id, selected: [选中的 label], custom: 自由文本}。
+    # 多问题卡（批F 的 `pause_questions`）逐问作答后按此回携，取代「逐行拼接
+    # 文本」的隐式约定；`value` 仍由前端派生（保持旧消费链零改动），
+    # 但**结构化面以 answers 为准**。缺省空列表 = 旧形态，行为不变。
+    pause_response: Dict[str, Any] = {}
     # 系统动作标记（如 gate_override=「本次放行」）：携带时用户消息持久化带
     # kind 标记，前端渲染为系统动作行而非用户气泡（LLM 语义不变）
     system_action: str = ""

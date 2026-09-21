@@ -1,7 +1,7 @@
 import { Show, For, createMemo, createSignal } from 'solid-js';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { t } from '@/lib/locale';
-import type { ChatMessage, PauseQuestion } from '@/types';
+import type { ChatMessage, PauseAnswer, PauseQuestion } from '@/types';
 import { pickDimension, kindForDim, ConfigProviderModelSelect, type ConfirmOptionItem } from './ConfirmPicker';
 import { ConfirmOptionCards } from './ConfirmOptionCards';
 import { ConfirmCustomInput } from './ConfirmCustomInput';
@@ -69,16 +69,26 @@ export function ConfirmActions(props: { message: ChatMessage }) {
     (options() || []).find((o) => o.label === label && (o.value || '').trim())?.value || label;
 
   /** 暂停回应结构化回携（AskUserQuestion 范式）：点选发送携带 pause_id，
-   *  「当时所选」对勾从后端权威登记派生，不再靠文本反推 */
-  const pauseOpts = (value: string, pid = msg().pauseId || '') => (pid
-    ? { pauseResponse: { pause_id: pid, value } } : {});
+   *  「当时所选」对勾从后端权威登记派生，不再靠文本反推。
+   *  2026-09-21 批J：多问题卡另携问题级 `answers`（`{id, selected[], custom?}`，
+   *  对齐 dsh `AskUserQuestionAnswerItem`）——后端按 id 精确回填，
+   *  不再依赖「逐行拼接文本」的位置约定；`value` 仍派生（旧消费链零改动）。 */
+  const pauseOpts = (value: string, answers?: PauseAnswer[], pid = msg().pauseId || '') => (pid
+    ? {
+      pauseResponse: {
+        pause_id: pid,
+        value,
+        ...(answers && answers.length ? { answers } : {}),
+      },
+    }
+    : {});
   /** 单发语义：暂停回应一经发出即锁，连点/双击不得重复发送
    *  （二次点击若落入排队区，会在任务结束后把同一回答自动重发一遍） */
   const [sent, setSent] = createSignal(false);
-  const sendPicked = async (text: string) => {
+  const sendPicked = async (text: string, answers?: PauseAnswer[]) => {
     if (!text || sent()) return;
     setSent(true);
-    const ok = await sendUserMessage(text, pauseOpts(text));
+    const ok = await sendUserMessage(text, pauseOpts(text, answers));
     if (!ok) setSent(false); // 被拦截（无供应商等）时解锁，允许重试
   };
   const sendAll = () => void sendPicked(groups().map((g) => valueFor(effective(g.title))).filter(Boolean).join('\n'));
@@ -171,10 +181,25 @@ export function ConfirmActions(props: { message: ChatMessage }) {
   const allQAnswered = () => questions().every((_, i) => effectiveQ(i).length > 0);
 
   /** 发送：各问所选**按问题顺序逐行拼接**（与既有向导的分组拼接口径一致）；
-   *  多选题内多个选中项同样各占一行 */
+   *  多选题内多个选中项同样各占一行。
+   *  2026-09-21 批J：另按问题 `id` 组装结构化 `answers` 一并回携——
+   *  `value`（逐行文本）保持旧消费链兼容，`answers` 供后端按 id 精确回填。 */
   const sendQuestions = () => {
-    const lines = questions().map((_, i) => effectiveQ(i)).flat().filter(Boolean);
-    void sendPicked(lines.join('\n'));
+    const qs = questions();
+    const answers: PauseAnswer[] = [];
+    const lines: string[] = [];
+    qs.forEach((q, i) => {
+      const txt = (qCustom()[i] || '').trim();
+      const picked = effectiveQ(i);
+      if (!picked.length) return;
+      const qid = (q.id || '').trim() || `q${i + 1}`;
+      // 自定义输入 → custom 槽（对齐 dsh：不用 custom 时该字段省略）
+      answers.push(txt
+        ? { id: qid, selected: [], custom: txt }
+        : { id: qid, selected: picked });
+      lines.push(...picked);
+    });
+    void sendPicked(lines.filter(Boolean).join('\n'), answers);
   };
 
   const customBlockQ = (idx: number) => (

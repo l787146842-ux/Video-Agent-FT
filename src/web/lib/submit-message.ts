@@ -23,7 +23,7 @@ import {
 import { uid } from '@/lib/utils';
 import { partsToPlainText } from '@/lib/rich-input';
 import { t } from '@/lib/locale';
-import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/types';
+import type { AgentChatRequest, AnyGroup, MediaType, PauseAnswer, RichContentPart } from '@/types';
 
 /** 发送意图：新消息 / 机械重发 / 引导注入 / 排队出队 */
 export type SubmitIntent = 'new' | 'resend' | 'guidance' | 'queued';
@@ -34,8 +34,14 @@ export interface SubmitPayload {
   input: string | RichContentPart[];
   /** 会话层一次性闸机豁免（「本次放行」） */
   gateOverrides?: string[];
-  /** 暂停回应结构化回携（对标 AskUserQuestion） */
-  pauseResponse?: { pause_id: string; value: string; label?: string };
+  /** 暂停回应结构化回携（对标 AskUserQuestion）。
+   *  2026-09-21 批J：新增 `answers` —— 问题级回答 `{id, selected[], custom?}`。 */
+  pauseResponse?: {
+    pause_id: string;
+    value: string;
+    label?: string;
+    answers?: PauseAnswer[];
+  };
   /** 系统动作标记（如「本次放行」留痕，渲染为系统动作行） */
   systemAction?: 'system_action';
   /** 重试续跑标记（任务#6）：错误/停止气泡「重试/继续」建议动作携带；

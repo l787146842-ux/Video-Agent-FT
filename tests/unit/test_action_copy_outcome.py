@@ -7,7 +7,7 @@ from src.video_agent.core.fc_feedback import describe_fc_tool
 
 
 def test_analysis_report_outcome_copy():
-    assert describe_fc_tool("script_analysis_report", {}) == "剧本分析已完成"
+    assert describe_fc_tool("script_analysis_report", {}) == "素材分析已完成"
 
 
 def test_storyboard_create_group_outcome_copy():
@@ -34,7 +34,7 @@ def test_low_info_tools_folded_from_action_log():
         describe_fc_tool("script_analysis_report", {}),
         describe_fc_tool("script_analysis_report", {}),
     ]
-    assert aggregate_action_log(logs) == ["剧本分析已完成 ×2"], "机械续读类整类折叠"
+    assert aggregate_action_log(logs) == ["素材分析已完成 ×2"], "机械续读类整类折叠"
 
 
 def test_consecutive_grouping_still_works():

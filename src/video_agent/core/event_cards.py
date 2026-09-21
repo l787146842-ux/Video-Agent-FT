@@ -46,12 +46,12 @@ def product_event_card(
         summary = str(args.get("summary") or "").strip()
         report = str(args.get("report_markdown") or "").strip()
         lines = [
-            f"## 剧本分析《{doc_name}》" if doc_name else "## 剧本分析",
+            f"## 素材分析《{doc_name}》" if doc_name else "## 素材分析",
             f"**一句话总结**：{summary}" if summary else "",
             report,
         ]
         detail_md = "\n".join(ln for ln in lines if ln)
-        return [("剧本分析已完成", summary, False, detail_md)]
+        return [("素材分析已完成", summary, False, detail_md)]
     if name in ("document_write", "write_document"):
         doc_name = str(args.get("name") or args.get("key") or "").strip()
         if doc_name and prompt_gates.is_spec_doc_name(doc_name):

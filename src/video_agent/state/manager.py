@@ -672,7 +672,7 @@ class StateManager(UndoRedoMixin):
         turn_id: str = "",
         error_detail: str = "",
         pause_id: str = "",
-        pause_answered: Optional[Dict[str, str]] = None,
+        pause_answered: Optional[Dict[str, Any]] = None,
         kind: str = "",
         video_items: Optional[List[Dict[str, Any]]] = None,
         suggested_actions: Optional[List[Dict[str, Any]]] = None,

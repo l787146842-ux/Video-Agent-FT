@@ -148,6 +148,61 @@ describe('批F：多问题卡（一次问 N 个问题）', () => {
     expect(sendMock.mock.calls[0][0]).toBe('冷调\n暖调');
   });
 
+  it('⑥ 发送另携问题级 answers[]（批J，对齐 dsh AskUserQuestionAnswerItem）', async () => {
+    const { container } = render(() => (
+      <ConfirmActions message={msgWith([
+        q({ id: 'ratio', question: '画幅？', options: [{ label: '16:9' }] }),
+        q({ id: 'naming', question: '显名？', options: [{ label: '不显名' }] }),
+      ])} />
+    ));
+    const blocks = container.querySelectorAll('[data-testid="pause-question-block"]');
+    fireEvent.click(blocks[0].querySelector('.confirm-option-card')!);
+    fireEvent.click(blocks[1].querySelector('.confirm-option-card')!);
+    fireEvent.click(container.querySelector('.confirm-btn.primary')!);
+    // 第 2 参与 = pauseResponse；结构化面按问题 id 逐项对应
+    const opts = sendMock.mock.calls[0][1] as {
+      pauseResponse?: { value: string; answers?: Array<{ id: string; selected: string[] }> };
+    };
+    expect(opts.pauseResponse?.value).toBe('16:9\n不显名');   // 扁平面照旧
+    expect(opts.pauseResponse?.answers).toEqual([
+      { id: 'ratio', selected: ['16:9'] },
+      { id: 'naming', selected: ['不显名'] },
+    ]);
+  });
+
+  it('⑥b 多选题的 answers.selected 含全部勾选项（不逐行拆）', async () => {
+    const { container } = render(() => (
+      <ConfirmActions message={msgWith([
+        q({ id: 'tone', question: '基调？', multi_select: true,
+            options: [{ label: '冷调' }, { label: '暖调' }] }),
+      ])} />
+    ));
+    const cards = container.querySelectorAll('.confirm-option-card');
+    fireEvent.click(cards[0]);
+    fireEvent.click(cards[1]);
+    fireEvent.click(container.querySelector('.confirm-btn.primary')!);
+    const opts = sendMock.mock.calls[0][1] as {
+      pauseResponse?: { answers?: Array<{ id: string; selected: string[] }> };
+    };
+    expect(opts.pauseResponse?.answers).toEqual([
+      { id: 'tone', selected: ['冷调', '暖调'] },
+    ]);
+  });
+
+  it('⑥c 旧单问分支不携 answers（旧路径零变化）', async () => {
+    const { container } = render(() => (
+      <ConfirmActions message={{
+        sender: 'agent', text: '', confirm: '旧问句？', pauseId: 'old',
+        confirmOptions: [{ label: '旧选项A' }],
+      }} />
+    ));
+    fireEvent.click(container.querySelector('.confirm-option-card')!);
+    fireEvent.click(container.querySelector('.confirm-btn.primary')!);
+    const opts = sendMock.mock.calls[0][1] as { pauseResponse?: Record<string, unknown> };
+    expect(opts.pauseResponse).toBeTruthy();
+    expect('answers' in (opts.pauseResponse || {})).toBe(false);
+  });
+
   it('④c 无选项的问题给自定义输入兜底提示（不是死路）', () => {
     const { container } = render(() => (
       <ConfirmActions message={msgWith([

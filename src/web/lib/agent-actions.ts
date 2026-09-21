@@ -6,7 +6,7 @@
  * 以 intent='new' 委托统一入口。
  */
 import { submitMessage } from '@/lib/submit-message';
-import type { RichContentPart } from '@/types';
+import type { PauseAnswer, RichContentPart } from '@/types';
 
 /**
  * 发送用户消息给 Agent（SSE 流式）
@@ -26,8 +26,15 @@ export async function sendUserMessage(
   opts?: {
     gateOverrides?: string[];
     /** 暂停回应结构化回携（对标 AskUserQuestion）：点选暂停卡选项时携带，
-     *  后端校验后随消息持久化标记，前端对勾不再靠文本反推 */
-    pauseResponse?: { pause_id: string; value: string; label?: string };
+     *  后端校验后随消息持久化标记，前端对勾不再靠文本反推。
+     *  2026-09-21 批J：新增 `answers` —— 问题级回答
+     *  `{id, selected[], custom?}`（多问题卡逐问作答时携带，对齐 dsh）。 */
+    pauseResponse?: {
+      pause_id: string;
+      value: string;
+      label?: string;
+      answers?: PauseAnswer[];
+    };
     /** 系统动作标记（唯一形态值 'system_action'，如「本次放行」）：
      *  本地与持久化消息渲染为系统动作行 */
     systemAction?: 'system_action';

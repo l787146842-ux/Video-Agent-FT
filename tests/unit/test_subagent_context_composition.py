@@ -189,7 +189,7 @@ def test_stage_display_label_maps_enum_to_label():
     （「关键元素拆解」→「关键元素」），与前端 skill-structure 对齐。
     """
     assert sub.stage_display_label(_STAGE) == "关键元素"
-    assert sub.stage_display_label("script_analyze") == "剧本分析"
+    assert sub.stage_display_label("script_analyze") == "素材分析"
     assert sub.stage_display_label("") == ""
     assert sub.stage_display_label("not_a_stage") == ""
 

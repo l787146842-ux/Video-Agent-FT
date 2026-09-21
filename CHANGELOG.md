@@ -36,6 +36,20 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批J 暂停回答结构化回携 answers[] +「剧本分析」改名「素材分析」（用户两条要求）
+- **用户原话**：①「F-②c dsh 式 answers[] 成型回携，要做。」②「中文标签要改成中文翻译，不能叫剧本分析，要叫素材分析，其他也一样。」
+- **① F-②c 结构化回携（对齐 dsh `AskUserQuestionAnswerItem`）**：
+  - **背景**：批F 给暂停卡补了 `questions[]`（一次问 N 问），但**回答侧仍是扁平的**——前端把各问所选**逐行拼接**成一个 `value`，后端只能靠「第几行 = 第几问」的位置约定反推；问题问句含换行、或某问用自定义文本作答时该约定即错位。
+  - **改动**：`ChatRequest.pause_response` 扩为 `Dict[str, Any]` + 新增 `answers=[{id, selected[], custom?}]`；`chat_consume` 新增 `normalize_pause_answers`（纯函数：丢非 dict/无 id/空回答项、`selected` 滤空、`custom` 非空才带；**任何畸形输入回落空列表、绝不抛异常**）；落盘 `pauseAnsweredAnswers`（非空才写）；前端多问题卡 `sendQuestions` 按问题 id 组装 `answers` 一并回携。
+  - **兼容红线**：**`value` 扁平字段逐字保持**——旧消费链零改动（对勾匹配 `turn-groups.answeredValueFor` 按值相等、`is_flow_continue_value` 行格式判定都读它）；旧形态标记**不出现** `answers` 键（落盘形态不变）；`custom` 槽承载「其它（自定义输入）」。
+  - **回归钉** = `tests/unit/test_pause_answers_structure.py`（18 条：归一清洗/纯函数健壮性/消费透传/旧形态零变化/落盘非空才写）+ 前端 `ConfirmActions-multi-question.test.tsx` 扩 3 条。
+- **②「剧本分析」→「素材分析」**（同批直译口径的延续）：
+  - **依据**：该阶段收的**不只是剧本**（Skill 支持上传参考图/视频等素材），且前端 `SECTION_META` 与多个 Skill 章节**本就叫「素材分析」**——「剧本分析」是以偏概全的旧叫法。用户裁决对齐。
+  - **落点（4 处表 + 4 处用户可见文案，只改表不够）**：`registry.STAGE_LABELS`（`script_analyze` 与 `script_analysis_report` 两键）、`workflow_contract.NODE_TITLES`（`analyze_script`）、`stage_probes.CANONICAL_STAGES`（`analysis`）；另 `event_cards` 事件卡标题与折叠区标题、`fc_feedback.describe_fc_tool` 动作日志、`planner_output` 轮末兜底正文、`chat_service` R9 对话摘要（meta 同步）。
+  - **新钉**：`test_analysis_rename_covers_all_user_facing_surfaces` 锁「只改 STAGE_LABELS 会漏」的那些面；`_RETIRED_LABELS` 加「剧本分析」防回潮。
+- **执行期踩坑（已修，值得留痕）**：用 PowerShell `Set-Content -Encoding UTF8` 批量替换文本会**注入 BOM**（U+FEFF），导致 `manager.py` 解析失败、`ref_integrity` 门禁 FAIL。已剥离 4 个受影响文件 + 批G 遗留的 1 个测试文件；**其余 6 个 BOM 文件经 git 基线核实为仓库既有**（非本次引入），未动。
+- **验证**：`tests/unit` + `tests/integration` **2547 passed / 0 failed**；vitest **124 files / 1022 passed**；**acceptance 全量 18/18 PASS**；`npm run build` 通过（首屏 378.81 kB）；`data/skills` 零 diff。
+
 ### 2026-09-21 · 批I 阶段展示标签口径统一：按英文 tag 直译（事故 4444/Q6①，**翻案** 同批方案待决-1 的 H-a）
 - **背景（用户两次纠正，均成立）**：①「所有都是一样的字段……本项目每个阶段都是同样的字段啊」——**实测确认**：Skill 用 `<tag>…</tag>` 字段分章节（`web/skill_docs.py:120-128` 正则取），`tool_sections(skill, "storyboard_key_elements")` **16/16 全部命中**，字段名完全一致；注入一直是对的。②「`storyboard_key_elements`，标签是这个，名字直接给中文翻译就行了啊。**『关键元素拆解』只是我平常跟 ai 沟通的术语**，结果就写上去了。」
 - **翻案说明**：同批方案 §五 待决-1 原采纳 H-a（不改），理由是「16 个 Skill 对同一阶段叫法各不相同，改了只服务 1/16」——**该前提是误读**：我把「该 tag 下正文的第一行文字」（如「设计 key_element」「全局风格锁定」「如何设计关键元素」）当成了「章节名」。前提推翻后，H-b 的正确形态（**直译**，非"改成某个 Skill 的措辞"）代价小、收益实在，故本批执行；H-c 仍不做（会翻案 2222/Q3b）。

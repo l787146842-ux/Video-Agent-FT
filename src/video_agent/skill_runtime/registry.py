@@ -61,7 +61,7 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
 # 返回），故本批为纯文案变更、零逻辑风险。
 # 防回潮钉 = tests/unit/test_stage_label_vocabulary.py。
 STAGE_LABELS: Dict[str, str] = {
-    "script_analyze": "剧本分析",
+    "script_analyze": "素材分析",
     "storyboard_key_elements": "关键元素",
     "storyboard_shots": "分镜",
     "storyboard_audio": "音频层",
@@ -71,7 +71,7 @@ STAGE_LABELS: Dict[str, str] = {
     "image_generate": "生图",
     "generate_video": "视频生成",
     # 分析写入工具（A1 批）：能力词 script_analyze 的真身落点
-    "script_analysis_report": "剧本分析",
+    "script_analysis_report": "素材分析",
 }
 
 

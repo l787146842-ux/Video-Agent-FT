@@ -14,17 +14,59 @@ from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
 
 
-def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
+def normalize_pause_answers(raw: Any) -> list:
+    """问题级回答归一（2026-09-21 批J，对齐 dsh `answers[]`）。
+
+    入参：`pause_response.answers` —— 每项
+    `{id, selected: [label…], custom?}`（对齐 dsh `AskUserQuestionAnswerItem`）。
+    出参：清洗后的同形列表（**只保留可用项**）：
+    - 非 dict 项丢弃；
+    - `id` 空则丢弃（无 id 无法与问题对应，留着只会污染账本）；
+    - `selected` 强制成 str 列表并去空；
+    - `custom` 非空才带（对齐 dsh：不用 custom 时该字段省略）；
+    - 既无 selected 又无 custom 的项丢弃（空回答无信息量）。
+
+    纯函数、无副作用；非法输入一律回落空列表（绝不抛异常击穿回携链）。
+    """
+    out: list = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        qid = str(item.get("id") or "").strip()
+        if not qid:
+            continue
+        sel_raw = item.get("selected")
+        selected = [str(s) for s in sel_raw if str(s or "").strip()] \
+            if isinstance(sel_raw, list) else []
+        custom = str(item.get("custom") or "").strip()
+        if not selected and not custom:
+            continue
+        entry: Dict[str, Any] = {"id": qid, "selected": selected}
+        if custom:
+            entry["custom"] = custom
+        out.append(entry)
+    return out
+
+
+def consume_pause_response(svc, pause_response) -> Optional[Dict[str, Any]]:
     """消费暂停回应结构化回携（对标 AskUserQuestion 范式，三态消费；
     决策史见 git tag adr-archive-20260901）。
 
-    用户点选暂停卡选项时请求携带 {"pause_id", "value", "label"[, "decision"]}；
+    用户点选暂停卡选项时请求携带
+    `{"pause_id", "value", "label"[, "decision"][, "answers"]}`；
     与 interaction.active_pause 登记匹配即清除登记并返回持久化标记
-    {"pause_id", "value", "label", "decision"}（decision 缺省 accept，
-    卡片拒绝/取消选项为 decline）；不匹配（旧卡/自由打字）返回 None。
+    `{"pause_id", "value", "label", "decision"[, "answers"]}`（decision 缺省
+    accept，卡片拒绝/取消选项为 decline）；不匹配（旧卡/自由打字）返回 None。
     决策经 reduce_interaction 落盘并进控制流 trace。
     LLM 语义不变：消息正文仍照常入 history，本函数只产出展示层标记。
     调用方需持有 svc.lock。
+
+    2026-09-21 批J（用户要求，对齐 dsh）：新增问题级 `answers` 归一透传
+    （见 `normalize_pause_answers`）；`value` 扁平字段**保持原样**，旧消费链
+    （对勾匹配 `turn-groups.answeredValueFor`、`is_flow_continue_value` 行判定）
+    零改动。
     """
     pid = str((pause_response or {}).get("pause_id") or "").strip()
     if not pid:
@@ -38,6 +80,8 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
         if str((pause_response or {}).get("decision") or "").strip() == "decline"
         else "accept"
     )
+    # 问题级回答（批J）：非空才带（旧卡无此字段 → 标记形态逐字不变）
+    answers = normalize_pause_answers((pause_response or {}).get("answers"))
     # 批 9 · 同意账本（V6 计划）：暂停卡接受 = 用户对该卡交代工作的确认，
     # 登记当前工作轮号；闸机（tool_risk / gen_confirm）在本轮内放行 provider
     # 生成调用，轮次推进后登记值自然失配失效（无需显式清理）。decline 不登记。
@@ -62,15 +106,19 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     try:
         AgentTracer.get_instance().record_control_flow(
             "pause_consumed",
-            f"暂停卡结构化回应消费：decision={decision} pause_id={pid}")
+            f"暂停卡结构化回应消费：decision={decision} pause_id={pid}"
+            + (f" answers={len(answers)}" if answers else ""))
     except Exception as _e:
         logger.debug("[ConfirmFlow] 控制流留痕跳过: {}", _e)
-    return {
+    result: Dict[str, Any] = {
         "pause_id": pid,
         "value": str((pause_response or {}).get("value") or ""),
         "label": str((pause_response or {}).get("label") or ""),
         "decision": decision,
     }
+    if answers:
+        result["answers"] = answers
+    return result
 
 
 def advance_turn_seq(svc) -> int:

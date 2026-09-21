@@ -181,7 +181,7 @@ export interface ChatRequest {
   gate_overrides?: string[];
   user_id?: string;
   thinking_level?: string;
-  pause_response?: Record<string, string>;
+  pause_response?: Record<string, unknown>;
   system_action?: string;
   resume_failed?: boolean;
   adjust_scope?: Record<string, unknown> | undefined;

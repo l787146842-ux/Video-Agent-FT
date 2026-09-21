@@ -457,7 +457,7 @@ def build_chat_entry(
     turn_id: str = "",
     error_detail: str = "",
     pause_id: str = "",
-    pause_answered: Optional[Dict[str, str]] = None,
+    pause_answered: Optional[Dict[str, Any]] = None,
     kind: str = "",
     video_items: Optional[List[Dict[str, Any]]] = None,
     suggested_actions: Optional[List[Dict[str, Any]]] = None,
@@ -536,6 +536,14 @@ def build_chat_entry(
         # 前端「当时所选」对勾与拒绝态同源可重建（缺省不产生空字段）
         if pause_answered.get("decision"):
             entry["pauseAnsweredDecision"] = str(pause_answered.get("decision"))
+        # 2026-09-21 批J（用户要求，对齐 dsh answers[]）：问题级回答落盘——
+        # 每项 {id, selected[], custom?}。非空才落（旧消息零变化）；
+        # 前端据问题 id 精确回填「当时所选」，不再依赖逐行文本位置约定。
+        _ans = pause_answered.get("answers")
+        if isinstance(_ans, list) and _ans:
+            entry["pauseAnsweredAnswers"] = [
+                dict(a) for a in _ans if isinstance(a, dict)
+            ]
     if kind:
         entry["kind"] = kind
     if error_detail:
@@ -567,7 +575,7 @@ def add_chat_message(
     turn_id: str = "",
     error_detail: str = "",
     pause_id: str = "",
-    pause_answered: Optional[Dict[str, str]] = None,
+    pause_answered: Optional[Dict[str, Any]] = None,
     kind: str = "",
     video_items: Optional[List[Dict[str, Any]]] = None,
     suggested_actions: Optional[List[Dict[str, Any]]] = None,

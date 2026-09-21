@@ -98,13 +98,13 @@ def test_empty_message_still_yields_question(monkeypatch):
 
 
 def test_system_question_carries_stage_label(monkeypatch):
-    """回落模板带真实阶段标签（同批先跑 script_analyze → 「剧本分析」）。"""
+    """回落模板带真实阶段标签（同批先跑 script_analyze → 「素材分析」）。"""
     long_msg = "成果dump。" * 60
     res = _run(
         ("script_analyze", {"skill_name": "任意"}),
         ("workflow_pause", {"message": long_msg}),
         monkeypatch=monkeypatch)
-    assert "「剧本分析」已完成" in res.confirmation
+    assert "「素材分析」已完成" in res.confirmation
     assert res.pause_overflow == long_msg
 
 

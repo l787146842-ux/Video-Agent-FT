@@ -31,11 +31,18 @@ from src.video_agent.skill_runtime.registry import STAGE_LABELS
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_SKILL_STRUCTURE = PROJECT_ROOT / "src" / "web" / "lib" / "skill-structure.ts"
 
-# 批I 之前的自造术语（回潮即失败）——「关键元素拆解」是用户口头术语被误写进代码
-_RETIRED_LABELS = ("关键元素拆解", "媒体提示词编写")
+# 已退役的自造术语（回潮即失败）：
+# - 「关键元素拆解」：用户口头术语被误写进代码（批I）；
+# - 「媒体提示词编写」：同批一并收成直译「提示词编写」（批I）；
+# - 「剧本分析」：批J 用户裁决改为「素材分析」——该阶段收的不只是剧本
+#   （Skill 名即为「素材分析」：`SECTION_META` 与多个 Skill 的章节都这么叫，
+#   且支持上传参考图/视频等非剧本文本），「剧本分析」是以偏概全的旧叫法。
+_RETIRED_LABELS = ("关键元素拆解", "媒体提示词编写", "剧本分析")
 
 # STAGE_LABELS 键 → 前端 SECTION_META 的对应键（两侧同源 tag，值必须一致）
+# 注：`script_analyze` 前端本就叫「素材分析」，后端批J 才对齐过去。
 _STAGE_TO_FRONTEND_KEY = {
+    "script_analyze": "script_analyze",
     "storyboard_key_elements": "storyboard_key_elements",
     "storyboard_shots": "storyboard_shots",
     "storyboard_audio": "storyboard_audio",
@@ -127,13 +134,35 @@ def test_assembly_stage_agrees_between_tables():
 # ---------- ④ 直译口径的事实基座 ----------
 
 def test_labels_are_direct_translations_of_tags():
-    """核心三键确为英文 tag 直译（本批口径的基座，防被"改得好听"带偏）。"""
+    """核心三键确为英文 tag 直译（本批口径的基座，防被"改得好听"带偏）。
+
+    批J（用户裁决）：`script_analyze` = 「素材分析」——对齐前端 `SECTION_META`
+    与 Skill 章节的既有叫法（该阶段收的不只是剧本，还含参考图/视频等素材）。
+    """
+    assert STAGE_LABELS["script_analyze"] == "素材分析"
     assert STAGE_LABELS["storyboard_key_elements"] == "关键元素"
     assert STAGE_LABELS["storyboard_shots"] == "分镜"
     assert STAGE_LABELS["storyboard_audio"] == "音频层"
     # 平台自有动作（非 Skill 章节）保持描述性措辞，不强行直译
     assert STAGE_LABELS["image_generate"] == "生图"
     assert STAGE_LABELS["generate_video"] == "视频生成"
+
+
+def test_analysis_rename_covers_all_user_facing_surfaces():
+    """「素材分析」改名须覆盖全部**用户可见**文案面（批J）。
+
+    只改 `STAGE_LABELS` 不够：事件卡标题、动作日志描述、轮末兜底正文、
+    R9 对话摘要各有硬编码，各处叫法不一致会露出旧名（实测 7 条测试抓着）。
+    """
+    from src.video_agent.core.event_cards import product_event_card
+    from src.video_agent.core.fc_feedback import describe_fc_tool
+
+    cards = product_event_card("script_analysis_report",
+                               {"doc_name": "x.md", "summary": "s"}, 0)
+    assert cards and cards[0][0] == "素材分析已完成", "事件卡标题未改名"
+    assert "素材分析" in cards[0][3], "事件卡折叠区标题未改名"
+    assert describe_fc_tool("script_analysis_report", {}) == "素材分析已完成", \
+        "动作日志描述未改名"
 
 
 def test_platform_only_nodes_keep_descriptive_titles():

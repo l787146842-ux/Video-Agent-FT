@@ -471,7 +471,7 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
     label = str(args.get("label") or "").strip()
     doc = str(args.get("key") or args.get("name") or "").strip()
     if name == "script_analysis_report":
-        return "剧本分析已完成"
+        return "素材分析已完成"
     if name == "storyboard_create_group":
         return "故事板已更新"
     if name == "storyboard_patch_draft":
