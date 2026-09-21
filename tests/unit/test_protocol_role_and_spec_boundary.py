@@ -145,49 +145,69 @@ def test_spec_clause_layers_persistence_by_granularity():
         "缺落盘分层（方针级 → 规格「角色方向」/ 逐条明细 → 故事板元素）"
 
 
-# ---------- ③ 委派任务书契约（事故 2222/Q5，批2） ----------
+# ---------- ③ 委派任务书契约（事故 2222/Q5 立，5555/Q5 由三段改两段） ----------
 
 def _policy() -> str:
     from src.video_agent.core.subagent import subagent_policy
     return subagent_policy()
 
 
-def test_task_brief_has_three_parts():
-    """任务书三段式：①目标 ②下游用途 ③尚未落入规格文档的新决定。"""
-    policy = _policy()
-    assert "任务书三段" in policy, "缺任务书三段式契约"
-    assert "一句目标" in policy, "缺第①段：一句目标"
-    assert "下游用途" in policy, "缺第②段：下游用途（谁会用、用来干什么）"
-    assert "尚未落入规格文档的新决定" in policy, \
-        "缺第③段：尚未落入规格文档的新决定"
+def test_task_brief_is_two_parts():
+    """任务书两段式：①目标（执行所选 Skill 本章节）＋②尚未落入规格文档的新决定。
 
-
-def test_task_brief_third_part_is_new_decisions_not_restatement():
-    """第③段必须是「新决定」，不得回退成「复述已确认的全局约束」。
-
-    用户 #6 裁决「子代理可以自己读，不要框的太死」：制作设定与剧本子代理
-    本来就自读得到（2222 实证三个子代理都真读了）。父代理复述 = 纯冗余 +
-    双份事实源。
+    2026-09-21 批C（事故 5555/Q5）由三段改两段：**删「②下游用途」**。
+    删除依据（5555 实跑取证）：子代理 `history=[]`、阶段章节已由
+    `planner._launch_subagent` 全量注入——它**真的不需要**知道下游用途；
+    而该段实测被用作复述章节内容的入口（任务书①把 `SKILL.md:16` 原文
+    「提取角色、场景、关键道具，识别剧本类型」整句抄了一遍）。
     """
     policy = _policy()
+    assert "任务书只写两段" in policy, "缺任务书两段式契约"
+    assert "一句目标" in policy, "缺第①段：一句目标"
+    assert "尚未落入规格文档的新决定" in policy, \
+        "缺第②段：尚未落入规格文档的新决定"
+    # 用户 #6 已否决的「框太死」方向：不得回退成复述既有内容
     assert "子代理自己读得到" in policy, \
         "缺「子代理自己读得到」的正向读取授权认知（用户 #6）"
-    # 旧表述是「复述已确认的全局约束」——已否决，不得回潮
-    assert "已确认的全局约束（如输出语言" not in policy, \
-        "回退成「复述已确认的全局约束」——用户 #6 已否决（框太死）"
+
+
+def test_task_brief_drops_downstream_use():
+    """反向钉：任务书不再要求写「下游用途」（5555/Q5 用户确认删除）。
+
+    旧三段式的第②段是**邀请复述的坑**：既然要写"谁会用、用来干什么"，
+    模型自然会把章节里的产出清单再抄一遍。
+    """
+    policy = _policy()
+    assert "下游用途" not in policy, (
+        "回潮成三段式「下游用途」——5555/Q5 已删除（子代理不需要知道，"
+        "且该段被用作复述章节内容的入口）")
+    assert "任务书三段" not in policy, "回潮成三段式表述"
+
+
+def test_task_brief_points_at_section_as_the_basis():
+    """①段必须把「执行所选 Skill 的本阶段章节」写成执行依据（章节即规范）。
+
+    这是删掉复述后的**代替品**：不再由父代理转述规范，而是明确指向
+    已在子代理手里的章节全文（唯一表述源，P1）。
+    """
+    policy = _policy()
+    assert "执行所选 Skill 的本阶段章节" in policy, \
+        "缺「执行依据＝所选 Skill 的本阶段章节」"
+    assert "不要复述章节内容" in policy, \
+        "缺「不要复述章节内容」——不写这句，模型会继续把章节抄进任务书"
 
 
 def test_task_brief_states_why_not_just_forbids():
     """含因果说明而不只是禁令（G3：不写一句话让模型配合机制）。
 
-    旧表述「范围/源文档/产出规范都不写」是纯禁令：没说为什么，且模型当时
-    **有充分理由写**——它以为自己在"专业指导"。2222 实证后果：两个子代理对
-    「分镜草稿」理解完全相反（一个写了 17 张卡，一个 0 张卡）。
+    旧表述是纯禁令：没说为什么，且模型当时**有充分理由写**——它以为自己在
+    "专业指导"。5555 实证后果：任务书照抄章节原文 + 声明"已写入规格"后
+    又把同样内容列一遍（第二份事实源）。
     """
     policy = _policy()
     assert "复述只会和章节打架" in policy, \
         "缺因果说明「你复述只会和章节打架」（防退化成纯禁令）"
-    assert "一律不写" in policy, "缺范围/规范/交付物清单一律不写的契约"
+    assert "章节里都已经写全" in policy, "缺范围/规范/交付物归章节的事实说明"
 
 
 def test_task_brief_carries_spec_write_principle_reference():
@@ -204,13 +224,16 @@ def test_task_brief_carries_spec_write_principle_reference():
 def test_task_field_description_matches_policy():
     """工具 schema 的 task 描述与策略段同向（不产生第二份契约）。
 
-    工具描述只留可照抄的字段用法，三段式完整表述与"为什么"唯一源 = SUBAGENT_POLICY。
+    工具描述只留可照抄的字段用法，两段式完整表述与"为什么"唯一源 = SUBAGENT_POLICY。
     """
     from src.video_agent.tools.document_tools import RunSubagentInput
 
     desc = RunSubagentInput.model_fields["task"].description
-    assert "①一句目标" in desc and "②下游用途" in desc, \
-        "task 字段描述未承载三段式（与策略段不同向）"
+    assert "①一句目标" in desc and "②尚未落入规格文档的新决定" in desc, \
+        "task 字段描述未承载两段式（与策略段不同向）"
+    assert "下游用途" not in desc, "task 字段回潮成三段式（含下游用途）"
+    assert "执行所选 Skill 的本阶段章节" in desc, \
+        "task 字段缺「执行依据＝所选 Skill 本章节」"
     assert "不用复述" in desc, "task 字段缺「既有内容不用复述」事实"
 
 
