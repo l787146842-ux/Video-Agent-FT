@@ -564,13 +564,32 @@ class Planner:
         # 子在同一 asyncio task/同一 context 内联跑：包一层追踪隔离带（D1），
         # 防子崩溃在 finish 之前把本任务绑定留在子的已空态、导致父轮 trace 断链
         # （正常回退由子 finish_trace 沿父帧链完成，见 tracer D2）。
+        #
+        # 2026-09-21 批G（事故 4444/Q4）：**给子级一个 stream_hook，把它切到
+        # 流式通道**。此前不传 hook → `turn_executor.llm_call` 走 else 分支
+        # （非流式 `call_llm`），三项保护全部失效：
+        #   ① 无步内增量落盘（`turn_executor._flush_partial` 只在流式分支内）
+        #      —— 8888 事故批建的「大步中断不再全量丢失」对子代理不生效；
+        #   ② 无「已产出则不重试」保护（`openai_compat.chat_stream` 的 yielded
+        #      判定只在流式分支）→ 长产出期间遇瞬时故障只能整轮重来；
+        #   ③ 无 `reasoning_delta`（同分支内发出）→ 子代理思考在主 Feed 不可见。
+        # 4444 实证：子代理读素材成功（2.5s）后，下一次调用 60.1s/61.1s 两次
+        # 504 阵亡，一张卡未建——批A3 补的「每批 3~5 个」纪律根本没轮到使用。
+        #
+        # hook 是**收口**（不透传父正文）：子代理只回摘要（`resp.text`），
+        # 其中间正文不该在父对话气泡里重复渲染（一次委派两处显示同一段话）。
+        # 它只用于触发流式分支本身；思考/工具事件仍走 on_event 通道（见上）。
+        async def _child_stream_sink(_text: str) -> None:
+            return None
+
         with AgentTracer.get_instance().child_trace_scope():
             # 2026-09-15 1111 批（对齐 flova/dsh 子活动实时可见）：把父的 on_event
             # 透传给子循环（流式二期经上方 tagger 打标），子级 state_refresh/
             # timeline/tool 事件进入父 SSE，故事板增量亮卡（此前子级 emit 无出口，
             # 做完才一次性弹出）。
             resp = await child.handle_message(
-                base_task, child_ctx, on_event=child_on_event)
+                base_task, child_ctx, stream_hook=_child_stream_sink,
+                on_event=child_on_event)
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:

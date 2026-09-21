@@ -98,6 +98,10 @@ class SseDeltaEvent(_SseFrame):
 class SseReasoningDeltaEvent(_SseFrame):
     type: Literal["reasoning_delta"]
     text: str = ""
+    # 2026-09-21 批G（事故 4444/Q4）：子代理思考也走本帧下发，须带归组标记，
+    # 否则前端无法把子代理思考与父代理思考分流（会串台到父思考面板）。
+    # 类型在下方 SseSubagentMeta 定义后注入（前向引用用字符串，模型重建时解析）。
+    subagent: Optional["SseSubagentMeta"] = None
 
 
 class SseSubagentMeta(BaseModel):

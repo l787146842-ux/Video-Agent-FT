@@ -672,6 +672,7 @@ export interface SseDeltaEvent {
 export interface SseReasoningDeltaEvent {
   type: 'reasoning_delta';
   text?: string;
+  subagent?: SseSubagentMeta | undefined;
 }
 
 export interface SseSubagentMeta {

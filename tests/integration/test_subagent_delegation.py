@@ -90,11 +90,13 @@ class _ScriptedAdapter(BaseChatAdapter):
         response = await self.chat(messages, **kwargs)
         from src.video_agent.adapters.base_chat import StreamChunk
         if response.tool_calls:
-            yield StreamChunk(type="tool_call", tool_name=str(
-                (response.tool_calls[0].get("function") or {}).get("name")),
-                tool_args=dict(
-                    (response.tool_calls[0].get("function") or {}).get("arguments")
-                    or "{}"))
+            fn = (response.tool_calls[0].get("function") or {})
+            # 真实契约（openai_compat._stream_once:879-886）：tool_args 是**已解析的
+            # dict**（解析失败才走 tool_args_raw/tool_args_error 旁路）。
+            # 本桩此前恒不触发（父与子都走非流式），2026-09-21 批G 让子代理改走
+            # 流式通道后才被激活——原先传 JSON 字符串给 dict() 会 ValueError。
+            yield StreamChunk(type="tool_call", tool_name=str(fn.get("name")),
+                              tool_args=json.loads(fn.get("arguments") or "{}"))
         else:
             yield StreamChunk(type="text_delta", text=response.content)
         yield StreamChunk(type="done", finish_reason=response.finish_reason)

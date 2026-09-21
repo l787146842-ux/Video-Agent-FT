@@ -67,6 +67,9 @@ export interface SubagentActor {
   /** 子级 state_refresh（actions_applied）累计步数 */
   steps: number;
   tools: SubagentActorTool[];
+  /** 子代理思考累计（2026-09-21 批G，事故 4444/Q4）：执行中即可展开查看；
+   *  超上限按**尾部**截断（保留最新进展） */
+  reasoning?: string;
   startedAt: number;
   finishedAt?: number;
   /** 收尾时绑定的轮次 id（切回/刷新后按轮次把卡重新挂回消息） */
@@ -75,6 +78,17 @@ export interface SubagentActor {
   staticSource?: boolean;
   /** 子工具名单是否已懒加载完成（防重复拉只读记录） */
   toolsLoaded?: boolean;
+}
+
+/** 子代理思考保留上限（字符）：超出按尾部截断（最新进展优先），
+ *  防一次委派数千字思考拖垮渲染（批G）。 */
+export const SUBAGENT_REASONING_CAP = 6000;
+
+/** 思考增量入账（带截断）：超上限保留尾部并加省略前缀标记。 */
+function capReasoning(text: string): string {
+  const s = text || '';
+  if (s.length <= SUBAGENT_REASONING_CAP) return s;
+  return `…${s.slice(s.length - SUBAGENT_REASONING_CAP)}`;
 }
 
 const [actorsState, setActorsState] = createStore<{ list: SubagentActor[] }>({ list: [] });
@@ -198,6 +212,11 @@ export const subagentActorActions = {
         // 这里只把批次计数入 actor 步数
         const n = Number(ev.payload?.count ?? ev.count ?? 1) || 1;
         actor.steps += Math.max(1, n);
+      } else if (ev.type === 'reasoning_delta') {
+        // 2026-09-21 批G（事故 4444/Q4）：子代理思考累计（执行中即可展开查看，
+        // 不再「只有做完了才能看到」）。**必须截断**：一次委派思考可达数千字，
+        // 不设上限会拖垮渲染（保留**尾部**——最新进展比开头更有信息量）。
+        actor.reasoning = capReasoning((actor.reasoning || '') + (ev.text || ''));
       }
       label = labelOf(actor);
       status = actor.status;

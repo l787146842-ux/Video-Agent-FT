@@ -214,6 +214,8 @@ const zhCN = {
   'rp.actor.failed': '已中断',
   'rp.actor.steps': '{count} 步',
   'rp.actor.tools': '子代理操作（{count}）',
+  // 2026-09-21 批G（事故 4444/Q4）：子代理思考（执行中即可展开）
+  'rp.actor.reasoning': '子代理思考',
   'rp.actor.openRecord': '查看子代理执行记录',
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',

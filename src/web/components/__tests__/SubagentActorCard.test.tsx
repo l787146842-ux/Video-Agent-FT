@@ -40,6 +40,13 @@ function finishDelegate(ok: boolean): void {
   } as SseEvent);
 }
 
+/** 播一条子代理思考增量（批G） */
+function seedReasoning(text: string, meta: SseSubagentMeta = META): void {
+  subagentActorActions.applyChildEvent(meta, {
+    type: 'reasoning_delta', text,
+  } as SseEvent);
+}
+
 function renderCard(key: string) {
   return render(() => <SubagentActorCard actor={() => actorByKey(key)} />);
 }
@@ -114,8 +121,38 @@ describe('SubagentActorCard 点击进只读记录', () => {
   });
 });
 
-describe('相位翻转后不闪失（live → settled）', () => {
-  it('done 收尾：槽位随账本入库，settled 相位 actor 卡仍在', () => {
+describe('批G：子代理思考可见（事故 4444/Q4）', () => {
+  it('有思考时才渲染折叠入口；展开可见思考原文', async () => {
+    seed();
+    seedReasoning('我先读剧本，再登记关键元素。');
+    const { getByTestId, queryByTestId } = renderCard('conv-sub-9');
+    // 默认折叠：内容不显示
+    expect(queryByTestId('subagent-actor-reasoning')).toBeNull();
+    const toggle = getByTestId('subagent-actor-reasoning-toggle');
+    expect(toggle.textContent).toContain('子代理思考');
+    await fireEvent.click(toggle);
+    expect(getByTestId('subagent-actor-reasoning').textContent)
+      .toBe('我先读剧本，再登记关键元素。');
+  });
+
+  it('无思考时不渲染折叠入口（防空行）', () => {
+    seed();
+    const { queryByTestId } = renderCard('conv-sub-9');
+    expect(queryByTestId('subagent-actor-reasoning-toggle')).toBeNull();
+  });
+
+  it('执行中即可见（不必等做完）——running 态下已可展开', async () => {
+    seed();
+    seedReasoning('正在拆解角色清单…');
+    const { getByTestId } = renderCard('conv-sub-9');
+    // 尚未 finishDelegate：actor 仍是 running
+    expect(getByTestId('subagent-actor-card').textContent).toContain('执行中');
+    await fireEvent.click(getByTestId('subagent-actor-reasoning-toggle'));
+    expect(getByTestId('subagent-actor-reasoning').textContent).toBe('正在拆解角色清单…');
+  });
+});
+
+describe('相位翻转后不闪失（live → settled）', () => {  it('done 收尾：槽位随账本入库，settled 相位 actor 卡仍在', () => {
     seed();
     finishDelegate(true);
     // 模拟 finishStream：live 账本相位翻转随消息入库（buildDoneMessage 同口径）

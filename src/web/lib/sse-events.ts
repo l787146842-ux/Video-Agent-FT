@@ -212,7 +212,16 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
       break;
     }
     case 'delta': fx.chat.appendDelta(ev.text || ''); break;
-    case 'reasoning_delta': fx.chat.appendReasoning(ev.text || ''); break;
+    case 'reasoning_delta':
+      // 2026-09-21 批G（事故 4444/Q4）：带 subagent 标记 → 归入该子代理的
+      // actor 卡（子代理思考不再串台到父代理思考面板）；无标记 = 父代理思考，
+      // 逐字走原路径（旧行为零变化）。
+      if (ev.subagent) {
+        fx.subagentEvent(ev.subagent, ev);
+        break;
+      }
+      fx.chat.appendReasoning(ev.text || '');
+      break;
     case 'tool_started':
       // 子代理活动（流式二期）：不进普通工具卡，归入该子代理的 actor 卡
       if (ev.subagent) {

@@ -71,6 +71,35 @@
     {
       "name": "SseReasoningDeltaEvent",
       "schema": {
+        "$defs": {
+          "SseSubagentMeta": {
+            "description": "子代理活动归组标记（流式二期）：子循环事件经\ncore/planner._launch_subagent 的 tagger 打标后随帧下发，前端按 cid\n把同一子代理的活动归成一张 actor 卡（flova 具名 specialist 形态）。\ncid 空 = 子会话创建失败降级不落流（前端按 label+depth 兜底归组）；\nlabel = 阶段展示名（STAGE_LABELS）或通用委派的任务摘要前段。",
+            "properties": {
+              "cid": {
+                "default": "",
+                "title": "Cid",
+                "type": "string"
+              },
+              "stage": {
+                "default": "",
+                "title": "Stage",
+                "type": "string"
+              },
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "depth": {
+                "default": 0,
+                "title": "Depth",
+                "type": "integer"
+              }
+            },
+            "title": "SseSubagentMeta",
+            "type": "object"
+          }
+        },
         "properties": {
           "type": {
             "const": "reasoning_delta",
@@ -81,6 +110,17 @@
             "default": "",
             "title": "Text",
             "type": "string"
+          },
+          "subagent": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SseSubagentMeta"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [

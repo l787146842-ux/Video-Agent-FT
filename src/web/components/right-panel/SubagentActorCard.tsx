@@ -33,6 +33,8 @@ function statusText(s: SubagentActor['status']): string {
 
 export function SubagentActorCard(props: { actor: () => SubagentActor | undefined }) {
   const [open, setOpen] = createSignal(false);
+  /** 子代理思考折叠区（批G；与子工具名单各自独立开合） */
+  const [reasoningOpen, setReasoningOpen] = createSignal(false);
   /** 有子线程 id 才可点进只读记录（降级不落流的 actor 无记录可看） */
   const clickable = () => !!props.actor()?.cid;
 
@@ -63,6 +65,27 @@ export function SubagentActorCard(props: { actor: () => SubagentActor | undefine
             <span class="actor-card-label">{actor().label || t('rp.actor.fallbackLabel')}</span>
             <span class="actor-card-steps">{t('rp.actor.steps', { count: actor().steps })}</span>
           </button>
+
+          {/* 子代理思考（2026-09-21 批G，事故 4444/Q4）：执行中即可展开查看。
+              此前子代理走非流式通道 → 无 reasoning_delta → 这些内容只有做完
+              才在只读记录里看得到；现在执行中实时累计（超上限按尾部截断）。 */}
+          <Show when={(actor().reasoning || '').trim()}>
+            <button
+              type="button"
+              class="actor-tools-toggle"
+              aria-expanded={reasoningOpen()}
+              onClick={() => setReasoningOpen(!reasoningOpen())}
+              data-testid="subagent-actor-reasoning-toggle"
+            >
+              {t('rp.actor.reasoning')}
+              <FiChevronDown size={11} class={`tl-item-toggle-arrow${reasoningOpen() ? ' expanded' : ''}`} />
+            </button>
+            <Show when={reasoningOpen()}>
+              <div class="actor-reasoning" data-testid="subagent-actor-reasoning">
+                {actor().reasoning}
+              </div>
+            </Show>
+          </Show>
 
           {/* 子工具名单（折叠）：归组后父 Feed 不显子工具细节，此处保留全名单；
               刷新后重建的 static actor 名单懒加载（首次展开才拉只读记录） */}

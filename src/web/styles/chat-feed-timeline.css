@@ -90,5 +90,8 @@
   .actor-tool-mark.spin { color: var(--accent-blue); animation: tlSpin 1s linear infinite; }
   .actor-tool-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actor-tool-elapsed { flex-shrink: 0; }
+  /* 子代理思考折叠区（2026-09-21 批G，事故 4444/Q4）：执行中实时累计，
+     超上限由 store 按尾部截断（此处只管排版，保留换行） */
+  .actor-reasoning { margin-top: 2px; padding: 4px 6px; font-size: var(--font-2xs); line-height: 1.6; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; border-left: 2px solid var(--border-color); max-height: 220px; overflow-y: auto; }
   @keyframes tlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 }
