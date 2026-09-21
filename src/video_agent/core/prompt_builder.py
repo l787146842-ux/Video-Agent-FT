@@ -217,8 +217,19 @@ class PromptBuilder:
         # 哪些工具本轮不可用及替代路由（消除“思考打架”）；
         # K6 批：CHILD_ONLY_TOOLS（子代理专属打卡工具）不渲染——主代理
         # 不感知打卡工具存在（仅执行期裁剪，不进可见性说明）。
+        #
+        # 2026-09-21 批A/A2（事故 5555/追加-1）：**子级整段不渲染**。
+        # 本段文案面向主代理单场景写死——替代路由恒为「经委派（run_subagent）
+        # 执行对应阶段」；而子级的 `turn_excluded` 里**正好含 run_subagent**
+        # （SUBAGENT_TOOL_DENY 首条=结构防递归，子级 deny 集整体并入裁剪集，
+        # 见 planner._compute_excluded_tools）。于是子级收到的是循环指令：
+        # 「run_subagent 本轮不可用，替代路由：经委派（run_subagent）执行」。
+        # 且子级工具面**启动时已固定**（DELEGATION_CONTEXT 明说不可扩权），
+        # 逐条列被裁项对子级无行动价值——其唯一正确表述（「不在本次委派
+        # 授权面」）已由 DELEGATION_CONTEXT 承担，再渲染属复述（P1）。
+        # 主代理侧行为**逐字不变**（下方分支只对 depth≥1 生效）。
         _turn_excl = getattr(context, "turn_excluded", None)
-        if _turn_excl:
+        if _turn_excl and not getattr(context, "subagent_depth", 0):
             _render_excl = frozenset(_turn_excl) - subagent_mod.CHILD_ONLY_TOOLS
             if _render_excl:
                 _excl_names = ", ".join(sorted(_render_excl))
@@ -558,8 +569,22 @@ class PromptSectionSpec:
 def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """协议段（稳定前缀第一段）：整文件加载 prompts/planner/protocol.md（Rule 6）。
     步数预算不再模板化写死进协议（原 max_steps 死参数已删）；
-    客观步数改经状态尾部消息注入（turn_budget，见 build_state_tail_message）。"""
+    客观步数改经状态尾部消息注入（turn_budget，见 build_state_tail_message）。
+
+    2026-09-21 批A/A1（事故 5555/Q8+追加-2）：**子级不注入本段**。
+    本协议是**主代理编排协议**（自称「制片调度…把各专业阶段委派给对应执行
+    环节」），对子级大部分语义为反（子级不能委派）；且其内两处指针
+    （「停轮与批次时机见《Skill 流程纪律》第 6 条」「防虚报…唯一细则见第 3 条」）
+    在子级**物理悬空**——`skill_runtime.md::DISCIPLINE` 只随 `_selected_block`
+    注入，而子级 `skill_name=""`（`planner._launch_subagent`），永远拿不到。
+    即：子级拿到的是「详见第 6 章」而第 6 章不在书里。
+    子级的自足声明唯一源 = `prompts/planner/subagent.md::DELEGATION_CONTEXT`
+    （随任务下发，含分批纪律——见 A3），本段不再对子级重复。
+    """
     if not context.use_studio_context:
+        return ""
+    # 2026-09-21 批A/A1：子级（depth≥1）不注入主代理协议（指针悬空 + 语义反）
+    if getattr(context, "subagent_depth", 0):
         return ""
     # 协议单轨：动作通道唯一 = FC 工具。
     return load_prompt("planner/protocol.md") or ""

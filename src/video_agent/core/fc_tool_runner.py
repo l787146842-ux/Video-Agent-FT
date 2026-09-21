@@ -704,6 +704,18 @@ class FCToolRunner:
                                  args=c.args_preview)
             st.batch_tool_names.add(name)
             _stage_lbl = stage_label_for_tool(name)
+            # 2026-09-21 批A/A4（事故 5555/Q3）：委派阶段回填父级阶段标签。
+            # `stage_label_for_tool` 只认工具名，而 run_subagent 不在
+            # STAGE_LABELS 内；子代理内部那次阶段工具跑在子级自己的 runner
+            # 实例上，父级看不见 → 父级 last_stage_label 恒空，暂停卡回落
+            # 系统模板的「本阶段」（5555 落盘实证）。阶段事实就在**本次调用的
+            # 入参**里，父级自取即可，无须子级回传。
+            if not _stage_lbl and name == subagent_mod.SUBAGENT_TOOL_NAME:
+                try:
+                    _stage_lbl = subagent_mod.stage_display_label(
+                        (args or {}).get("stage") or "")
+                except Exception as _e:  # 取读失败不阻断提交（回落原行为）
+                    logger.debug("[fc_tool_runner] 委派阶段标签取读失败: {}", _e)
             if _stage_lbl:
                 st.last_stage_label = _stage_lbl
                 self._turn_stage_label = _stage_lbl

@@ -243,6 +243,20 @@ def stage_card_media(stage: str = "") -> FrozenSet[str]:
     return STAGE_CARD_MEDIA.get(resolve_stage(stage), frozenset())
 
 
+def stage_display_label(stage: str = "") -> str:
+    """阶段展示标签（空/未知阶段返回空串）；唯一源 = registry.STAGE_LABELS。
+
+    消费端 = `fc_tool_runner._commit_call`（2026-09-21 批A/A4，事故 5555/Q3）：
+    `stage_label_for_tool` 只认**工具名**，而委派出去的阶段，父代理本轮
+    唯一的工具是 run_subagent（不在 STAGE_LABELS 内）；子代理内部那次
+    script_analysis_report 跑在**子级自己的 runner 实例**上，父级看不见。
+    结果：父级 `last_stage_label` 恒空 → 暂停卡回落系统模板的「本阶段」
+    （5555 落盘实证 chatMessages[1].confirm）。本函数让父级从**自己的**
+    委派入参取到阶段事实，不依赖子级回传。
+    """
+    return STAGE_LABELS.get(resolve_stage(stage), "")
+
+
 def resolve_subagent_kind(kind: str = ""):
     """兼容旧调用签名：通用形态下恒返回单一类型 "general"（忽略传入 kind）。
 
