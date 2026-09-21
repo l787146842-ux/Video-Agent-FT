@@ -36,6 +36,43 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批D 规格写入判据细化：判据②收窄方针级 + 判据③点名清单类（事故 5555/Q7）
+- **背景（5555 实跑取证）**：用户「为什么规格文档，还是很多一大坨的东西都往里面塞，一点都不精简。人家 flova 多精简」。落盘 `制片规格.md` **716 字** vs flova `规格文档.md` **460 字**：①「素材来源：…（判定为 C 类半结构化剧本，可直接进入 Storyboard，无需先做短剧化改编）」= 分析阶段结论，不是全局参数（flova 连该字段都没有）；②「**叙事结构**」整节 = 3 场次逐行 + 8 角色逐名 + 道具 8.5×5.2cm + 25–31 镜——按判据③本应整节归故事板；③ flova 的「角色方向」是**一句话方针**、零逐人明细。
+- **根因（判据措辞两处）**：①判据②举例含「**叙事驱动、核心视觉母题**」——这两个词本身就是"分析章节名"形态，模型据此把整个分析叙事搬进规格；②判据③只写「逐条细节」——模型**不认为「8 个角色名单」是"逐条细节"**，它读成"范围"，于是照写。
+- **改动**（`prompts/planner/protocol.md` 唯一源，非新增条款）：
+  - 判据②：删「叙事驱动、核心视觉母题」举例 → 改为「**写成方针级一两句**（如角色方向、视觉风格、叙事驱动），不罗列实体明细」。
+  - 判据③：由「只影响某个镜头、某个角色的逐条细节」扩为「**清单与逐条明细一律归故事板元素，不写规格**：场次清单、角色名单、道具清单、镜头数预估、逐人外貌服装、逐场布局、逐镜参数都属此类」。
+- **回归测试**：`test_protocol_role_and_spec_boundary.py` 扩到 **22 条**——新增 `test_spec_clause_criterion_two_is_policy_level`（判据②含「方针级」且**不含**「核心视觉母题/叙事结构」，反向钉防回潮）+ `test_spec_clause_criterion_three_names_lists`（逐词钉死四类清单 = 5555/Q7 直接病根）；原四条判据用例按新措辞改写。
+- **已知残留（不修，用户 2026-09-21 裁决）**：`SKILL.md:17` 要求把「图像/视频生成渠道与分辨率」写进规格，属系统注入项回流。用户明确「**skill 文档要求的全局设置是正常的，你不要管，不用登记欠账**」——故本批只从判据侧收窄，不改 Skill（冻结#16）、不登记债务。
+- **验证**：`tests/unit` + `tests/integration` **2500 passed / 0 failed**；`acceptance --quick` 全绿；`check_prompt_literals` PASS。
+
+### 2026-09-21 · 批C 委派任务书去框：三段改两段（事故 5555/Q5）
+- **背景（5555 实跑取证）**：用户「派子代理的任务书还是框的太死了，素材分析章节里面已经有具体目标了，目标就是按章节执行任务就行了。下游用途也不写」。批2（2222/Q5）引入的三段式方向对（禁止复述章节），**但没治好**——任务书原文：`script_analyze` ①目标「…提取角色、场景、关键道具等关键元素，并识别该文本的剧本类型」**就是 `SKILL.md:16` 原文整句**；`storyboard_key_elements` ③「本轮新确认的决策**已全部写入《制片规格.md》**——场景按原著…保持 8 个独立角色不合并…」= 声明"已写入规格"后又把同样内容列一遍（**明知故犯的第二份事实源**）；①还写了「8 名角色、3 个场景、7 项关键道具」= **范围**（策略段明写「一律不写」）。
+- **根因（批2 的设计缺陷）**：第②段「**下游用途**（谁会用、用来干什么）」**本身就是一个邀请复述的坑**——既然要交代下游用途，模型自然把章节里的产出清单再抄一遍。而子代理 `history=[]`、阶段章节已由 `planner._launch_subagent` 全量注入，它**真的不需要**知道下游用途。
+- **改动**：`prompts/planner/subagent.md::SUBAGENT_POLICY` 三段 → **两段**：①一句目标 ＋ 执行依据＝**执行所选 Skill 的本阶段章节**（章节全文已注入，是产出规范与工作方法的唯一依据，**不要复述章节内容**）；②尚未落入规格文档的新决定。删②下游用途。补因果（「你复述只会和章节打架、并挤占子代理的注意力」「章节里都已经写全」）——**非纯禁令**（G3）。`RunSubagentInput.task` 描述同步两段式（完整表述唯一源仍是 `SUBAGENT_POLICY`，P1）。
+- **回归测试**：批2 的 5 条断言**改写**（非删除）为 6 条——新增两条反向钉（`下游用途` 不得回潮、`任务书三段` 不得回潮）+ `test_task_brief_points_at_section_as_the_basis`（钉死"章节即依据"这个删掉复述后的**代替品**）。
+- **验证**：`tests/unit` + `tests/integration` **2498 passed / 0 failed**。
+
+### 2026-09-21 · 批B 暂停提问结构对齐 dsh：问句改由模型撰写（翻 2026-08-31 裁决，事故 5555/Q4）
+- **裁决（用户，2026-09-21）**：「这个停下来提问的机制**可以照搬 dsh**……人家 dsh 这个结构就非常清晰」。**翻案 2026-08-31 / v2批4「卡问句系统组装」裁决**（原接线：模型只提交审批事实，卡问句系统按阶段组装成固定模板，模型原文一律进正文通道）。
+- **翻案依据（5555 落盘实证 `chatMessages[1].confirm`）**：旧模板恒为 `'「本阶段」已完成，请过目以上成果并选择下一步。'`——① 阶段标签回落「本阶段」（批A/A4 已修）；② **问句与本次要问的事完全无关**：那一轮实际在问输出语言/画幅/时长/角色处理，模板却在说"阶段已完成，请过目成果"。
+- **现契约**（对齐 `@deepseek-ai/dsh-tool-ask-user` + `dsh-user-questions`）：`question` = 模型撰写的问题正文（取代系统模板）；`header` = 短标题；`detail` = 辅助说明（**渲染时不变成选项标签**）；`multi_select` = 多选标志；回答按 `pause_id` 结构化回携（既有）。
+- **两条红线（本批保持）**：① **不静默丢弃**——模型未写 `question` 时**回落系统模板**，绝不留空卡（`fc_tool_runner` 记载 2026-09-12「静默剥离字段造成假成功空提示词卡」事故，红线同样适用）；② **正文通道不没收**——模型 `message` 原文照旧进正文（`pause_overflow`）。
+- **改动**：`core/pause_composer.py`（新增 `PauseCard` + `compose_pause_card`；`stage_template_question` 抽出系统模板唯一源；旧签名保留兼容）→ `WorkflowPauseInput` 四字段 → `fc_tool_runner`（`_BatchState` 三字段 + `FCExecuteResult` 尾部三字段，位置解包兼容同 `pause_id` 先例）→ `fc_response` → `turn_executor` → `agent_loop` → `planner_output`（非空才透传，兼容旧测试桩）→ `planner`（`PlannerResponse` + done payload）→ `sse_events::SseDonePayload`；持久化 `conversation_ops` + `state/manager` + `web/chat_service`（流式与非流式两处，`getattr` 取值兼容 `SimpleNamespace` 桩）；`gen_api_types.py` 重生成（**不手改** `api.generated.ts`）；前端 `types/index.ts` / `done-message.ts` / `ConfirmActions.tsx`（`headerBlock` 单组与向导两分支共用）/ `chat-cards.css`。
+- **回归测试**：`test_pause_overflow_guard.py` **改写**（契约变更，非删除）7 条——模型 `question` 成卡问句 / **无 `question` 回落不静默丢** / `message` 进正文 / `header-detail-multi_select` 透传 / 缺省不伪造；新增 `ConfirmActions-dsh-pause.test.tsx` 6 条——模型问句直达题面 / `header` 排在题面前 / **`detail` 不进选项区** / 缺省与空白不渲染空行 / 向导分支同构。另修 11 处旧断言：`FCExecuteResult` 扩字段后，位置解包的测试改为**按字段名取用**（该类 docstring 本就写明「字段名即契约，杜绝位置解包」）。
+- **验证**：`tests/unit` + `tests/integration` **2497 passed / 0 failed**；vitest **121 files / 1002 passed**；`python scripts/acceptance.py` 全量 **18/18 PASS**；`npm run build` 通过（首屏 377.51 kB < 400 kB 上限）。**UI 变更待用户目测**（宪法 §3.1）。
+
+### 2026-09-21 · 批A 子代理上下文组合修缺（事故 5555/Q3+Q8 与两项取证期追加发现）
+- **本批同时闭合用户 8 问中的 Q3/Q8，以及取证期顺带查出的两个同根因族缺陷**（追加-1/追加-2）。
+- **Q8（子代理两次 60s 网关 504 阵亡）**：`logs/agent-20260921.log` 逐行——11:10:55 派发 → 11:11:55/11:11:56 两次重试 → 11:12:59 `kind=upstream` escalate → `turn/end reason=error`；11:13:15 重派 → 11:14:15/11:15:16（60s 整）→ 11:16:18 再次阵亡。两个子会话转录形状一致：读素材**成功** → `step/feedback` → 下一次调用**再没回来**（要一次性吐 8 角色+3 场景+7 道具+8 张音色卡，deepseek 上限 8192 tokens）。**唯一能拦住它的《Skill 流程纪律》第 6 条（每批 3~5 个 / 不要一次生成全部 / 思考同样分批）物理到不了子级**——该纪律只随 `_selected_block` 注入，而子级 `skill_name=""`（`planner._launch_subagent`）。
+- **追加-2（Q8 的精确根因）**：`protocol.md` **整文件无 depth 门控**注入子级，其中两句是**悬空指针**——「停轮与批次时机见《Skill 流程纪律》第 6 条（本协议不复述）」「防虚报…唯一细则见第 3 条」。即：**子级拿到的是「详见第 6 章」而第 6 章不在书里**，且 `DELEGATION_CONTEXT` 里**没有代替品**。→ **A1**：`_sec_protocol` 加 `subagent_depth≥1` 门控（子级不注入；主代理逐字不变）。理由：该协议自称「制片调度…把各专业阶段委派给对应执行环节」，对**不能委派**的子级语义为反。
+- **A3（Q8 闭合）**：`subagent.md::DELEGATION_CONTEXT` 补**分批推进**契约（每批 3~5 个调用 / 思考同样分批 / 后果说明"已落盘的批次仍保留、未落盘的全部丢失"）——非纯禁令（G3），且**自足不指向《Skill 流程纪律》**（A1 后该指针对子级不可达）。
+- **追加-1（子级收到循环指令）**：复刻 key_elements 子级 context 实测 `build_state_tail_message` 输出——`以下工具本轮不可用：…, run_subagent, …。替代路由：经委派（run_subagent）执行对应阶段。`**用被禁的工具当被禁工具的替代路由**。根因：`turn_excluded.md` 的替代路由是**面向主代理单场景写死的常量**（`prompt_builder.py` `_excl_route = "经委派（run_subagent）执行对应阶段"`），而 `turn_excluded` 通道**被子级复用**（子级 deny 集整体并入裁剪集，`planner._compute_excluded_tools`）。→ **A2**：`build_state_tail_message` 的 UNAVAILABLE 段加 `subagent_depth≥1` 跳过（子级工具面启动时已固定，逐条列无行动价值；其唯一正确表述「不在本次委派授权面」已由 `DELEGATION_CONTEXT` 承担，再渲染属复述 P1）。主代理侧渲染与文案**逐字不变**。
+- **Q3（暂停卡恒显示「本阶段」）**：三跳根因链——父代理暂停轮唯一工具是 `run_subagent`（不在 `registry.STAGE_LABELS` 内）→ `stage_label_for_tool` 返回 `""` → `last_stage_label` 恒空 → 回落模板「本阶段」；子代理内部那次 `script_analysis_report` 跑在**子级自己的 runner 实例**上，父级看不见。→ **A4**：新增 `subagent.stage_display_label(stage)`（唯一源 `STAGE_LABELS`）+ `fc_tool_runner._commit_call` 在 `run_subagent` 成功时从其**入参** `stage` 回填父级阶段标签（阶段事实就在父级自己的调用入参里，无须子级回传）。通用委派（无 stage）**不伪造**标签。
+- **回归测试**：新增 `tests/unit/test_subagent_context_composition.py`（**12 条**）——A1/A2 各含**主代理侧防误伤双向钉**（协议段 / UNAVAILABLE 段对主代理逐字不变）、A3 含"自足不指向《Skill 流程纪律》"+端到端可达性、A4 含"委派带 stage → 暂停卡带真实标签"与"通用委派不伪造"。
+- **验证**：`tests/unit` **2393 passed** + `tests/integration` **100 passed**（0 failed）；`acceptance --quick` 退出码 0。`data/skills` 一行不改（冻结#16）。
+- **未做（属外部因素，不承诺根除）**：供应商 504 本身是外部网关行为；A3 通过**降低单次输出体量**间接降低触发概率。
+
 ### 2026-09-21 · 批4 阶段建卡媒体类型限定：key_elements 只能建音色卡（用户裁决）
 - **裁决（用户，2026-09-21）**：「key_elements 要建组和卡，因为要在某些 skill 的要求下，要建对应的人物的音频卡，并且在音频卡的草稿里填入音频描述的提示词。本项目关键元素中已经有音频容器了，卡片是其他卡的 0.5 倍，并且卡面只有音频符号不会有文字渲染。**如果音频卡是单独的工具或者字段，就提供给子代理。如果是混在一起，就想办法，让子代理只能建音频卡。**」
 - **查证：属"混在一起"**——音频卡**不是独立工具、也不是独立字段**，与图像卡共用 `storyboard_add_draft` / `storyboard_create_group` 内联 `draft` 同一入口，仅靠 `mediaType` 值区分（前端半尺寸图标化判定 = `DraftCard.tsx::isVoiceCard`：`type==='keyElement' && mediaType==='audio'`，与本条描述一致）。故按用户指示"想办法让子代理只能建音频卡"。
