@@ -1,10 +1,11 @@
-import { Show, For, createMemo, createSignal } from 'solid-js';
+import { Show, createMemo, createSignal } from 'solid-js';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { t } from '@/lib/locale';
 import type { ChatMessage, PauseAnswer, PauseQuestion } from '@/types';
 import { pickDimension, kindForDim, ConfigProviderModelSelect, type ConfirmOptionItem } from './ConfirmPicker';
 import { ConfirmOptionCards } from './ConfirmOptionCards';
 import { ConfirmCustomInput } from './ConfirmCustomInput';
+import { PauseQuestionFlow } from './PauseQuestionFlow';
 
 /** 无 group 的普通选项组使用的内部键 */
 const SINGLE_KEY = '__single__';
@@ -137,140 +138,21 @@ export function ConfirmActions(props: { message: ChatMessage }) {
     </>
   );
 
-  // ---------- 批F：多问题分支（一次问 N 个问题，对齐 dsh questions[]） ----------
+  // ---------- 批F：多问题分支（A 批起改为分页作答，对齐 dsh QuestionFlow） ----------
   /** 问题级列表（非空才走多问分支；旧消息无此字段 → 逐字走原单问/向导分支） */
   const questions = () => (msg().pauseQuestions || []) as PauseQuestion[];
   const hasQuestions = () => questions().length > 0;
-  /** 每问的选择：单选存 label，多选存 label 数组（键 = 问题下标） */
-  const [qPick, setQPick] = createSignal<Record<number, string[]>>({});
-  /** 每问的组内自定义输入（非空时优先于卡片选择，单选语义） */
-  const [qCustom, setQCustom] = createSignal<Record<number, string>>({});
-  const [qCustomOpen, setQCustomOpen] = createSignal<Record<number, boolean>>({});
-
-  /** 选项携带 value 时发送 value（后端确定性消费），否则发送 label */
-  const optValue = (q: PauseQuestion, label: string) =>
-    ((q.options || []) as ConfirmOptionItem[])
-      .find((o) => o.label === label && (o.value || '').trim())?.value || label;
-
-  const pickedOf = (idx: number) => qPick()[idx] || [];
-
-  /** 某问当前生效值：自定义输入优先，否则取卡片选择（多选逐项，顺序 = 勾选顺序） */
-  const effectiveQ = (idx: number): string[] => {
-    const txt = (qCustom()[idx] || '').trim();
-    if (txt) return [txt];
-    const q = questions()[idx];
-    return pickedOf(idx).map((label) => optValue(q, label));
-  };
-
-  const toggleQ = (idx: number, label: string) => {
-    const q = questions()[idx];
-    // 勾选卡片即放弃该问的自定义输入
-    if ((qCustom()[idx] || '').trim()) setQCustom({ ...qCustom(), [idx]: '' });
-    if (q?.multi_select) {
-      const cur = pickedOf(idx);
-      setQPick({
-        ...qPick(),
-        [idx]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label],
-      });
-    } else {
-      setQPick({ ...qPick(), [idx]: [label] });
-    }
-  };
-
-  /** 全部问题都有答案才能发送（与向导 allPicked 同口径） */
-  const allQAnswered = () => questions().every((_, i) => effectiveQ(i).length > 0);
-
-  /** 发送：各问所选**按问题顺序逐行拼接**（与既有向导的分组拼接口径一致）；
-   *  多选题内多个选中项同样各占一行。
-   *  2026-09-21 批J：另按问题 `id` 组装结构化 `answers` 一并回携——
-   *  `value`（逐行文本）保持旧消费链兼容，`answers` 供后端按 id 精确回填。 */
-  const sendQuestions = () => {
-    const qs = questions();
-    const answers: PauseAnswer[] = [];
-    const lines: string[] = [];
-    qs.forEach((q, i) => {
-      const txt = (qCustom()[i] || '').trim();
-      const picked = effectiveQ(i);
-      if (!picked.length) return;
-      const qid = (q.id || '').trim() || `q${i + 1}`;
-      // 自定义输入 → custom 槽（对齐 dsh：不用 custom 时该字段省略）
-      answers.push(txt
-        ? { id: qid, selected: [], custom: txt }
-        : { id: qid, selected: picked });
-      lines.push(...picked);
-    });
-    void sendPicked(lines.filter(Boolean).join('\n'), answers);
-  };
-
-  const customBlockQ = (idx: number) => (
-    <ConfirmCustomInput
-      open={() => !!qCustomOpen()[idx]}
-      text={() => qCustom()[idx] || ''}
-      onToggle={(open) => setQCustomOpen({ ...qCustomOpen(), [idx]: open })}
-      onText={(v) => {
-        setQCustom({ ...qCustom(), [idx]: v });
-        // 输入自定义内容即取消卡片选择（互斥）
-        if (v.trim() && pickedOf(idx).length) setQPick({ ...qPick(), [idx]: [] });
-      }}
-      onSend={(txt) => void sendPicked(txt)}
-    />
-  );
-
-  /** 多问题卡：逐问一块（各带 header/问句/detail + 各自选项），底部单一发送 */
-  const questionsBlock = () => (
-    <div class="confirm-wizard confirm-wizard-multi">
-      <For each={questions()}>
-        {(q, i) => (
-          <div class="confirm-question-block" data-testid="pause-question-block">
-            <Show when={(q.header || '').trim()}>
-              <div class="confirm-wizard-header">{q.header}</div>
-            </Show>
-            <Show when={(q.question || '').trim()}>
-              <div class="confirm-wizard-question">{q.question}</div>
-            </Show>
-            <Show when={(q.detail || '').trim()}>
-              <div class="confirm-wizard-detail">{q.detail}</div>
-            </Show>
-            <Show
-              when={(q.options || []).length > 0}
-              fallback={
-                /* 无选项的问题：说明用户可在此问下方自定义输入作答 */
-                <div class="confirm-question-hint">{t('rp.confirm.qNoOptions')}</div>
-              }
-            >
-              <ConfirmOptionCards
-                opts={(q.options || []) as ConfirmOptionItem[]}
-                selectedLabel={q.multi_select ? '' : (pickedOf(i())[0] || '')}
-                selectedLabels={pickedOf(i())}
-                multi={!!q.multi_select}
-                onPick={(label) => toggleQ(i(), label)}
-              />
-            </Show>
-            {customBlockQ(i())}
-          </div>
-        )}
-      </For>
-      <div class="confirm-wizard-footer">
-        <span class="confirm-wizard-hint">
-          {allQAnswered() ? t('rp.confirm.hintSendAll') : t('rp.confirm.hintAnswerAll')}
-        </span>
-        <button
-          type="button"
-          class="confirm-btn primary"
-          disabled={!allQAnswered() || sent()}
-          onClick={sendQuestions}
-        >
-          {t('rp.confirm.send')}
-        </button>
-      </div>
-    </div>
-  );
 
   return (
     <>
-      {/* 批F：多问题分支优先（pauseQuestions 非空）；否则逐字走既有单问/向导分支 */}
+      {/* 批F：多问题分支优先（pauseQuestions 非空，A 批起分页作答）；
+          否则逐字走既有单问/向导分支 */}
       <Show when={hasQuestions()}>
-        {questionsBlock()}
+        <PauseQuestionFlow
+          questions={questions()}
+          sent={sent}
+          onSend={(text, answers) => void sendPicked(text, answers)}
+        />
       </Show>
       <Show when={!hasQuestions()}>
       <Show when={options().length > 0}>

@@ -36,6 +36,26 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批L 多问题分页作答 + 提问回执卡（A 批 + R 批，对齐 dsh QuestionFlow / AskQuestionRow）
+- **背景**：批F 给暂停卡补了 `questions[]`（一次问 N 问），但**作答面仍是「一屏铺全部问题」**——4444/8888 实证模型一次问 4-5 维时，用户要在一屏里跨维度勾选、无进度感、漏答只能靠发送时统一拒绝。对齐 dsh `ui-user-questions` 的 `QuestionComposer::QuestionFlow`（一页一题 + pager + 跳过）与 `AskQuestionRow`（提问回执折叠卡）。
+- **A 批 · 分页作答（新增 `PauseQuestionFlow.tsx`）**：
+  - 形态 = 一页一题（header + 问句 + detail + 选项 + 自定义输入）；底部 pager「‹ i / N ›」+「跳过」+ 主按钮（非末题=「下一题」、末题=「发送」）。
+  - **单选点选自动翻页**（非末题；末题留在末页）；多选渲染为复选框、**不自动翻页**；草稿（各题所选/自定义/跳过）**随页切换保留**。
+  - **发送时整组校验**：缺项 → 跳回缺题 + 提示（不发送）；**跳过 = 显式完成**（登记 `skipped`，发送时记**空答案** `{id, selected: []}`，回执据此显示「未作答」）。
+  - 提交仍组装**两份面**：逐行文本（旧消费链 `value`，零改动）+ 问题级 `answers`（批J 口径），与既有回到链路一致。
+  - `ConfirmActions` 多问分支由内联块改为挂载 `<PauseQuestionFlow>`；单问/向导分支**逐字不动**（`hasQuestions()` 非空才走分页）。
+- **R 批 · 提问回执卡（新增 `AskQuestionReceipt.tsx` + `PauseQaBlock` 排版改版）**：
+  - 回执从「裸问答对」升级为**折叠卡**：头部「提问 · N/M 已回答」+ 箭头（默认展开，点头部折叠）。
+  - `PauseQaBlock` 排版对齐 dsh `AskQuestionCard` 的**纵向两层**：上行**完整问句**（`question` 优先，旧数据回落 `header`），下行「你的选择」——取代旧的行内「header → 答案」横向结构。
+  - **「查看说明」= dsh `row.inspect` 的轻量等价物**：回执主体只显示 label（dsh 口径），**所选选项的 description** 经开关展开；`PauseQaPair.notes`（label → description）由 `turn-groups.pairQuestions` 一次性备齐，**无说明数据时按钮不出现**。
+  - **单点呈现（R 批用户裁决）**：回执存在时**隐藏用户气泡内的拼接正文**——那串逐行答案在回执里 100% 复现，不再重复占位。
+- **配对单点抽取**：`turn-groups.pauseQaFor` 内联配对逻辑抽为 `pairQuestions`（纯函数，同文件导出面不变），供 `pauseQaFor` 与回执渲染共用；**按问题 id 配对**语义逐字保留（同名选项不互串、跳答显式标注、旧消息逐行回落）。
+- **实时路径补齐（`submit-message.ts`）**：暂停回应此前**只走后端落盘**（刷新后才有 `pauseAnswered*`）→ 用户气泡回执**当场失配**、只显示拼接文本。本批在本地同点回填 `pauseAnsweredId/Value/Answers`（与 `conversation_ops` 落盘同形），**实时即可配对**。
+- **回归**：`ConfirmActions-multi-question.test.tsx` 重写为 12 条分页面（①一页一题 ②单选自动翻页 ③草稿随页保留 ④多选不翻页 ⑤跳过即发送 ⑥整组校验跳回缺题 ⑦双面提交 ⑧未答禁用主按钮 ⑨header/detail 随页 ⑩无选项兜底 ⑪⑫旧消息零变化）；`turn-groups.test.ts` 扩 3 条（header/question 双字段保留 / notes 提取 / 无 description 省略）；`ChatMessageItem-extra.test.tsx` 扩折叠卡 + 查看说明 + 单点呈现断言。
+- **验证**：前端定点 vitest **5 files / 83 passed**；`acceptance.py --quick` 全绿（GATES 13 + tsc，exit 0）；全量 vitest **PASS**、tsc PASS、eslint PASS、cov/fe_cov 双棘轮 PASS；`npm run build` 通过。**已知无关失败**：全量 pytest 41 failed 全在 `test_openai_compat.py` / `test_reasoning_passthrough.py` / `test_adapter_stream_protocol.py`（httpx `InvalidURL: Invalid port: ':1]'`，源于本机 `no_proxy` 含 `[::1]` + xdist 并行；**git stash 后于干净 HEAD 基线复现同样失败**，与本次改动无关，属环境预存问题）。
+- **UI 变更**：按宪法 §3.1 须经用户目测——本次即用户点名要求的改动本身。
+- **红线**：`data/skills` 零改动；无 Python 源码改动；旧单问/向导分支与 `value` 扁平回携**逐字保持**。
+
 ### 2026-09-21 · 批K 问答回执迁入用户气泡：一问一答逐问呈现（用户要求）
 - **用户原话**：「要接上。图1这个位置的可以删了。直接在我回复的气泡那边就行，也就是图2的位置。」
 - **背景（承接批J 的未闭合项）**：批J 把问题级回答（`answers[]`）**存进了后端**，但**回看界面没读它**——`pauseAnsweredAnswers` 当时只有写入方、**零读取方**，所以肉眼看不到任何变化。本批把最后一步接上，并按要求把回执**从 agent 卡搬到用户气泡**。

@@ -10,7 +10,7 @@
  * - 无 turnId 的旧消息回落「相邻 agent 消息同组」兜底；
  * - 用户消息永远独立成组（一问一答一坨的心智）。
  */
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, PauseAnswer, PauseQuestion } from '@/types';
 
 export interface TurnGroup {
   kind: 'user' | 'turn';
@@ -93,6 +93,52 @@ export interface PauseQaPair {
   custom: string;
   /** 该问是否未作答 */
   unanswered: boolean;
+  /**
+   * 选项说明表（label → description，仅带有说明的选项）。
+   * R 批（对齐 dsh row.inspect）：回执主体只显示 label；说明经「查看说明」
+   * 展开。无任何说明时**省略该键**（按钮据此不出现）。
+   */
+  notes?: Record<string, string>;
+}
+
+/** 问题清单 × 答题面 → 问答对（pauseQaFor 的配对单点）。
+ *  结构化答案按问题 id 配对；无结构化数据时用逐行文本按序补齐（尽力而为）。 */
+function pairQuestions(
+  questions: PauseQuestion[],
+  answers: PauseAnswer[] | undefined,
+  legacyValue: string,
+): PauseQaPair[] {
+  const byId = new Map<string, { selected: string[]; custom: string }>();
+  (answers || []).forEach((a) => {
+    if (a && a.id) {
+      byId.set(a.id, { selected: (a.selected || []).slice(), custom: (a.custom || '').trim() });
+    }
+  });
+  const legacyLines = answers?.length
+    ? [] : (legacyValue || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  return questions.map((q, i) => {
+    const qid = (q.id || '').trim() || `q${i + 1}`;
+    const hit = byId.get(qid);
+    const fallback = hit ? '' : (legacyLines[i] || '');
+    const selected = hit ? hit.selected : (fallback ? [fallback] : []);
+    const custom = hit ? hit.custom : '';
+    // R 批：带上选项说明（label → description）——回执默认只显示 label
+    //（dsh 口径）；说明走「查看说明」开关，数据层一次性备齐。
+    const notes: Record<string, string> = {};
+    (q.options || []).forEach((o) => {
+      const label = (o.label || '').trim();
+      const desc = (o.description || '').trim();
+      if (label && desc) notes[label] = desc;
+    });
+    return {
+      header: (q.header || '').trim(),
+      question: (q.question || '').trim(),
+      selected,
+      custom,
+      unanswered: !selected.length && !custom,
+      ...(Object.keys(notes).length ? { notes } : {}),
+    };
+  });
 }
 
 /** 该用户消息是否是对**某张暂停卡**的回应（是则其气泡应渲染问答对）。 */
@@ -129,29 +175,7 @@ export function pauseQaFor(messages: ChatMessage[], idx: number): PauseQaPair[] 
   if (card < 0) return [];
   const questions = messages[card].pauseQuestions || [];
   if (!questions.length) return [];
-  // 答题面：结构化优先（按 id 配对）；旧消息回落逐行补齐
-  const byId = new Map<string, { selected: string[]; custom: string }>();
-  (m.pauseAnsweredAnswers || []).forEach((a) => {
-    if (a && a.id) {
-      byId.set(a.id, { selected: (a.selected || []).slice(), custom: (a.custom || '').trim() });
-    }
-  });
-  const legacyLines = m.pauseAnsweredAnswers?.length
-    ? [] : (m.pauseAnsweredValue || '').split('\n').map((s) => s.trim()).filter(Boolean);
-  return questions.map((q, i) => {
-    const qid = (q.id || '').trim() || `q${i + 1}`;
-    const hit = byId.get(qid);
-    const fallback = hit ? '' : (legacyLines[i] || '');
-    const selected = hit ? hit.selected : (fallback ? [fallback] : []);
-    const custom = hit ? hit.custom : '';
-    return {
-      header: (q.header || '').trim(),
-      question: (q.question || '').trim(),
-      selected,
-      custom,
-      unanswered: !selected.length && !custom,
-    };
-  });
+  return pairQuestions(questions, m.pauseAnsweredAnswers, m.pauseAnsweredValue || '');
 }
 
 /**

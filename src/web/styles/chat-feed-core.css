@@ -65,14 +65,17 @@
   .answered-option-check { color: var(--accent-emerald); flex-shrink: 0; }
   .answered-option-tag { font-size: var(--font-2xs); color: var(--accent-emerald); }
 
-  /* 用户气泡内的一问一答回执（2026-09-21 批K）：逐问一行「问题 → 你的选择」。
-     配对走问题 id（批J 落盘面），不再靠文字匹配，同名选项不会互相串。 */
-  .pause-qa { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-color); }
-  .pause-qa-row { display: flex; align-items: baseline; gap: 6px; font-size: var(--font-xs); line-height: 1.5; }
-  .pause-qa-q { flex: 0 1 auto; min-width: 0; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
-  .pause-qa-arrow { flex-shrink: 0; color: var(--text-dim); opacity: 0.6; }
-  .pause-qa-a { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+  /* 用户气泡内的一问一答回执（2026-09-21 批K；R 批对齐 dsh AskQuestionCard）：
+     逐问**纵向两层**——上行问题原文（question 优先，旧数据回落 header），
+     下行「你的选择」。配对走问题 id（批J 落盘面），同名选项不会互相串。 */
+  .pause-qa { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-color); }
+  .pause-qa-row { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); line-height: 1.5; }
+  .pause-qa-q { color: var(--text-dim); }
+  .pause-qa-a { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pause-qa-pick-line { display: flex; flex-direction: column; }
   .pause-qa-pick { font-weight: 600; color: var(--text-main); }
+  /* 选项说明（R 批「查看说明」展开；dsh row.inspect 的轻量落点） */
+  .pause-qa-note { font-size: var(--font-2xs); color: var(--text-muted); opacity: 0.9; }
   .pause-qa-custom { font-style: italic; color: var(--text-muted); }
   .pause-qa-none { color: var(--text-dim); opacity: 0.8; }
 

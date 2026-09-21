@@ -78,6 +78,35 @@ describe('submitMessage 序列化与校验（四路径单点）', () => {
     expect(req.content_parts).toEqual([{ type: 'text', text: '帮我写开场' }]);
   });
 
+  it('new：暂停回应即时回填 pauseAnswered*（A 批：气泡问答回执实时可渲染）', async () => {
+    await submitMessage('new', {
+      input: '16:9\n不显名',
+      pauseResponse: {
+        pause_id: 'p1', value: '16:9\n不显名',
+        answers: [
+          { id: 'ratio', selected: ['16:9'] },
+          { id: 'naming', selected: ['不显名'] },
+        ],
+      },
+    });
+    const local = chatState.messages[0];
+    expect(local.pauseAnsweredId).toBe('p1');
+    expect(local.pauseAnsweredValue).toBe('16:9\n不显名');
+    expect(local.pauseAnsweredAnswers).toEqual([
+      { id: 'ratio', selected: ['16:9'] },
+      { id: 'naming', selected: ['不显名'] },
+    ]);
+    // 请求体照旧携带 pause_response（后端消费链零改动）
+    const req = vi.mocked(streamAgentChat).mock.calls[0][0];
+    expect(req.pause_response?.pause_id).toBe('p1');
+  });
+
+  it('new：普通消息不产生 pauseAnswered* 字段（旧路径零变化）', async () => {
+    await submitMessage('new', { input: '随便聊聊' });
+    expect('pauseAnsweredId' in chatState.messages[0]).toBe(false);
+    expect('pauseAnsweredAnswers' in chatState.messages[0]).toBe(false);
+  });
+
   it('空内容拦截（不建任务、不进气泡）', async () => {
     expect(await submitMessage('new', { input: '   ' })).toBe(false);
     expect(streamAgentChat).not.toHaveBeenCalled();

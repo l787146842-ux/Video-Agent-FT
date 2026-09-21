@@ -18,7 +18,6 @@ import type { TurnLedger, TurnPhase } from '@/lib/turn-ledger';
 import { AgentTimeline } from './AgentTimeline';
 import { StageProgressBar } from './StageProgressBar';
 import { StageCard } from './StageCard';
-import { t } from '@/lib/locale';
 
 /** 批次B：prefers-reduced-motion 检测（jsdom 下 matchMedia 缺失时回落允许动画，
  * 测试以 matchMedia mock 真实断言 reduce 场景） */
@@ -54,7 +53,8 @@ export function TurnLedgerCard(props: {
       fallback={
         <>
           {/* 阶段完成卡：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
-              确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失） */}
+              确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失。
+              （A 批：问答回执卡改挂**用户气泡**内——见 UserBubble/AskQuestionReceipt） */}
           <Show when={msg().confirm}>
             <StageCard msg={msg} state={props.confirmState || 'none'} class={fadeClass} />
           </Show>

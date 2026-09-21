@@ -194,12 +194,21 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
   }
   const skillBlocks = skillSlug ? [skill!.name] : [];
 
+  // 暂停回应结构化标记本地同点回填（2026-09-21 A 批）：实时路径此前只走后端
+  // 落盘（刷新后才有 pauseAnswered*）→ 用户气泡的问答回执（PauseQaBlock）当场
+  // 失配、只显示拼接文本。此处与 conversation_ops 落盘同形补齐，实时即可配对。
+  const pauseResp = payload.pauseResponse;
   chatActions.addMessage({
     sender: 'user', text: message, parts,
     docBlocks: docBlocks.length ? docBlocks : undefined,
     skillBlocks: skillBlocks.length ? skillBlocks : undefined,
     // 系统动作（如「本次放行」）不占用户气泡形态，渲染为系统动作行
     kind: payload.systemAction || undefined,
+    ...(pauseResp ? {
+      pauseAnsweredId: pauseResp.pause_id,
+      pauseAnsweredValue: pauseResp.value,
+      ...(pauseResp.answers?.length ? { pauseAnsweredAnswers: pauseResp.answers } : {}),
+    } : {}),
   });
   chatActions.setInput('');
   studioActions.setPendingAttachments([]);

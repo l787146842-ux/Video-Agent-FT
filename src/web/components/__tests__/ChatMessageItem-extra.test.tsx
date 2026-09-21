@@ -153,6 +153,50 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
     expect(rows[1].textContent).toContain('不显名');
     // 跳过的问显示「未作答」，不再靠缺行猜测
     expect(rows[2].textContent).toContain('未作答');
+    // R 批（用户裁决，对齐 dsh 单点呈现）：回执存在 → 拼接正文隐藏
+    expect(container.querySelector('.user-bubble-text')).toBeNull();
+  });
+
+  it('用户气泡内渲染提问回执卡（A 批 + R 批，对齐 dsh AskQuestionRow）：'
+    + '完整问句 + 折叠行 +「查看说明」', () => {
+    const msg: ChatMessage = { sender: 'user', text: '16:9 横屏' };
+    const { container } = render(() => (
+      <ChatMessageItem
+        message={msg}
+        affordance={aff({
+          pauseQa: [
+            {
+              header: '画幅比例', question: '成片画幅比例？', selected: ['16:9 横屏'],
+              custom: '', unanswered: false,
+              notes: { '16:9 横屏': '横屏为主，电影院与电视通用' },
+            },
+            { header: '影像风格', question: '影像风格？', selected: [], custom: '', unanswered: true },
+          ],
+        })}
+      />
+    ));
+    // 折叠行：「提问 · 1/2 已回答」；默认展开，逐问答对可见（未作答显式标注）
+    const card = container.querySelector('[data-testid="ask-question-receipt"]');
+    expect(card).toBeTruthy();
+    expect(card?.textContent).toContain('提问');
+    expect(card?.textContent).toContain('1/2 已回答');
+    expect(container.querySelectorAll('[data-testid="pause-qa-row"]')).toHaveLength(2);
+    // R 批：显示完整问句（question 优先）
+    expect(card?.textContent).toContain('成片画幅比例？');
+    expect(container.textContent).toContain('未作答');
+    // R 批：回执存在 → 拼接正文（msg.text「16:9 横屏」）隐藏，回答只在回执呈现
+    expect(container.querySelector('.user-bubble-text')).toBeNull();
+    // 点头部 = 折叠/展开回执本体
+    fireEvent.click(card!.querySelector('.ask-receipt-header') as HTMLButtonElement);
+    expect(container.querySelector('[data-testid="pause-qa-row"]')).toBeNull();
+    fireEvent.click(card!.querySelector('.ask-receipt-header') as HTMLButtonElement);
+    expect(container.querySelectorAll('[data-testid="pause-qa-row"]')).toHaveLength(2);
+    // R 批：「查看说明」展开所选选项的 description（dsh row.inspect 等价物）
+    expect(card?.textContent).not.toContain('横屏为主');
+    fireEvent.click(card!.querySelector('.ask-receipt-toggle') as HTMLButtonElement);
+    expect(card?.textContent).toContain('横屏为主');
+    fireEvent.click(card!.querySelector('.ask-receipt-toggle') as HTMLButtonElement);
+    expect(card?.textContent).not.toContain('横屏为主');
   });
 });
 

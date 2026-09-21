@@ -12,7 +12,7 @@ import type { PauseQaPair } from '@/lib/turn-groups';
 import { RichBubble } from './RichBubble';
 import { UserRefBlocks } from './UserRefBlocks';
 import { InlineEditBox } from './InlineEditBox';
-import { PauseQaBlock } from './PauseQaBlock';
+import { AskQuestionReceipt } from './AskQuestionReceipt';
 
 export function UserBubble(props: {
   message: ChatMessage;
@@ -24,8 +24,8 @@ export function UserBubble(props: {
   onCancel: () => void;
   /** 内联媒体点击（已转绝对地址，父组件开 lightbox） */
   onImageClick: (url: string) => void;
-  /** 一问一答回执（批K）：非空时在气泡内逐问渲染「问题 → 你的选择」；
-   *  取代旧的 agent 卡下泛化选项对勾区 */
+  /** 一问一答回执卡（批K + A 批）：非空时在气泡内渲染「提问 · N/M 已回答」
+   *  折叠卡（展开逐问「问题 → 你的选择」）；A 批按用户裁决从 agent 卡迁入气泡 */
   pauseQa?: PauseQaPair[];
 }) {
   const msg = () => props.message;
@@ -37,17 +37,20 @@ export function UserBubble(props: {
   const hasRefBlocks = () =>
     ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
 
-  /** 气泡正文：纯 Skill 唤起时正文与 Skill 块重名，隐藏正文只留块 */
+  /** 问答回执（批K）：有配对数据才渲染；它就是「回答」的完整呈现 */
+  const qa = () => props.pauseQa || [];
+
+  /** 气泡正文：纯 Skill 唤起时正文与 Skill 块重名，隐藏正文只留块；
+   *  R 批（用户裁决，对齐 dsh 单点呈现）：**回执存在时隐藏拼接正文**——
+   *  那串逐行拼接的答案在回执里 100% 复现（逐问问题 + 所选 + 查看说明），
+   *  不再重复占位（dsh 里回答也只出现一次）。 */
   const userText = () => {
+    if (qa().length > 0) return '';
     const raw = msg().text || '';
     const skills = msg().skillBlocks || [];
     if (raw.trim() && skills.length === 1 && raw.trim() === skills[0]) return '';
     return raw;
   };
-
-  /** 问答回执（批K）：有配对数据才渲染；它本身就是「回答」的呈现，
-   *  故此时正文（那串逐行拼接的答案）退居为纯文本兜底，不必再重复强调 */
-  const qa = () => props.pauseQa || [];
 
   return (
     <Show
@@ -65,7 +68,7 @@ export function UserBubble(props: {
                   <span class="user-bubble-text">{userText()}</span>
                 </Show>
                 <Show when={qa().length > 0}>
-                  <PauseQaBlock pairs={qa()} />
+                  <AskQuestionReceipt pairs={qa()} />
                 </Show>
               </div>
             }
@@ -82,7 +85,7 @@ export function UserBubble(props: {
             {/* 富文本分支同样挂问答回执（带内联媒体的回应也要能回看） */}
             <Show when={qa().length > 0}>
               <div class="chat-bubble">
-                <PauseQaBlock pairs={qa()} />
+                <AskQuestionReceipt pairs={qa()} />
               </div>
             </Show>
           </Show>

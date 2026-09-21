@@ -237,6 +237,17 @@ const zhCN = {
   'rp.confirm.hintSendAll': '将按问题顺序发送所选',
   'rp.confirm.qNoOptions': '请在下方输入你的答复',
   'rp.confirm.pickProvider': '请选择 API 厂商…',
+  // 2026-09-21 A 批（对齐 dsh QuestionFlow/AskQuestionRow）：分页作答 + 提问回执卡
+  'rp.confirm.prevQuestion': '上一题',
+  'rp.confirm.nextQuestion': '下一题',
+  'rp.confirm.skip': '跳过',
+  'rp.confirm.hintIncomplete': '还有问题未作答，已跳回该题',
+  'rp.confirm.hintUnanswered': '请选择一项、填写答复，或点「跳过」',
+  'rp.receipt.title': '提问',
+  'rp.receipt.answered': '{answered}/{total} 已回答',
+  // R 批（对齐 dsh row.inspect）：展开/收起**所选选项的说明**（description）
+  'rp.receipt.view': '查看说明',
+  'rp.receipt.hide': '收起说明',
 
   // ---------- 结构化决策表单（schema→表单数据驱动） ----------
   'rp.decision.submit': '提交',

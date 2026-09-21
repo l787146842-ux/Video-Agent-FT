@@ -72,6 +72,10 @@
      是单选选中态形态，非光晕，不在此禁范围） */
   .confirm-wizard, .confirm-option-card, .confirm-option-card:hover,
   .confirm-option-card.selected, .confirm-btn.primary { box-shadow: none; text-shadow: none; }
+  /* 2026-09-21 A 批（对齐 dsh QuestionFlow）：多问题分页作答——底部
+     左 pager / 中校验反馈 / 右动作组（跳过 + 下一题/发送）；反馈只在缺答时出现 */
+  .confirm-flow-feedback { flex: 1; min-width: 0; text-align: center; }
+  .confirm-flow-error { font-size: var(--font-xs); color: var(--color-danger); }
 
   /* 文档卡片 */
   .doc-card { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: color-mix(in srgb, var(--color-white) 3%, transparent); cursor: pointer; max-width: 92%; }
@@ -105,6 +109,24 @@
   .stage-card-void .stage-check, .stage-card-void .stage-card-title { color: var(--text-dim); }
   .stage-card-void .stage-card-title { text-decoration: line-through; }
   .stage-card-void .stage-card-body { border-top-color: var(--border-color); }
+
+  /* 提问回执卡（2026-09-21 A 批，对齐 dsh AskQuestionRow/AskQuestionCard）：
+     折叠行「提问 · N/M 已回答」+「查看/收起」展开逐问「问题 → 答案」。
+     挂**用户气泡内**（用户裁决：回执卡要在回复气泡的位置）——配色随气泡
+     （白字蓝底），层次用半透明白 color-mix 现调，零硬编码色值 */
+  .ask-receipt { margin-top: 10px; border: 1px solid color-mix(in srgb, var(--color-white) 22%, transparent); border-radius: 8px; overflow: hidden; }
+  .ask-receipt-header { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; background: none; border: none; font: inherit; text-align: left; cursor: pointer; user-select: none; color: inherit; }
+  .ask-receipt-header:hover { background: color-mix(in srgb, var(--color-white) 8%, transparent); }
+  .ask-receipt-arrow { flex-shrink: 0; opacity: 0.85; }
+  .ask-receipt-title { font-size: var(--font-sm); font-weight: 600; }
+  .ask-receipt-summary { font-size: var(--font-xs); opacity: 0.8; }
+  .ask-receipt-body { padding: 2px 10px 8px; border-top: 1px dashed color-mix(in srgb, var(--color-white) 20%, transparent); }
+  /* 内嵌问答对：外框已有分隔线，去掉 PauseQaBlock 自带的上边框防双线 */
+  .ask-receipt-body .pause-qa { margin-top: 0; padding-top: 0; border-top: none; }
+  /* 「查看说明/收起说明」按钮（对齐 dsh row.inspect 小描边按钮形态；
+     R 批：语义 = 展开所选选项的 description，不再是折叠回执本体） */
+  .ask-receipt-toggle { display: inline-flex; align-items: center; gap: 4px; margin: 6px 0 8px 10px; padding: 2px 8px; font: inherit; font-size: var(--font-2xs); border-radius: 6px; cursor: pointer; background: color-mix(in srgb, var(--color-white) 8%, transparent); border: 1px solid color-mix(in srgb, var(--color-white) 22%, transparent); color: inherit; opacity: 0.85; }
+  .ask-receipt-toggle:hover { background: color-mix(in srgb, var(--color-white) 14%, transparent); }
 
   /* 批次B：账本翻转淡入——settled 相位新挂载卡片 opacity 0→1 120ms，
      相位翻转不闪跳；纯 opacity 动画不涉色值。reduced-motion 下禁用 */

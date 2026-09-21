@@ -225,7 +225,7 @@ describe('pauseQaFor 一问一答配对', () => {
     expect(pauseQaFor([bare, answer()], 1)).toEqual([]);
   });
 
-  it('header 存在时优先用于显示（问句仍保留在 title）', () => {
+  it('header/question 双字段保留（R 批显示层以 question 优先，对齐 dsh）', () => {
     const msgs: ChatMessage[] = [
       a('t1', {
         text: '', confirm: '请确认', pauseId: 'p1',
@@ -237,7 +237,36 @@ describe('pauseQaFor 一问一答配对', () => {
     expect(qa[0].header).toBe('画幅');
     expect(qa[0].question).toBe('成片画幅选哪个？');
   });
+
+  it('所选选项带 description → notes 提取（R 批「查看说明」数据源）', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', {
+        text: '', confirm: '请确认', pauseId: 'p1',
+        pauseQuestions: [{
+          id: 'style', question: '影像风格基调选哪种？',
+          options: [
+            { label: '硬核写实科幻', description: '冷色调、NASA 质感' },
+            { label: '赛博霓虹', description: '高饱和、夜间雨巷' },
+          ],
+        }],
+      }),
+      answer({ pauseAnsweredAnswers: [{ id: 'style', selected: ['硬核写实科幻'] }] }),
+    ];
+    expect(pauseQaFor(msgs, 1)[0].notes).toEqual({
+      '硬核写实科幻': '冷色调、NASA 质感',
+      '赛博霓虹': '高饱和、夜间雨巷',
+    });
+  });
+
+  it('选项无 description → notes 缺省省略（「查看说明」按钮不出现）', () => {
+    const msgs: ChatMessage[] = [
+      card(),
+      answer({ pauseAnsweredAnswers: [{ id: 'ratio', selected: ['16:9'] }] }),
+    ];
+    expect(pauseQaFor(msgs, 1)[0].notes).toBeUndefined();
+  });
 });
+
 
 /** 组引用稳定化：Solid <For> 按 identity diff，引用复用保住既有节点 */
 describe('stabilizeGroups 组引用稳定化', () => {
