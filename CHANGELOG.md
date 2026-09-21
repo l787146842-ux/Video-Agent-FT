@@ -36,6 +36,30 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批G 子代理走流式通道 + 思考进 actor 卡（事故 4444/Q4）
+- **背景（4444 实跑取证，日志逐行）**：`15:27:59.4` 子代理启动 → `15:28:01.9` step1 成功（读素材 2.5s）→ `15:29:02.0` 504 重试 1/2（距上一步 **60.1s**）→ `15:30:03.1` 504 重试 2/2（**61.1s**）→ `15:31:05.2` `kind=upstream → escalate`、子代理 `turn/end reason=error`。**一张卡未建**——批A3 补的「每批 3~5 个」纪律**根本没轮到使用**，它死在第一次要出产出的那次调用上。
+- **根因**：`planner._launch_subagent` **不传 `stream_hook`** → `turn_executor.llm_call` 走 `else` 分支（非流式 `call_llm`）。**三条独立证据**：① 日志是 `[Retry] chat HTTP 504`（`retry.py:79`），而 `with_retry` **只被非流式 `chat()` 调用**（`openai_compat.py:553`），流式路径打的是 `[OpenAICompat] 流式瞬时故障`（`:707`）；② `data/sse_capture/` 在 4444 窗口只有 **5 个文件**，时间戳全对应主代理的流式调用，子代理（`1789975679+`）**零个**（落盘只在 `_stream_once` 内）；③ 子会话 `assistant/partial` **0 条** vs 主会话 **28 条**。
+- **后果三项**：无步内增量落盘（8888 事故批建的「大步中断不再全量丢失」对子代理失效）；无「已产出则不重试」保护（`chat_stream` 的 `yielded` 判定只在流式分支）→ 长产出期间遇瞬时故障**只能整轮重来**；无 `reasoning_delta`（同分支内发出）→ 思考不可见。叠加 `runtime_settings.json` 的 `subagent.thinking_level=high`。
+- **改动**：`planner._launch_subagent` 传 `stream_hook=_child_stream_sink`（**收口实现**，只触发流式分支、不透传父正文——一次委派不该两处显示同一段话）；`SseReasoningDeltaEvent` 补 `subagent` 标记（**须与前端分流同批**：只开流式而不分流，子代理思考会串台进父代理思考面板）；`sse-events.ts` 带标记 → actor 域、无标记 → 原路径；`subagent-actors` actor 增 `reasoning` 累计 + 上限截断（`SUBAGENT_REASONING_CAP=6000`，超限保留**尾部**）；`SubagentActorCard` 思考折叠区（**执行中即可展开**）。
+- **同批暴露的真实缺陷**：`test_subagent_delegation.py::_ScriptedAdapter.chat_stream` 原先把 JSON **字符串**传给 `dict(tool_args=...)` → `ValueError`。该桩此前恒不触发（父子都走非流式），批G 激活后才暴露；已按真实契约修正（`tool_args` 是**已解析的 dict**，解析失败才走 `tool_args_raw`/`tool_args_error` 旁路）。
+- **边界（如实登记）**：**不承诺根除 504**（上游网关行为非本项目代码）；批G 修的是「长产出期间无增量保护、无重试豁免、思考不可见」，降低单次失败的全损面。
+- **验证**：`tests/unit` + `tests/integration` **2521 passed / 0 failed**；vitest **124 files / 1019 passed**；**acceptance 全量 18/18 PASS**；`npm run build` 通过（首屏 378.81 kB < 400 kB）。
+
+### 2026-09-21 · 批F 暂停卡补 questions 数组层：一次可问 N 问（事故 4444/Q2③+Q3）
+- **背景（4444 实跑取证）**：模型有 **5 个维度**要问（画幅/时长/影像风格/角色造型/二向箔显名），手上却只有**一个扁平 `options` + 一个 `multi_select`**——只能自创「套餐」把前四维压成互斥预设、把第五维塞进 `detail`。两处后果：① 为「怎么问这一个问题」花了 **8 段思考/2740 字/34.3s**（conv-main seq31-36），反复自问「multi_select 会不会语义混乱」「group 到底能不能每维选一个」——**它没有任何依据**（`group` 的真实语义在 schema 里没写，只有一句"用于前端归类显示"）；② 第五维塞进的 `detail` **不是可选项** → 用户**结构上无法**对它表态 → 用户只点了套餐 → 模型自判「遵循剧本原文不算擅自补全」→ **写进了既定规格**（「台词处理：遵循剧本原文，"白色薄膜"不显名为"二向箔"」，落盘取证）。正是 `protocol.md` 判据④要防的事——**根因是工具形态让用户答不了，不是模型不守规矩**。
+- **dsh 参照**（用户指定要查）：`dsh-tool-ask-user` 的 `ask_user_question` 收 **`questions` 数组**，每项自带 `id`(必填)/`question`(必填)/`header?`/`options?`/`multi_select?`（`dsh-user-questions` types.d.ts:29-44 另有 `detail?`）。
+- **改动（扩展现有单问题形态，不废除）**：后端 `pause_composer` 新增 `PauseQuestion` + `normalize_options`（选项面归一**唯一实现**，从 `fc_tool_runner` 内联逻辑收上来）+ `normalize_questions`（缺 `question` 的项**回落模板不丢项**；为空则由扁平字段构造单元素列表）；`WorkflowPauseInput` 增 `questions`，`detail` 描述补「**要用户拍板的事请放进 options**——detail 不是可选项，用户无法对它作答」；贯通链五跳（`fc_response`→`turn_executor`→`agent_loop`→`planner_output`→`planner`）按长度读取/追加 + `SseDonePayload.pause_questions` + 持久化 + web 两路；前端多问题分支（各问各块、底部单一发送、所选**按问题顺序逐行拼接**、未答完不可发送、多选渲染复选框）、`pauseQuestions` 空时**逐字走原分支**。
+- **Q3② 修复（同批）**：`AnsweredOptions` 选中项除标题外**同时显示 `description`**（实证：用户选了「电影级写实科幻（推荐）」，落盘只有标签，详细描述虽随 `confirmOptions` 落盘却不渲染，回看时看不出当初选了什么）。发送 payload **不变**（仍回标签，与 dsh `selected` 只回标签一致，且 `turn-groups` 的对勾匹配依赖值相等）——只补**显示**。
+- **生成器坑（同批实证）**：`gen_api_types.py` **只渲染 `TS_EVENT_FRAMES` 表内条目**；仅在 `$defs` 里出现的嵌套模型会产出**悬空 TS 引用**（`tsc` 实测 `Cannot find name 'SseDonePauseQuestion'`）。已把 `SseDonePauseQuestion` 显式登记进表。
+- **红线保持**：① 不静默丢弃（`questions` 空→扁平→模板，任何组合都至少一问）；② 问即停语义不变；③ 单一活跃暂停槽位/`pause_id` 幂等/三态事务写入不变；④ 旧消息（无 `pauseQuestions`）渲染逐字不变。
+- **验证**：`tests/unit` + `tests/integration` **2513 passed / 0 failed**；vitest **123 files / 1011 passed**；`acceptance --quick` 全绿；`npm run build` 通过（首屏 378.32 kB）。
+
+### 2026-09-21 · 批E 任务书去自伤：删反例清单内部词 + 段②判据改锚子代理相关性（事故 4444/Q2①+Q5+Q6②）
+- **背景**：批C（5555/Q5）的「去框」**没治净，且自己成了新污染源**——两处实跑取证：① `SUBAGENT_POLICY` 为表达「不要复述什么」，在括注里列了四个**系统内部机制词**（范围几个角色/几个场景、字段怎么写、**要不要建卡**、交不交提示词）；模型抓的正是其中之一：「章节里会说明**是否建卡**等」（conv-main seq25）——而 `建卡` 在 `data/skills/*/SKILL.md` **零命中**，说明是平台自己喂进去的。② 段②判据口径是相对**「规格文档」这一个载体**定义的（「尚未落入规格文档的新决定」），而不是相对**「这个子代理用不用得上」**：4444 派 `script_analyze` 时规格尚未创建，语言偏好按字面**必须**写进任务书（模型思考原文「委派任务书里告诉子代理这个新决定」）——而剧本分析子代理用它不着。
+- **改动**（`prompts/planner/subagent.md::SUBAGENT_POLICY` 唯一源）：① 删举例、只留因果（不靠穷举反例表达"别复述"）；② 段②改为「**只有这个子代理用得上、而它自己读不到的东西**」，并明写「**没有就整段不写**——不要写「无新增决定」之类的占位句填坑」（该槽位此前是**必须存在**的，模型只能写占位句，4444/Q6② 实证「本阶段无新增未落盘决定。」）；③ 补：段①不得复述规格参数现值与源文档出处、不得交代章节自带的下游依赖关系（模型两样都写了）；④ `protocol.md:13` 补**落盘时机**（更早阶段确认的决策先记着、到规格阶段一并写入，不必提前创建文档——模型自解了时机，属规则空档）。
+- **回归测试**：批C 断言**改写**（非删除）——新增 5 条反向钉（旧口径不得回潮 / 禁止占位句 / 禁复述规格参数与下游 / 反例清单不得含内部词 / 落盘时机）+ 子级任务文本侧的反例短语钉。**边界说明**：子级任务文本的钉只锁父侧反例**短语**（要不要建卡/字段怎么写/交不交提示词），**不锁裸名词**——批A/A3 刻意补的「大批量登记（建组/建卡/写提示词）分批做」是子代理行动指引（5555/Q8 直接修复），删它会回归；两者区别是句式（揣测章节内容的疑问式列举 vs 陈述式子代理行动指引），测试 docstring 已写明。
+- **验证**：`tests/unit` + `tests/integration` **2506 passed / 0 failed**。
+
 ### 2026-09-21 · 批D 规格写入判据细化：判据②收窄方针级 + 判据③点名清单类（事故 5555/Q7）
 - **背景（5555 实跑取证）**：用户「为什么规格文档，还是很多一大坨的东西都往里面塞，一点都不精简。人家 flova 多精简」。落盘 `制片规格.md` **716 字** vs flova `规格文档.md` **460 字**：①「素材来源：…（判定为 C 类半结构化剧本，可直接进入 Storyboard，无需先做短剧化改编）」= 分析阶段结论，不是全局参数（flova 连该字段都没有）；②「**叙事结构**」整节 = 3 场次逐行 + 8 角色逐名 + 道具 8.5×5.2cm + 25–31 镜——按判据③本应整节归故事板；③ flova 的「角色方向」是**一句话方针**、零逐人明细。
 - **根因（判据措辞两处）**：①判据②举例含「**叙事驱动、核心视觉母题**」——这两个词本身就是"分析章节名"形态，模型据此把整个分析叙事搬进规格；②判据③只写「逐条细节」——模型**不认为「8 个角色名单」是"逐条细节"**，它读成"范围"，于是照写。
