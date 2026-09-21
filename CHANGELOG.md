@@ -36,6 +36,18 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批K 问答回执迁入用户气泡：一问一答逐问呈现（用户要求）
+- **用户原话**：「要接上。图1这个位置的可以删了。直接在我回复的气泡那边就行，也就是图2的位置。」
+- **背景（承接批J 的未闭合项）**：批J 把问题级回答（`answers[]`）**存进了后端**，但**回看界面没读它**——`pauseAnsweredAnswers` 当时只有写入方、**零读取方**，所以肉眼看不到任何变化。本批把最后一步接上，并按要求把回执**从 agent 卡搬到用户气泡**。
+- **删除的那块（用户截图图1）**：agent 卡下的「已回应选项对勾区」（`AnsweredOptions`）。**移除理由**：该区把整排选项重画后用**文字**匹配打勾（`turn-groups.answeredValueFor` 按值相等），多问题时全部混在一起、**同名选项会互相串**（匹配只认文字、不认属于第几问）。注：组件与 `answered-options` 样式**保留**（其他消费面/回归仍引用），只是 `TurnLedgerCard` 不再挂载。
+- **新形态（用户截图图2 的位置）**：用户自己的气泡内逐问一行「问题 → 你的选择」，跳过的问显示「**未作答**」，自定义文本走独立样式。
+  - `turn-groups.pauseQaFor`（纯函数）：把 agent 的 `pauseQuestions` × 用户的 `pauseAnsweredAnswers` **按问题 id 配对**，**彻底摆脱「第几行 = 第几问」的位置约定**——选项文字含换行、某问用自定义文本作答、某问跳答时都不会错位；旧消息（无结构化回答）回落 `pauseAnsweredValue` 逐行按序补齐，保证历史可读。
+  - `message-affordances` 增 `pauseQa` 派生（派生层唯一判定处，渲染组件契约不变）；新增 `PauseQaBlock.tsx`；`UserBubble` 两个分支（纯文本/富文本）都挂。
+- **受影响测试（4 处，"钉死旧块"，改写非删除）**：`TurnLedgerCard.test.tsx` 3 条改为钉「本卡不再挂 `answered-options`」+ 渲染链由三件变两件；`ChatMessageItem-extra.test.tsx` 1 条改为钉「agent 卡不挂对勾区」并**新增**一条钉用户气泡的问答渲染；两处 affordance 桩补 `pauseQa: []`。
+- **新增防回潮钉** = `turn-groups.test.ts` 扩 **9 条**（26 条全绿）：按 id 配对 / **同名选项不互相串**（旧文字匹配的直接病根）/ 跳答显示未作答 / 自定义文本走 custom 槽 / 多选保留全部勾选 / 旧消息逐行回落 / 非问答消息与脏数据不生成无主块 / header 优先显示。
+- **验证**：`tests/unit` + `tests/integration` **2547 passed / 0 failed**；vitest **124 files / 1023 passed**；**acceptance 全量 18/18 PASS**；`npm run build` 通过（首屏 379.46 kB）；`data/skills` 零 diff。
+- **UI 变更**：按宪法 §3.1 须经用户目测——本次即用户点名要求的改动本身。
+
 ### 2026-09-21 · 批J 暂停回答结构化回携 answers[] +「剧本分析」改名「素材分析」（用户两条要求）
 - **用户原话**：①「F-②c dsh 式 answers[] 成型回携，要做。」②「中文标签要改成中文翻译，不能叫剧本分析，要叫素材分析，其他也一样。」
 - **① F-②c 结构化回携（对齐 dsh `AskUserQuestionAnswerItem`）**：
