@@ -36,6 +36,21 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-21 · 批4 阶段建卡媒体类型限定：key_elements 只能建音色卡（用户裁决）
+- **裁决（用户，2026-09-21）**：「key_elements 要建组和卡，因为要在某些 skill 的要求下，要建对应的人物的音频卡，并且在音频卡的草稿里填入音频描述的提示词。本项目关键元素中已经有音频容器了，卡片是其他卡的 0.5 倍，并且卡面只有音频符号不会有文字渲染。**如果音频卡是单独的工具或者字段，就提供给子代理。如果是混在一起，就想办法，让子代理只能建音频卡。**」
+- **查证：属"混在一起"**——音频卡**不是独立工具、也不是独立字段**，与图像卡共用 `storyboard_add_draft` / `storyboard_create_group` 内联 `draft` 同一入口，仅靠 `mediaType` 值区分（前端半尺寸图标化判定 = `DraftCard.tsx::isVoiceCard`：`type==='keyElement' && mediaType==='audio'`，与本条描述一致）。故按用户指示"想办法让子代理只能建音频卡"。
+- **口径补全（用户同日追认）**：图像卡（含壳）与提示词**全部归 `write_media_prompt` 阶段**——该阶段 `_STAGE_TOOLS` 含 `add_draft`/`patch_draft`，建壳与写词都够用；音色卡由 `add_draft` **一次建好**（含 `timbre`/`desc`），**不放开 `patch_draft`**。
+- **改动**（4 处，声明 + 下发 + 判定 + 装配）：
+  - `core/subagent.py`：新增 `STAGE_CARD_MEDIA`（**正向允许集**，唯一事实源）= `{storyboard_key_elements: {"audio"}}`；新增 `stage_card_media(stage)` 访问器；新增 `_validate_stage_card_media()` 装载期 fail-loud（键必须是可委派阶段 / 该阶段须真持有建卡工具 / mediaType 须为合法枚举）。
+  - `core/fc_gates.py`：新增 `card_media_gate` 并接入闸机链（顺序：暂停纪律 → 工具风险 → 生成确认 → 建组结构 → **建卡媒体** → 提示词结构）；`GateContext` 加 `stage_card_media`/`stage_label`。
+  - `core/fc_tool_runner.py`：加 `stage_card_media`/`stage_label` 实例属性并在 `_gate_ctx` 下发（测试桩缺属性回落空集，不误伤存量测试）。
+  - `core/planner.py`：`PlannerContext` 加 `subagent_stage`（子级轮记已归一化的委派阶段，`_launch_subagent` 写入）；新增 `_apply_stage_card_media(context)` 按轮下发（同 `turn_excluded` 模式：轮始一次、轮内冻结）。
+- **判定口径（防误伤）**：①`mediaType` 缺省时按工具的构建工厂口径回落 `"image"`（`DRAFT_DEFAULT_FIELDS`）——不能因字段缺省就误判为合法；②`create_group` **不带卡时放行**（纯结构动作，元素登记要用它）；③未登记阶段/通用委派 = 空集 ⇒ **不启用限定**（零变化）。
+- **⚠️ 与 3333 事故的分界（本批红线）**：限定走**明确拒收 + 回喂"该去哪里做"**，**绝不静默剥离字段**——`fc_tool_runner` 记载 2026-09-12 曾有「无阶段感知静默剥离 `add_draft` 内联 prompt」的闸机，造成**假成功空提示词卡**（3333 项目实证）被用户裁决删除。拒收文案含三要素：原因 + 状态保留声明（"本次调用未执行、工作台保持原样"）+ 去向（"请在委派 `write_media_prompt` 阶段时创建"）。
+- **回归测试**：`test_production_prune.py` +4 条（声明表单一事实源 / 拒收图像卡且放行音色卡与不带卡建组 / 未登记阶段不受限 / **管线连通性 end-to-end**——钉死"表改了但没接线" + 链路顺序在建组结构闸之后、提示词闸之前）；`tests/integration/test_subagent_delegation.py` +1 条**真过闸机链**的端到端（子代理建音色卡放行落账、建图像卡被拒且不落账、拒收文案可见去向）。
+- **验证**：`tests/unit` + `tests/integration` **2481 passed / 0 failed**；`python scripts/acceptance.py` 全量 18 步全绿（含 cov/fe_cov 地板）。
+- **同批**:本批与上一条「批0 回归修复」共同回答了用户关于「音频卡是单独工具还是混在一起」的问题——查证为混在一起，故以限定方式实现。
+
 ### 2026-09-21 · 批0 回归修复：key_elements 恢复 add_draft（音色卡是该阶段产出）
 - **回归**：批0（`b1f8fc0`）把 `_STAGE_TOOLS` 接进执行路径后，key_elements 阶段的子代理**建不出草稿卡**——该阶段的 `_STAGE_TOOLS` 只声明了 `{create_group, delete_group}`，于是 `add_draft` 被 deny。但**角色音色卡（`key_element_audio`）正是这个阶段的产出**：Skill 明文「角色的声音特征（音色/语气/情绪基调）**单独登记为 key_element_audio**，与角色元素绑定」（`AI-短剧一站式生成/SKILL.md:66`；14 个 Skill 中 **8 个**的 `storyboard_key_elements` 章节含音色/声音/音频字样）。
 - **为什么以前没暴露**：`_STAGE_TOOLS` 里 key_elements **自 `d75a374`（铺满批）起就只写了 `create_group`**，`2778117`（R4 批）曾把三阶段整行删掉，`589cad5`（K1 批）恢复为 `{create_group, delete_group}`——**`add_draft` 从未进过这张表**。而该表在批0 之前**零约束力**（`stage_tools()` 无生产消费者，只用于装载期校验），所以这个纸面遗漏从未产生行为后果；**批0 把它变成强制执行后，纸面错误就变成了真回归**。

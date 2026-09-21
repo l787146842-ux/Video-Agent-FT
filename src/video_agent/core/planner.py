@@ -190,6 +190,10 @@ class PlannerContext:
     subagent_depth: int = 0
     subagent_no_confirm: bool = False
     subagent_deny: Optional[frozenset] = None
+    # 本轮委派的阶段名（2026-09-21 批4）：仅子代理轮非空（= run_subagent 的
+    # stage，已在 _launch_subagent 归一化）。消费端 = 阶段建卡媒体类型限定
+    # （fc_gates.card_media_gate 经 fc_tool_runner 传入）。主代理轮恒空。
+    subagent_stage: str = ""
     # 轮内被裁剪工具集（R11 裁剪可见性）：轮始由 _compute_excluded_tools 签发，
     # 供 build_state_tail_message 渲染 UNAVAILABLE 段（模型可见哪些工具本轮不可用）。
     turn_excluded: Optional[frozenset] = None
@@ -376,6 +380,22 @@ class Planner:
             pass  # 裁剪失败不阻断对话；未启用工具直调仍被 adapter 拒执行
         return frozenset(excluded)
 
+    def _apply_stage_card_media(self, context: "PlannerContext") -> None:
+        """按本轮委派阶段下发「建卡媒体类型限定」到 FC 执行器（2026-09-21 批4）。
+
+        同 `turn_excluded` 模式：轮始一次、轮内冻结。范围只限**新建草稿卡**
+        （add_draft / create_group 内联 draft），判定实现 = `fc_gates.card_media_gate`；
+        本方法只负责把「当前阶段 → 允许的 mediaType」送达执行器。
+        主代理轮/通用委派（无 stage）= 空集 ⇒ 不启用限定（零变化）。
+        """
+        child_stage = subagent_mod.resolve_stage(
+            getattr(context, "subagent_stage", "") or "")
+        self._fc_runner.stage_card_media = (
+            subagent_mod.stage_card_media(child_stage) if child_stage
+            else frozenset())
+        self._fc_runner.stage_label = (
+            STAGE_LABELS.get(child_stage, child_stage) if child_stage else "")
+
     async def _launch_subagent(
         self, task: str, parent_ctx: "PlannerContext", kind: str = "",
         stage: str = "", on_event=None,
@@ -454,6 +474,9 @@ class Planner:
             subagent_depth=child_depth,
             subagent_no_confirm=True,
             subagent_deny=subagent_mod.child_deny_set(resolved_stage),
+            # 2026-09-21 批4：子级轮记本轮委派阶段（已归一化）——消费端 =
+            # 阶段建卡媒体类型限定（fc_gates.card_media_gate）。
+            subagent_stage=resolved_stage,
             # K5 批（2026-09-16 对齐 flova）：子代理工作台状态通道——子级与父
             # 共享同一 StateManager 缓存（同键命中），状态尾每轮刷新；flova
             # 实证不裁剪，故不引入裁剪表（体量由既有预算压缩兜底）。
@@ -699,6 +722,7 @@ class Planner:
         # one visibility = one permission（dsh subagent.md L90-97）：轮内裁剪集
         # 同步下发执行器，被裁工具即便被模型误调也拒绝执行（不止从 schema 消失）。
         self._fc_runner.turn_excluded = self._excluded_tools
+        self._apply_stage_card_media(context)
         # R11 裁剪可见性：同步写入 context，供 build_state_tail_message 渲染 UNAVAILABLE 段
         context.turn_excluded = self._excluded_tools
         self._system_degrader = self._make_system_degrader(context)

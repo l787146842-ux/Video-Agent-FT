@@ -4,15 +4,16 @@
 三段结构：闸机裁决（本模块）→ 执行（fc_tool_runner）→ 批末对账（fc_reconcile）。
 
 承载 FC 轨闸机链全链：轮内暂停纪律 → 工具风险（§2.7）→
-生成确认 → 建组结构完整性 → 提示词结构。
+生成确认 → 建组结构完整性 → 阶段建卡媒体类型 → 提示词结构。
 （C1b 裁决 2026-08-31：阶段前置闸退役；规格前置 flow_gate 随 C1a 退役。）
 判定实现唯一归属 guard_pipeline（宪法 §2.0 单一组合实现）；
 本模块只做 FC 轨参数组装与链式组合，不各自写判定。
 web 层引用（生成日志面板）经 GateContext.record_gen_log 注入，
 保住分层（core 不顶层依赖 web）。
 """
+import json
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, FrozenSet, List, Optional
 
 from loguru import logger
 
@@ -73,6 +74,11 @@ class GateContext:
     tool_risk_of: Callable[[str], str] = lambda name: "high"
     record_gen_log: Callable[[str, List[str]], None] = (
         lambda prompt, hard: None)
+    # 阶段建卡媒体类型白名单（2026-09-21 批4）：空集 = 不启用限定（通用委派与
+    # 未登记阶段零变化）。由 planner 轮始按当前 stage 下发（同 turn_excluded 模式）。
+    stage_card_media: FrozenSet[str] = frozenset()
+    # 当前委派阶段的展示标签（拒收文案用；空串回落中性表述）
+    stage_label: str = ""
 
 
 def resolve_current_refs(ctx: GateContext, name: str, args: Dict[str, Any]) -> None:
@@ -372,12 +378,73 @@ class GateChainResult:
     error: Optional[str] = None
 
 
+def card_media_gate(
+    ctx: GateContext, name: str, args: Dict[str, Any],
+) -> Optional[str]:
+    """阶段建卡媒体类型闸（2026-09-21 批4，用户裁决）。
+
+    声明某阶段子代理**新建草稿卡时允许的 mediaType**（唯一源 =
+    `subagent.STAGE_CARD_MEDIA`，经 planner 轮始下发到
+    `GateContext.stage_card_media`）。不在允许集 → **整单明确拒收**（不执行、
+    不写任何状态），并把「该去哪里做」一并回喂，防模型反复重试。
+
+    为什么是"拒收"而不是"静默剥离字段"（必须保持）：`fc_tool_runner` 记载
+    2026-09-12 曾有「无阶段感知静默剥离 `add_draft` 内联 prompt」的闸机，
+    造成**假成功空提示词卡**（3333 项目实证），被用户裁决删除。本闸只拒收、
+    绝不改写入参。
+
+    覆盖面（G4：同类调用路径统一）：
+      - `storyboard_add_draft`：draft.mediaType 必须 ∈ 允许集；
+      - `storyboard_create_group`：**仅当携带内联 draft 时**才判（不带卡建组
+        是纯结构动作，元素登记/创建分组都要用它，不受本闸约束）。
+    `gate_override`（用户显式同意）可放行，与同链其它闸同口径。
+    """
+    allowed = getattr(ctx, "stage_card_media", None)
+    if not allowed:
+        return None                      # 未登记阶段/通用委派：不启用限定
+    if name == "storyboard_add_draft":
+        draft = args.get("draft")
+        if not isinstance(draft, dict):
+            return None                  # 形状非法交工具自身校验，本闸不越权
+    elif name == "storyboard_create_group":
+        draft = args.get("draft")
+        if draft is None or draft == "":
+            return None                  # 不带卡的建组：纯结构动作，放行
+        if isinstance(draft, str):
+            try:
+                draft = json.loads(draft)
+            except Exception:
+                return None              # 解析失败交工具自身（coerce 有其口径）
+        if not isinstance(draft, dict):
+            return None
+    else:
+        return None
+
+    # mediaType 缺省时工具的构建工厂回落 "image"（DRAFT_DEFAULT_FIELDS），
+    # 故本闸按同一口径取值——不能因字段缺省就误判为"合法"。
+    media = str(draft.get("mediaType") or "image").strip().lower()
+    if media in allowed or ctx.gate_override:
+        return None
+    return (
+        f"storyboard_{'add_draft' if name.endswith('add_draft') else 'create_group'}"
+        f" 被拒收：本阶段（{ctx.stage_label or '已委派阶段'}）新建草稿卡只允许 "
+        f"mediaType={'/'.join(sorted(allowed))}，收到 {media!r}。"
+        "本次调用未执行、工作台保持原样。"
+        + (
+            "角色音色卡（key_element_audio，mediaType=audio）是本阶段的产出；"
+            "角色/场景/道具的图像卡与提示词属提示词撰写阶段，"
+            "请在委派 write_media_prompt 阶段时创建。"
+            if allowed == frozenset({"audio"}) else ""
+        )
+    )
+
+
 def run_gate_chain(
     ctx: GateContext, name: str, args: Dict[str, Any],
     *, paused_this_batch: bool,
 ) -> GateChainResult:
     """闸机链组合（顺序敏感，勿调换）：轮内暂停纪律 → 工具风险 →
-    生成确认 → 建组结构完整性 → 提示词结构。
+    生成确认 → 建组结构完整性 → **阶段建卡媒体类型** → 提示词结构。
     任一闸拒收即短路，后续闸不再判。"""
     res = GateChainResult()
     err = pause_window_error(name, paused_this_batch)
@@ -387,6 +454,8 @@ def run_gate_chain(
         err = gen_confirm_gate(ctx, name, args)
         if err is None:
             err = structure_integrity_gate(ctx, name, args)
+        if err is None:
+            err = card_media_gate(ctx, name, args)
         if err is None:
             pg_err = prompt_gate(ctx, name, args)
             if pg_err:

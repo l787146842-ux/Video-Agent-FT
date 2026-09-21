@@ -224,8 +224,9 @@ def test_stage_deny_never_starves_declared_tools():
     """防过度收口：任何阶段自己声明的工具都不在它的 deny 集里（断链即 FAIL）。
 
     与 test_stage_child_face_equals_declared_tools 互补——那边防"收得不够"，
-    这边防"收得过头"。2222 之前 1111 批的教训正是过度 allowlist 导致
-    script_analysis_report 未授予、分析结论无法提交。
+    这边防"收得过头"。1111 批的教训正是过度 allowlist 导致
+    script_analysis_report 未授予、分析结论无法提交；批0 回归（key_elements
+    被收走 add_draft 致音色卡建不出）是同一类错的第二次发生。
     """
     for stage in sorted(PIPELINE_STAGE_KINDS):
         deny = child_deny_set(stage)
@@ -237,6 +238,128 @@ def test_stage_deny_never_starves_declared_tools():
     # 通用委派（无 stage）不并入 MAIN_AGENT_DENY：无阶段即无阶段边界
     assert child_deny_set("") == SUBAGENT_TOOL_DENY
     assert not (MAIN_AGENT_DENY & child_deny_set(""))
+
+
+# ---------- ②c 阶段建卡媒体类型限定（2026-09-21 批4，用户裁决） ----------
+
+def test_stage_card_media_declaration():
+    """声明表单一事实源：key_elements 只允许建 audio 卡（音色卡）。
+
+    用户裁决：该阶段的产出是元素组 + 角色音色卡（key_element_audio）；
+    角色/场景/道具的图像卡（含壳）与提示词归 write_media_prompt 阶段。
+    """
+    from src.video_agent.core.subagent import STAGE_CARD_MEDIA, stage_card_media
+
+    assert stage_card_media("storyboard_key_elements") == frozenset({"audio"})
+    # 未登记阶段不受限（空集 = 维持现状，不额外收紧）
+    for stage in ("storyboard_shots", "storyboard_audio", "write_media_prompt",
+                  "script_analyze", ""):
+        assert stage_card_media(stage) == frozenset(), \
+            f"阶段 {stage} 不应受建卡媒体类型限定"
+    # 键必须是可委派阶段（装载期校验已保证；此处防表被改坏）
+    assert set(STAGE_CARD_MEDIA) <= set(PIPELINE_STAGE_KINDS)
+
+
+def test_card_media_gate_rejects_image_card_in_key_elements():
+    """建卡媒体闸：key_elements 建图像卡 → 明确拒收（含"去哪里做"指引）。
+
+    必须是**拒收**而非静默剥离字段——`fc_tool_runner` 记载 2026-09-12 曾有
+    「无阶段感知静默剥离 add_draft 内联 prompt」的闸机，造成假成功空提示词卡
+    （3333 项目实证），被用户裁决删除。
+    """
+    from src.video_agent.core.fc_gates import GateContext, card_media_gate
+
+    ctx = GateContext(stage_card_media=frozenset({"audio"}),
+                      stage_label="关键元素拆解")
+    # 图像卡拒收，且文案要指向正确阶段
+    err = card_media_gate(ctx, "storyboard_add_draft",
+                          {"draft": {"mediaType": "image"}})
+    assert err and "只允许 mediaType=audio" in err
+    assert "write_media_prompt" in err, "拒收文案须指明该去哪里做"
+    assert "未执行" in err and "保持原样" in err, "缺状态保留声明"
+    # 音色卡放行
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"mediaType": "audio"}}) is None
+    # mediaType 缺省 → 工具构建工厂回落 image，故同样拒收（不能误判为合法）
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"label": "x"}}) is not None
+    # 不带卡建组 = 纯结构动作（元素登记要用），放行
+    assert card_media_gate(ctx, "storyboard_create_group",
+                           {"group_type": "keyElement", "title": "程心"}) is None
+    # 带卡建组受同一约束（内联 draft 是同一条写卡通道）
+    assert card_media_gate(ctx, "storyboard_create_group",
+                           {"group_type": "keyElement",
+                            "draft": {"mediaType": "image"}}) is not None
+    assert card_media_gate(ctx, "storyboard_create_group",
+                           {"group_type": "keyElement",
+                            "draft": {"mediaType": "audio"}}) is None
+
+
+def test_card_media_gate_no_limit_when_undeclared():
+    """未登记阶段/通用委派：空集 = 不启用限定（零变化，不误伤其它阶段）。"""
+    from src.video_agent.core.fc_gates import GateContext, card_media_gate
+
+    ctx = GateContext()  # 默认空集
+    for name, args in (
+        ("storyboard_add_draft", {"draft": {"mediaType": "image"}}),
+        ("storyboard_create_group", {"group_type": "shot",
+                                     "draft": {"mediaType": "video"}}),
+    ):
+        assert card_media_gate(ctx, name, args) is None, \
+            f"未登记阶段不应被限定：{name}"
+    # 无关工具一律放行
+    assert card_media_gate(GateContext(stage_card_media=frozenset({"audio"})),
+                           "storyboard_patch_draft",
+                           {"patch": {"prompt": "x"}}) is None
+
+
+def test_stage_card_media_reaches_gate_ctx_end_to_end(svc):
+    """管线连通性（G4）：子代理轮的 stage 真能传到建卡闸（不是躺着的声明）。
+
+    防"表改了但没接线"——planner 轮始按 context.subagent_stage 下发到
+    fc_runner，再进 GateContext。这条钉死整条链路。
+    """
+    from src.video_agent.core.fc_gates import card_media_gate
+
+    planner = Planner(state_manager=svc, llm_adapter=None)
+    runner = planner._fc_runner
+
+    # 子代理轮 + 该阶段 → 限定生效
+    ctx_ke = PlannerContext(
+        skill_name=SKILL, subagent_depth=1, subagent_stage="storyboard_key_elements")
+    planner._apply_stage_card_media(ctx_ke)
+    assert runner.stage_card_media == frozenset({"audio"})
+    assert runner.stage_label == "关键元素拆解"
+    g = runner._gate_ctx()
+    assert card_media_gate(g, "storyboard_add_draft",
+                           {"draft": {"mediaType": "image"}}) is not None
+
+    # 子代理轮 + 其它阶段 → 不受限
+    ctx_shots = PlannerContext(
+        skill_name=SKILL, subagent_depth=1, subagent_stage="storyboard_shots")
+    planner._apply_stage_card_media(ctx_shots)
+    assert runner.stage_card_media == frozenset()
+    assert card_media_gate(runner._gate_ctx(), "storyboard_add_draft",
+                           {"draft": {"mediaType": "image"}}) is None
+
+    # 主代理轮（无 stage）→ 不受限
+    planner._apply_stage_card_media(
+        PlannerContext(skill_name=SKILL, subagent_depth=0))
+    assert runner.stage_card_media == frozenset()
+
+
+def test_card_media_gate_sits_in_chain_before_prompt_gate():
+    """链路顺序：建卡媒体闸必须在提示词闸**之前**（链路顺序敏感）。
+
+    否则一张被拒的图像卡会先跑一遍提示词结构校验（无谓开销 + 报错指向错误原因）。
+    """
+    import inspect
+
+    from src.video_agent.core import fc_gates
+
+    src = inspect.getsource(fc_gates.run_gate_chain)
+    assert src.index("card_media_gate") < src.index("prompt_gate"), \
+        "建卡媒体闸应在提示词闸之前"
 
 
 # ---------- ③ adjust_scope 不裁剪 ----------

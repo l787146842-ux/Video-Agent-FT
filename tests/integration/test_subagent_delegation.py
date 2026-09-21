@@ -294,3 +294,64 @@ async def test_stage_delegation_storyboard_shots(svc, fakestop_off):
     assert "分镜语法三件套" in task_text, "storyboard_shots 章节未精准注入"
     assert "内切镜时长估算" not in task_text, "write_media_prompt 章节泄漏进分镜子代理"
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
+
+
+async def test_key_elements_child_can_build_voice_card_but_not_image_card(
+        svc, fakestop_off):
+    """批4 端到端（用户裁决）：key_elements 子代理**能**建音色卡、**不能**建图像卡。
+
+    真过闸机链、真写工作台（只把模型换成脚本）：
+    ① 子代理建 mediaType=audio 的音色卡 → 放行落账（该阶段的正经产出，
+       Skill 明文「声音特征单独登记为 key_element_audio」）；
+    ② 子代理建 mediaType=image 的图像卡 → **被建卡媒体闸拒收**、不落账
+       （用户裁决：图像卡含壳与提示词均归 write_media_prompt 阶段）；
+    ③ 拒收文案要告诉模型"去哪里做"，防其原地重试。
+    """
+    adapter = _ScriptedAdapter([
+        # 1) 父：委派关键元素阶段
+        {"tool": "run_subagent", "args": {
+            "task": "登记关键元素与角色音色", "stage": "storyboard_key_elements"}},
+        # 2) 子：先建元素组（不带卡=纯结构动作，应放行）
+        {"tool": "storyboard_create_group", "args": {
+            "group_type": "keyElement", "title": "程心",
+            "desc": "女主，东方年轻女性，约27岁，温婉而坚毅。"}},
+        # 3) 子：建音色卡（该阶段唯一允许的卡型）→ 应放行
+        {"tool": "storyboard_add_draft", "args": {
+            "group_id": "current", "group_type": "keyElement",
+            "draft": {"label": "Audio_程心", "mediaType": "audio",
+                      "tag": "key_element_audio",
+                      "timbre": "女中音，温润略带沙哑，语速舒缓",
+                      "desc": "声音特征：女中音，音色温润略带沙哑"}}},
+        # 4) 子：试图建图像卡 → 应被拒收
+        {"tool": "storyboard_add_draft", "args": {
+            "group_id": "current", "group_type": "keyElement",
+            "draft": {"label": "程心-角色设定图", "mediaType": "image",
+                      "genType": "character",
+                      "prompt": "写实科幻电影质感，东亚年轻女性…"}}},
+        # 5) 子：摘要收尾
+        {"text": "已登记 1 位角色与音色卡；图像卡被拒收，留待提示词阶段。"},
+        # 6) 父：交代
+        {"text": "关键元素已完成。"},
+    ])
+    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=ToolManager)
+    result = await planner.handle_message(
+        "开始登记关键元素",
+        PlannerContext(skill_name=SKILL, use_studio_context=True))
+
+    # ① 音色卡落账
+    ke = svc.state_dict.get("keyElements") or []
+    assert any(g.get("title") == "Element_程心" for g in ke), "元素组未落账"
+    drafts = [d for g in ke for d in (g.get("drafts") or [])]
+    assert len(drafts) == 1, f"应只落 1 张音色卡，实际 {len(drafts)} 张：{drafts}"
+    assert drafts[0].get("mediaType") == "audio", "落账的应是音色卡"
+    assert drafts[0].get("timbre"), "音色卡应带音色描述"
+    # ② 图像卡未落账（被拒）
+    assert not [d for d in drafts if d.get("mediaType") == "image"], \
+        "图像卡被拒收后不得落账"
+    assert "关键元素已完成" in (result.text or "")
+
+    # ③ 拒收文案指向正确阶段（回喂给子代理的 tool 结果里可见）
+    #    子代理被拒后会带着 tool 结果再发一轮，故在**全部**调用里搜（索引不稳）
+    blob = json.dumps(adapter.calls, ensure_ascii=False)
+    assert "只允许 mediaType=audio" in blob, "建卡媒体闸未生效（图像卡未拒收）"
+    assert "write_media_prompt" in blob, "拒收文案须告诉模型去哪里建图像卡"

@@ -138,6 +138,26 @@ MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
     "storyboard_add_draft", "storyboard_patch_draft",
 })
 
+# 阶段建卡媒体类型白名单（2026-09-21 批4，用户裁决）：声明某阶段子代理**新建
+# 草稿卡时允许的 mediaType**；未登记的阶段不受限（= 现状，不额外收紧）。
+#
+# 背景：`storyboard_key_elements` 的产出是**元素组 + 角色音色卡**
+# （`key_element_audio`，mediaType=audio；Skill 明文「角色的声音特征单独登记为
+# key_element_audio，与角色元素绑定」）。而"角色三视图/场景四视图/道具图"是
+# **图像提示词的产物**，其卡壳与提示词同归 `write_media_prompt` 阶段
+# （用户 2026-09-21 裁决：图像卡含壳全部归提示词阶段）。
+# 故 key_elements 建卡只允许 audio：图像卡在此阶段被拒收（见 fc_gates）。
+#
+# 为什么用"允许集"而不是"禁止集"：本表回答"这个阶段能建什么卡"（正向声明，
+# 与 _STAGE_TOOLS 同为正向设计），加新阶段时默认不受限（不破坏现状）。
+#
+# ⚠️ 与 3333 事故的分界（必须保持）：限定走**明确拒收 + 回喂原因**，
+# 绝不静默剥离字段——`fc_tool_runner` 记载 2026-09-12 曾有「无阶段感知静默剥离
+# add_draft 内联 prompt」的闸机，造成**假成功空提示词卡**，被用户裁决删除。
+STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
+    "storyboard_key_elements": frozenset({"audio"}),
+}
+
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
 # 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
 # （_STAGE_TOOLS），配置漂移在 import 期即报错，不带到运行时静默丢章节注入。
@@ -181,9 +201,46 @@ if _stage_owned_extra:
 del _stage_owned_extra
 
 
+def _validate_stage_card_media() -> None:
+    """STAGE_CARD_MEDIA 装载期校验（fail-loud，函数形态免循环变量泄漏）：
+
+    ①键必须是可委派阶段（拼错键 = 限定静默失效）；
+    ②该阶段必须真的持有建卡工具（否则限定无的放矢）；
+    ③声明的 mediaType 必须是合法枚举（与 DraftRecord.media_type 同集）。
+    """
+    valid_media = frozenset({"image", "video", "audio"})
+    for st, media in STAGE_CARD_MEDIA.items():
+        if st not in PIPELINE_STAGE_KINDS:
+            raise ValueError(
+                f"[subagent] STAGE_CARD_MEDIA 漂移：键 {st!r} 不是可委派阶段"
+                f"（拼错=限定静默失效，fail-loud）")
+        if not (_STAGE_TOOLS.get(st, frozenset())
+                & {"storyboard_add_draft", "storyboard_create_group"}):
+            raise ValueError(
+                f"[subagent] STAGE_CARD_MEDIA 漂移：阶段 {st!r} 未持有建卡工具"
+                f"（storyboard_add_draft/create_group），限定无的放矢（fail-loud）")
+        bad = media - valid_media
+        if bad:
+            raise ValueError(
+                f"[subagent] STAGE_CARD_MEDIA 漂移：阶段 {st!r} 声明了非法 "
+                f"mediaType {sorted(bad)}（合法值 {sorted(valid_media)}，fail-loud）")
+
+
+_validate_stage_card_media()
+
+
 def stage_tools(stage: str = "") -> FrozenSet[str]:
     """阶段执行器必备工具集（空/未知阶段返回空集）。"""
     return _STAGE_TOOLS.get(resolve_stage(stage), frozenset())
+
+
+def stage_card_media(stage: str = "") -> FrozenSet[str]:
+    """阶段建卡媒体类型白名单（空集 = 不受限，维持现状）。
+
+    消费端 = `fc_gates.card_media_gate`（经 planner 轮始下发，同 turn_excluded
+    模式）。空/未知阶段返回空集 ⇒ 不启用限定（通用委派与未登记阶段零变化）。
+    """
+    return STAGE_CARD_MEDIA.get(resolve_stage(stage), frozenset())
 
 
 def resolve_subagent_kind(kind: str = ""):

@@ -170,6 +170,10 @@ class FCToolRunner:
         # 由 planner 轮始下发（= _compute_excluded_tools 结果）；被裁工具即便被模型
         # 误调也在此拒绝执行，不止从 FC schema 消失（可见性即权限，单点强制）。
         self.turn_excluded: frozenset = frozenset()
+        # 阶段建卡媒体类型白名单（2026-09-21 批4）：由 planner 轮始按当前委派阶段
+        # 下发（同 turn_excluded 模式）；空集 = 不启用限定。stage_label 供拒收文案。
+        self.stage_card_media: frozenset = frozenset()
+        self.stage_label: str = ""
         # K6 批（2026-09-16 对齐 dsh structured.ts:109-111）：structured_output
         # 打卡终局 guard（轮内）：打卡成功后本轮拒收任何后续工具调用
         # （子代理收尾=一次打卡）；reset_turn_tracking 轮始重置。
@@ -203,6 +207,10 @@ class FCToolRunner:
             state=self._raw_state,
             tool_risk_of=self._tool_risk_of,
             record_gen_log=self._record_gate_gen_log,
+            # 阶段建卡媒体类型限定（2026-09-21 批4）：非 __init__ 构造的测试桩
+            # （object.__new__）缺属性时回落空集 = 不启用限定（不误伤存量测试）
+            stage_card_media=getattr(self, "stage_card_media", frozenset()),
+            stage_label=getattr(self, "stage_label", ""),
         )
 
     @staticmethod
