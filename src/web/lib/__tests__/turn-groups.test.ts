@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupTurns, suggestedTargetIndex, answeredValueFor, stabilizeGroups } from '../turn-groups';
+import { groupTurns, suggestedTargetIndex, answeredValueFor, pauseQaFor, stabilizeGroups } from '../turn-groups';
 import type { ChatMessage } from '@/types';
 
 /** ：轮次分组纯函数（turnId 为主，相邻 agent 兜底） */
@@ -120,6 +120,122 @@ describe('answeredValueFor 当时所选值', () => {
   it('其后无用户消息 → 空串', () => {
     const msgs: ChatMessage[] = [a('t1', { text: '请确认', confirm: '请确认', pauseId: 'p1' })];
     expect(answeredValueFor(msgs, 0)).toBe('');
+  });
+});
+
+/** 一问一答配对（2026-09-21 批K）：用户气泡内回执的数据源。
+ *  **按问题 id 配对**，不再依赖「第几行 = 第几问」的位置约定。 */
+describe('pauseQaFor 一问一答配对', () => {
+  /** 一张两问的暂停卡 + 用户的回答（结构化） */
+  const card = (pid = 'p1'): ChatMessage => a('t1', {
+    text: '', confirm: '请确认', pauseId: pid,
+    pauseQuestions: [
+      { id: 'ratio', question: '画幅？', options: [{ label: '16:9' }, { label: '9:16' }] },
+      { id: 'naming', question: '显名？', options: [{ label: '显名' }, { label: '不显名' }] },
+    ],
+  });
+  const answer = (extra?: Partial<ChatMessage>): ChatMessage => ({
+    sender: 'user', text: '16:9\n不显名',
+    pauseAnsweredId: 'p1', pauseAnsweredValue: '16:9\n不显名', ...extra,
+  });
+
+  it('按 id 配对：问题原文 × 所选，逐问成对', () => {
+    const msgs: ChatMessage[] = [card(), answer({
+      pauseAnsweredAnswers: [
+        { id: 'ratio', selected: ['16:9'] },
+        { id: 'naming', selected: ['不显名'] },
+      ],
+    })];
+    const qa = pauseQaFor(msgs, 1);
+    expect(qa.map((p) => p.question)).toEqual(['画幅？', '显名？']);
+    expect(qa.map((p) => p.selected)).toEqual([['16:9'], ['不显名']]);
+    expect(qa.every((p) => !p.unanswered)).toBe(true);
+  });
+
+  it('同名选项不会互相串（旧文字匹配的病根）', () => {
+    // 两问都有「写实」这个选项，但用户只在第①问选了它
+    const msgs: ChatMessage[] = [
+      a('t1', {
+        text: '', confirm: '请确认', pauseId: 'p1',
+        pauseQuestions: [
+          { id: 'a', question: '角色风格？', options: [{ label: '写实' }] },
+          { id: 'b', question: '场景风格？', options: [{ label: '写实' }, { label: '写意' }] },
+        ],
+      }),
+      answer({
+        text: '写实\n写意',
+        pauseAnsweredValue: '写实\n写意',
+        pauseAnsweredAnswers: [
+          { id: 'a', selected: ['写实'] },
+          { id: 'b', selected: ['写意'] },
+        ],
+      }),
+    ];
+    const qa = pauseQaFor(msgs, 1);
+    expect(qa[0].selected).toEqual(['写实']);   // 第①问
+    expect(qa[1].selected).toEqual(['写意']);   // 第②问没被第①问的「写实」污染
+  });
+
+  it('跳过的问显示未作答（不再靠缺行猜测）', () => {
+    const msgs: ChatMessage[] = [card(), answer({
+      pauseAnsweredAnswers: [{ id: 'ratio', selected: ['16:9'] }],
+    })];
+    const qa = pauseQaFor(msgs, 1);
+    expect(qa[0].unanswered).toBe(false);
+    expect(qa[1].unanswered).toBe(true);
+    expect(qa[1].selected).toEqual([]);
+  });
+
+  it('自定义文本作答走 custom 槽（selected 为空但仍算已答）', () => {
+    const msgs: ChatMessage[] = [card(), answer({
+      pauseAnsweredAnswers: [{ id: 'ratio', selected: [], custom: '我自己定 4:3' }],
+    })];
+    const qa = pauseQaFor(msgs, 1);
+    expect(qa[0].custom).toBe('我自己定 4:3');
+    expect(qa[0].unanswered).toBe(false);
+  });
+
+  it('多选题的 selected 保留全部勾选', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', {
+        text: '', confirm: '请确认', pauseId: 'p1',
+        pauseQuestions: [{ id: 'tone', question: '基调？', multi_select: true }],
+      }),
+      answer({
+        pauseAnsweredAnswers: [{ id: 'tone', selected: ['冷调', '暖调'] }],
+      }),
+    ];
+    expect(pauseQaFor(msgs, 1)[0].selected).toEqual(['冷调', '暖调']);
+  });
+
+  it('旧消息（无 pauseAnsweredAnswers）回落逐行按序补齐', () => {
+    const msgs: ChatMessage[] = [card(), answer()];   // 只有扁平 value
+    const qa = pauseQaFor(msgs, 1);
+    expect(qa[0].selected).toEqual(['16:9']);
+    expect(qa[1].selected).toEqual(['不显名']);
+  });
+
+  it('非问答消息 / 找不到暂停卡 → 空数组（不生成无主块）', () => {
+    // 普通用户消息
+    expect(pauseQaFor([card(), u('随便说点啥')], 1)).toEqual([]);
+    // 有 pauseAnsweredId 但前面没有对应暂停卡（脏数据）
+    expect(pauseQaFor([u('你好'), answer()], 1)).toEqual([]);
+    // 暂停卡无 pauseQuestions（旧卡）
+    const bare = a('t1', { text: '', confirm: '请确认', pauseId: 'p1' });
+    expect(pauseQaFor([bare, answer()], 1)).toEqual([]);
+  });
+
+  it('header 存在时优先用于显示（问句仍保留在 title）', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', {
+        text: '', confirm: '请确认', pauseId: 'p1',
+        pauseQuestions: [{ id: 'x', header: '画幅', question: '成片画幅选哪个？' }],
+      }),
+      answer({ pauseAnsweredAnswers: [{ id: 'x', selected: ['16:9'] }] }),
+    ];
+    const qa = pauseQaFor(msgs, 1);
+    expect(qa[0].header).toBe('画幅');
+    expect(qa[0].question).toBe('成片画幅选哪个？');
   });
 });
 

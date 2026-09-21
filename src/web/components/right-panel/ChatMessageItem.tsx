@@ -209,6 +209,7 @@ export function ChatMessageItem(props: {
           onSubmit={submitEdit}
           onCancel={() => setEditing(false)}
           onImageClick={setLightboxUrl}
+          pauseQa={props.affordance.pauseQa}
         />
       </Show>
 

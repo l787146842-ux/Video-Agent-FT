@@ -40,6 +40,7 @@ const AFF_DEFAULT: MessageAffordance = {
   confirmTarget: false, gateTarget: false, suggestedTarget: false,
   editable: false, regenerable: false, branchable: false, copyable: false,
   docSavable: false, confirmState: 'none', answeredValue: '',
+    pauseQa: [],
 };
 const aff = (o: Partial<MessageAffordance> = {}): MessageAffordance => ({ ...AFF_DEFAULT, ...o });
 

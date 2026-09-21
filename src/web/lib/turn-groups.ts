@@ -80,6 +80,80 @@ export function answeredValueFor(messages: ChatMessage[], idx: number): string {
   return '';
 }
 
+/** 一问一答配对（2026-09-21 批K）：问题原文 × 用户实际所选。
+ *  用于把「你当时答了什么」直接渲染在用户气泡里。 */
+export interface PauseQaPair {
+  /** 问题短标题（可选） */
+  header: string;
+  /** 问题原文 */
+  question: string;
+  /** 用户所选（多选多项；用自定义文本作答时为空） */
+  selected: string[];
+  /** 用户自由文本作答（"其它（自定义输入）"，未用时为空） */
+  custom: string;
+  /** 该问是否未作答 */
+  unanswered: boolean;
+}
+
+/** 该用户消息是否是对**某张暂停卡**的回应（是则其气泡应渲染问答对）。 */
+export function isPauseAnswerMessage(messages: ChatMessage[], idx: number): boolean {
+  const m = messages[idx];
+  if (m.sender !== 'user' || m.kind === 'system_action') return false;
+  if (!m.pauseAnsweredId) return false;
+  // 必须真能找到对应的暂停卡（防脏数据产生无主问答块）
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (messages[i].pauseId === m.pauseAnsweredId) return true;
+  }
+  return false;
+}
+
+/** 该用户消息对应的问答对（一问一答；无问答数据时返回空数组）。
+ *
+ *  数据来源（批J 落盘面）：`pauseQuestions`（第 i 条暂停卡的问题清单）
+ *  × `pauseAnsweredAnswers`（用户逐问所选 `{id, selected[], custom?}`），
+ *  **按问题 id 配对**——不再依赖「第几行 = 第几问」的位置约定
+ *  （选项文字含换行/某问跳答时不再错位）。
+ *
+ *  回落：无 `pauseAnsweredAnswers` 的旧消息用 `pauseAnsweredValue` 逐行
+ *  按序补齐（尽力而为，位置对齐），保证旧历史也有可读回执。
+ *  纯函数，vitest 钉死。
+ */
+export function pauseQaFor(messages: ChatMessage[], idx: number): PauseQaPair[] {
+  const m = messages[idx];
+  if (m.sender !== 'user' || !m.pauseAnsweredId) return [];
+  // 往前找对应的暂停卡（携问题清单的那条 agent 消息）
+  let card = -1;
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (messages[i].pauseId === m.pauseAnsweredId) { card = i; break; }
+  }
+  if (card < 0) return [];
+  const questions = messages[card].pauseQuestions || [];
+  if (!questions.length) return [];
+  // 答题面：结构化优先（按 id 配对）；旧消息回落逐行补齐
+  const byId = new Map<string, { selected: string[]; custom: string }>();
+  (m.pauseAnsweredAnswers || []).forEach((a) => {
+    if (a && a.id) {
+      byId.set(a.id, { selected: (a.selected || []).slice(), custom: (a.custom || '').trim() });
+    }
+  });
+  const legacyLines = m.pauseAnsweredAnswers?.length
+    ? [] : (m.pauseAnsweredValue || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  return questions.map((q, i) => {
+    const qid = (q.id || '').trim() || `q${i + 1}`;
+    const hit = byId.get(qid);
+    const fallback = hit ? '' : (legacyLines[i] || '');
+    const selected = hit ? hit.selected : (fallback ? [fallback] : []);
+    const custom = hit ? hit.custom : '';
+    return {
+      header: (q.header || '').trim(),
+      question: (q.question || '').trim(),
+      selected,
+      custom,
+      unanswered: !selected.length && !custom,
+    };
+  });
+}
+
 /**
  * 轮次组引用稳定化：groupTurns 每次返回全新对象，而 Solid <For> 按对象
  * identity diff——引用不稳导致每条消息变化都全树拆建，content-visibility

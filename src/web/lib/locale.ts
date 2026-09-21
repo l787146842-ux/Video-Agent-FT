@@ -162,6 +162,8 @@ const zhCN = {
   'rp.msg.metaRounds': '{n} 轮',
   'rp.msg.metaUpdated': '更新 {n} 项',
   'rp.msg.chosen': '已选',
+  // 2026-09-21 批K：用户气泡内的一问一答回执（逐问「问题 → 你的选择」）
+  'rp.qa.unanswered': '未作答',
   // 建议动作按钮（确定性交互）
   'rp.msg.retry': '重试',
   'rp.msg.continueTask': '继续完成',

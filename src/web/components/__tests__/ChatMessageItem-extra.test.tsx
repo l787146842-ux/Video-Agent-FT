@@ -46,6 +46,7 @@ const AFF_DEFAULT: MessageAffordance = {
   confirmTarget: false, gateTarget: false, suggestedTarget: false,
   editable: false, regenerable: false, branchable: false, copyable: false,
   docSavable: false, confirmState: 'none', answeredValue: '',
+    pauseQa: [],
 };
 const aff = (o: Partial<MessageAffordance> = {}): MessageAffordance => ({ ...AFF_DEFAULT, ...o });
 
@@ -111,7 +112,7 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
     expect(container.querySelector('.user-bubble-text')?.textContent).toBe('用这个风格再来一段');
   });
 
-  it('已回应暂停卡：answeredValue 与选项同在时渲染「当时所选」对勾', () => {
+  it('已回应暂停卡：agent 卡不再挂「当时所选」对勾区（批K 迁到用户气泡）', () => {
     const msg: ChatMessage = {
       sender: 'agent',
       text: '',
@@ -121,9 +122,37 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
     const { container } = render(() => (
       <ChatMessageItem message={msg} affordance={aff({ confirmState: 'answered', answeredValue: '确认，继续' })} />
     ));
-    const answered = container.querySelector('.answered-options');
-    expect(answered).toBeTruthy();
-    expect(answered?.querySelector('.answered-option.chosen')?.textContent).toContain('确认，继续');
+    // 2026-09-21 批K（用户要求）：旧「整排选项重画 + 文字匹配打勾」已从 agent 卡移除，
+    // 问答回执改在用户气泡内逐问呈现（PauseQaBlock）。
+    expect(container.querySelector('.answered-options')).toBeNull();
+    // 阶段完成卡本身照旧渲染（只摘掉对勾区）
+    expect(container.querySelector('.stage-card')).toBeTruthy();
+  });
+
+  it('用户气泡内渲染一问一答回执（批K）：问题 → 你的选择', () => {
+    const msg: ChatMessage = {
+      sender: 'user',
+      text: '16:9\n不显名',
+    };
+    const { container } = render(() => (
+      <ChatMessageItem
+        message={msg}
+        affordance={aff({
+          pauseQa: [
+            { header: '', question: '画幅？', selected: ['16:9'], custom: '', unanswered: false },
+            { header: '', question: '显名？', selected: ['不显名'], custom: '', unanswered: false },
+            { header: '', question: '语调？', selected: [], custom: '', unanswered: true },
+          ],
+        })}
+      />
+    ));
+    const rows = container.querySelectorAll('[data-testid="pause-qa-row"]');
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain('画幅？');
+    expect(rows[0].textContent).toContain('16:9');
+    expect(rows[1].textContent).toContain('不显名');
+    // 跳过的问显示「未作答」，不再靠缺行猜测
+    expect(rows[2].textContent).toContain('未作答');
   });
 });
 

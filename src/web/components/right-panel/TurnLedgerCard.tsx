@@ -18,7 +18,7 @@ import type { TurnLedger, TurnPhase } from '@/lib/turn-ledger';
 import { AgentTimeline } from './AgentTimeline';
 import { StageProgressBar } from './StageProgressBar';
 import { StageCard } from './StageCard';
-import { AnsweredOptions } from './AnsweredOptions';
+import { t } from '@/lib/locale';
 
 /** 批次B：prefers-reduced-motion 检测（jsdom 下 matchMedia 缺失时回落允许动画，
  * 测试以 matchMedia mock 真实断言 reduce 场景） */
@@ -59,14 +59,12 @@ export function TurnLedgerCard(props: {
             <StageCard msg={msg} state={props.confirmState || 'none'} class={fadeClass} />
           </Show>
 
-          {/* 已回应暂停卡的「当时选了哪项」对勾标注（只读回看） */}
-          <Show when={msg().confirm && (props.answeredValue || '') && (msg().confirmOptions || []).length > 0}>
-            <AnsweredOptions
-              options={msg().confirmOptions || []}
-              answeredValue={props.answeredValue || ''}
-              class={fadeClass}
-            />
-          </Show>
+          {/* 2026-09-21 批K（用户要求）：原「已回应选项对勾区」（AnsweredOptions）
+              已从本卡移除——问答回执改在**用户自己的气泡**内逐问呈现
+              （见 UserBubble/PauseQaBlock）。移除理由：该区把整排选项重画后
+              用文字匹配打勾，多问题时会混在一起、同名选项会互相串。
+              注：`AnsweredOptions` 组件与 `answered-options` 样式保留
+              （其他消费面/回归测试仍引用），只是本卡不再挂载。 */}
 
           {/* 过程时间线（深度思考 + 已处理操作；settled 定型面板形态，
               账目优先消费相位翻转账本，回落路径由 ledger 数据源侧保证） */}

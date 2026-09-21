@@ -8,9 +8,11 @@
 import { Show } from 'solid-js';
 import { absUrl } from '@/lib/chat/chat-image-drag';
 import type { ChatMessage } from '@/types';
+import type { PauseQaPair } from '@/lib/turn-groups';
 import { RichBubble } from './RichBubble';
 import { UserRefBlocks } from './UserRefBlocks';
 import { InlineEditBox } from './InlineEditBox';
+import { PauseQaBlock } from './PauseQaBlock';
 
 export function UserBubble(props: {
   message: ChatMessage;
@@ -22,6 +24,9 @@ export function UserBubble(props: {
   onCancel: () => void;
   /** 内联媒体点击（已转绝对地址，父组件开 lightbox） */
   onImageClick: (url: string) => void;
+  /** 一问一答回执（批K）：非空时在气泡内逐问渲染「问题 → 你的选择」；
+   *  取代旧的 agent 卡下泛化选项对勾区 */
+  pauseQa?: PauseQaPair[];
 }) {
   const msg = () => props.message;
 
@@ -40,11 +45,15 @@ export function UserBubble(props: {
     return raw;
   };
 
+  /** 问答回执（批K）：有配对数据才渲染；它本身就是「回答」的呈现，
+   *  故此时正文（那串逐行拼接的答案）退居为纯文本兜底，不必再重复强调 */
+  const qa = () => props.pauseQa || [];
+
   return (
     <Show
       when={props.editing() && props.editable}
       fallback={
-        <Show when={userText() || hasRefBlocks() || hasInlineMedia()}>
+        <Show when={userText() || hasRefBlocks() || hasInlineMedia() || qa().length > 0}>
           <Show
             when={hasInlineMedia()}
             fallback={
@@ -54,6 +63,9 @@ export function UserBubble(props: {
                 </Show>
                 <Show when={userText()}>
                   <span class="user-bubble-text">{userText()}</span>
+                </Show>
+                <Show when={qa().length > 0}>
+                  <PauseQaBlock pairs={qa()} />
                 </Show>
               </div>
             }
@@ -67,6 +79,12 @@ export function UserBubble(props: {
               parts={msg().parts || []}
               onImageClick={(url) => props.onImageClick(absUrl(url))}
             />
+            {/* 富文本分支同样挂问答回执（带内联媒体的回应也要能回看） */}
+            <Show when={qa().length > 0}>
+              <div class="chat-bubble">
+                <PauseQaBlock pairs={qa()} />
+              </div>
+            </Show>
           </Show>
         </Show>
       }

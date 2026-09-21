@@ -10,7 +10,7 @@
  * vitest 钉死（message-affordances.test.ts）。
  */
 import type { ChatMessage } from '@/types';
-import { answeredValueFor, suggestedTargetIndex } from './turn-groups';
+import { answeredValueFor, pauseQaFor, suggestedTargetIndex, type PauseQaPair } from './turn-groups';
 
 export type ConfirmState = 'active' | 'answered' | 'expired' | 'none';
 
@@ -38,6 +38,9 @@ export interface MessageAffordance {
   confirmState: ConfirmState;
   /** 已回应暂停卡的「当时所选值」（仅 answered 态非空） */
   answeredValue: string;
+  /** 该用户消息的**一问一答配对**（2026-09-21 批K）：非空时用户气泡内
+   *  直接渲染「问题 → 你的选择」，取代 agent 卡下那块泛化的选项对勾区。 */
+  pauseQa: PauseQaPair[];
 }
 
 /** 当前待回应的确认消息下标：最后一条 confirm 消息（任务 #3 扩：结构化
@@ -141,6 +144,9 @@ export function deriveAffordances(
       docSavable: m.sender === 'agent' && (m.text || '').trim() !== '',
       confirmState: state,
       answeredValue: state === 'answered' ? answeredValueFor(messages, idx) : '',
+      // 一问一答配对（批K）：只对「回应了某张暂停卡」的用户消息派生；
+      // 无问答数据（自由打字/旧卡）返回空数组 → 渲染层不挂块
+      pauseQa: m.sender === 'user' ? pauseQaFor(messages, idx) : [],
     };
   });
 }
