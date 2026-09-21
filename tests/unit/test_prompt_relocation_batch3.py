@@ -145,6 +145,27 @@ def test_iron_rules_header_drops_cross_stage_precollect():
     assert "先问再做" in header and "不擅自补全" in header, "缺信息处置核心条款误删"
 
 
+def test_iron_rules_header_stage_anchor_is_production_phase():
+    """6666 取证（proj-1790004483-ceefb1a0）：iron_rules「当前阶段」**无客观指称**
+    ——模型逐字引用后自判为「启动阶段」（seq 28/39 思考原文照抄该句），把 Skill
+    明文归分析阶段的「剧本形态分类」提前问到开场（seq 13 workflow_pause 第 2 问
+    「这份《三体简短版》是散文体叙事（非标准分镜脚本），如何推进？」）：主代理判
+    「散文体」，随后分析子代理独立判「C 类 — 半结构化剧本」——**两结论打架**。
+
+    改法 = **指称换锚**（只换词、不新增条款）：锚点从模型自估的**时刻**，换到
+    Skill 明写的**信息归属**（Skill L34「在分析阶段识别并告知用户」是白纸黑字的
+    可判定依据）——模型不必再自估"现在是哪个阶段"。
+
+    本断言钉死换锚形态，并防两侧回潮：不得退回无指称的「当前阶段」、不得借本次
+    改动词回潮双删批的跨阶段禁令。"""
+    header = load_prompt("shared/iron_rules_header.md")
+    assert "该信息所属的产出阶段" in header, "阶段锚点回退为无指称形态（6666 根因）"
+    assert "当前阶段" not in header, "无指称锚点回潮"
+    # 双删批边界（2026-09-20）与核心条款同批复钉：换词不得夹带禁令回潮、不得误删
+    assert "不跨阶段预收" not in header, "借换词回潮退役禁令（混乱2 双删批）"
+    assert "先问再做" in header and "不擅自补全" in header, "缺信息处置核心条款误删"
+
+
 def test_b3_agent_loop_templates_wired():
     """agent_loop 运行时文案走 feedback.md 分节（分节在场即接线有效；
     代码内置兜底允许保留但不得作为唯一来源）。
