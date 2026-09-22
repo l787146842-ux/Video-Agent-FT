@@ -29,6 +29,18 @@ def _spec_clause() -> str:
     raise AssertionError("protocol.md 未找到规格边界条目（规格文档…）")
 
 
+def _disclosure_clause() -> str:
+    """渐进式披露总纲正文（唯一源 = protocol.md「== 渐进式披露总纲 ==」段）。"""
+    lines = _protocol_text().splitlines()
+    for i, line in enumerate(lines):
+        if "渐进式披露总纲" in line:
+            for nxt in lines[i + 1:]:
+                if nxt.strip():
+                    return nxt
+            break
+    raise AssertionError("protocol.md 未找到渐进式披露总纲正文")
+
+
 # ---------- ① 角色定义（事故 2222/Q1） ----------
 
 def test_role_line_drops_creator_identity():
@@ -56,6 +68,35 @@ def test_role_line_keeps_action_channel_sentence():
     first = _protocol_text().splitlines()[0]
     assert "Tool 调用" in first and "Function Calling" in first, \
         "动作通道唯一 = Tool 调用（FC）契约丢失"
+
+
+def test_disclosure_clause_routes_reading_by_task_role():
+    """渐进式披露总纲：读取按**任务分工**路由，不催主代理抢读原文。
+
+    取证链（2222 → 8888 → 6666 → 全库扫描）：
+    - 2222/Q1 起即记「主代理抢读剧本」（本文件 docstring）；
+    - 09-20 附件预览退役批清了 `web/attachments.py` 的预览注入 + 催读说教，
+      但 **`protocol.md` 同款「全文一律经 read_* 工具按需读取…不要声称看不到
+      相应内容」未同批清除**；
+    - 实跑复现率 **46/46 项目**主代理开场亲读剧本（含 09-20 01:51 即该批当天
+      跑的 8888、以及批M 之后 09-22 11:23 跑的 1790046728），跨全部修复批；
+    - flova 对照（转录十 L905/L907）：「系统**保留了按需读取剧本的能力**…主会话
+      **只有在当前任务确实需要剧本原文时**，才应主动读取或定向传递它」——
+      即**不锁工具**（L907 明写「这不是说系统能阻止我发起一次读取请求」），
+      靠**默认不注入正文 + 按任务分工的规范**引导。
+
+    故本断言钉死两件事：①「一律」式催读措辞与「不要声称看不到」说教不得回潮
+    （后者与 09-20 已在 attachments 删除的同款句一致，属 P3 状态即数据）；
+    ②按任务分工路由的判据在场。"""
+    clause = _disclosure_clause()
+    assert "按任务分工决定由谁读" in clause, \
+        "渐进式披露总纲缺「按任务分工决定由谁读」判据（flova L905 口径）"
+    assert "你只在当前任务确实需要该原文核对时才读取" in clause, \
+        "缺「仅当前任务确实需要时才读」判据（flova L907 口径）"
+    assert "一律" not in clause, \
+        "「全文一律经 read_* 按需读取」催读措辞回潮（46/46 抢读根因）"
+    assert "不要声称看不到" not in clause, \
+        "「不要声称看不到相应内容」说教回潮（09-20 已在 attachments 同款删除，P3）"
 
 
 # ---------- ② 规格文档边界（事故 2222/Q4） ----------
