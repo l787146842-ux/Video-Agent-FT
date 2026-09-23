@@ -1,8 +1,97 @@
+import copy
 from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, ValidationError
 from loguru import logger
 from src.video_agent.utils.cancel_token import GenerationCancelled
 from .base import BaseTool, DETAIL_TIERS, PROVIDER_KINDS, RISK_TIERS, ToolResult
+
+# JSON Schema 的 `$ref` 指向前缀（pydantic v2 把嵌套 BaseModel 放进 $defs）
+_REF_PREFIX = "#/$defs/"
+
+
+def inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """把入参 schema 里的 `$ref` 就地内联展开，返回**自足**（self-contained）副本。
+
+    ## 为什么需要这一层（事故根因）
+
+    `_full_schemas` 只取 `model_json_schema()` 的 `properties` + `required`，
+    **丢弃 `$defs`**。而 pydantic 对嵌套 BaseModel（如 `List[TodoItem]`）产出的是
+    `items: {"$ref": "#/$defs/TodoItem"}` —— 丢 `$defs` 后该引用**悬空**，
+    条目字段名一个字节都到不了模型手里。
+
+    实跑取证（2026-09-23，项目 4444 / proj-1790159421-bfd25491）：
+    `todo_write` 被调 11 次、失败 7 次，模型原地盲猜条目键名
+    `title` → `text` → `label` → `item`，四种猜法全错（而状态值每次都填对，
+    证明它读懂了描述、只是不知道键叫什么）。
+
+    ## 为什么是「内联」而不是「补发 $defs」
+
+    补发 `$defs` 依赖下游网关/provider 支持 `$ref` 解析——本平台经中转调用，
+    对方是否解析 `$defs` **不可控也不可观测**。内联后 schema 自足，
+    不依赖任何一方的引用解析能力（对齐「不把正确性押在外部行为上」）。
+
+    ## 失败语义（fail-loud，不静默降级）
+
+    引用解析不到定义时**直接抛错**，不回落成残缺 schema——
+    悬空引用正是本次事故的形态，静默降级等于把同一个坑再挖一遍。
+    递归深度有硬上限，防御自引用模型（pydantic 对自引用产出的仍是 `$ref`）。
+    """
+    defs = schema.get("$defs") or {}
+
+    # ⚠️ 不能因 `$defs` 为空就提前返回：空 `$defs` + 悬空 `$ref` 正是本次事故的
+    # 形态（`_full_schemas` 恰好丢掉了 `$defs`），一旦在这里"看起来没事"放过，
+    # 等于把同一个坑再挖一遍。故一律走解析，由下方未定义分支 fail-loud 兜住。
+    def _resolve(node: Any, depth: int) -> Any:
+        if depth > 32:
+            raise ValueError(
+                "[tools.manager] 入参 schema $ref 内联深度超限（>32），"
+                "疑似自引用模型——请改用非递归的入参结构（fail-loud）")
+        if isinstance(node, list):
+            return [_resolve(x, depth) for x in node]
+        if not isinstance(node, dict):
+            return node
+
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            if not ref.startswith(_REF_PREFIX):
+                raise ValueError(
+                    f"[tools.manager] 入参 schema 含无法解析的 $ref: {ref!r}"
+                    f"（只支持 {_REF_PREFIX}* 形式；fail-loud）")
+            target_name = ref[len(_REF_PREFIX):]
+            if target_name not in defs:
+                raise ValueError(
+                    f"[tools.manager] 入参 schema 的 $ref 指向未定义模型 "
+                    f"{target_name!r}（$defs 现有键：{sorted(defs)}；fail-loud）")
+            merged = _resolve(copy.deepcopy(defs[target_name]), depth + 1)
+            # 被引用模型**根部**的 description/title 必须摘掉：pydantic 把
+            # **类 docstring** 映射成它，而 docstring 是写给开发者的实现说明
+            # （如 TodoItem 的「对齐 dsh」「pydantic extra=forbid」「:83-84 注释逐字」）。
+            # 这些 prose 从未进过模型上下文——此前 24 个工具无嵌套模型，
+            # 内联首次会把它们带进来，属**内联引入的新泄漏面**，须同处封堵
+            # （同 4444/Q2①「内部机制词喂进模型上下文」事故口径）。
+            # 字段级 description 是**有意写给模型**的，原样保留。
+            if isinstance(merged, dict):
+                merged.pop("description", None)
+                merged.pop("title", None)
+            # `$ref` 的兄弟键（pydantic 为 Optional/Union 产出的 allOf/描述）优先保留
+            siblings = {k: _resolve(v, depth + 1)
+                        for k, v in node.items() if k != "$ref"}
+            if not siblings:
+                return merged
+            if isinstance(merged, dict):
+                out = dict(merged)
+                out.update(siblings)
+                return out
+            return siblings
+
+        return {k: _resolve(v, depth) for k, v in node.items()}
+
+    resolved = _resolve(copy.deepcopy(schema), 0)
+    # 内联完成后 $defs 已无消费者，摘掉以免把定义体重复下发（省 token 且避免
+    # 下游误以为还要解析引用）
+    if isinstance(resolved, dict):
+        resolved.pop("$defs", None)
+    return resolved
 
 
 def detect_unknown_fields(schema_class: Type[BaseModel], kwargs: Dict[str, Any]) -> List[str]:
@@ -178,7 +267,12 @@ class ToolManager:
         schemas = []
         for name, tool in cls._tools.items():
             schema_class = tool.get_input_schema()
-            json_schema = schema_class.model_json_schema()
+            # `$ref` 内联展开（2026-09-23 批10，事故 4444/P0）：pydantic 对嵌套
+            # BaseModel 产出 `items: {"$ref": "#/$defs/X"}`，而本处只取
+            # properties+required、丢弃 $defs —— 悬空引用会让条目字段名
+            # **一个字节都到不了模型**（实跑：todo_write 盲猜键名失败 7 次）。
+            # 内联后 schema 自足，不依赖下游网关是否解析 $ref。
+            json_schema = inline_json_schema_refs(schema_class.model_json_schema())
             schemas.append({
                 "type": "function",
                 "function": {
