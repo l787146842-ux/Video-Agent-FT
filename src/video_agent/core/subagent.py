@@ -55,7 +55,20 @@ SUBAGENT_MAX_DEPTH = 1
 # structured_output 仅子代理（depth≥1）可见；主代理面经
 # planner._compute_excluded_tools 裁剪，且 prompt_builder 的 UNAVAILABLE 段
 # 不渲染本集（主代理不感知打卡工具存在）。
-CHILD_ONLY_TOOLS: FrozenSet[str] = frozenset({"structured_output"})
+#
+# 2026-09-23 批13（用户裁决，dsh 原版对照取证）：`todo_write` 并入本集。
+# 依据 = dsh 原版语义与本平台事实源盘点：
+#   ・dsh 的清单**不回注模型**（`dsh-session-projection` README「模型体验：无」；
+#     原版注释原文「the complete `todo/write` session event is UI and replay
+#     state, **not a second model message**」），模型只见自己那条工具调用；
+#   ・dsh 的 Skill **无步骤流**（`dsh-skill` 只给 `<skill_content>` 方法参考），
+#     故 todo 在那边是**流程的唯一来源**——填空缺；
+#   ・本平台 16/16 个 Skill 都有 `<planner>` 段（步骤 + 依赖关系全文注入），
+#     主代理的 todo 只是把同一份步骤**誊第二遍** ⇒ 同一事实源两份（P1 违规）。
+# 子代理**保留**：它拿到的是**单个阶段章节**而非全流程，todo 在那边是填空缺
+# （实跑 4444 取证：子代理条目含项目实例信息如「批次1：程心/AA/曹彬…」，
+# 不是章节誊本）。
+CHILD_ONLY_TOOLS: FrozenSet[str] = frozenset({"structured_output", "todo_write"})
 
 # 缺省类型名（历史兼容占位；通用形态下只有一个类型）。
 SUBAGENT_KIND_GENERAL = "general"

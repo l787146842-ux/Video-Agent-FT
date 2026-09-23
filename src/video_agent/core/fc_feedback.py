@@ -537,4 +537,17 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         return "已发起视频生成"
     if name == "workflow_pause":
         return "请求阶段确认"
+    if name == "todo_write":
+        # 2026-09-23 批13：批8 新增本工具时漏登记本表（与 4444/C-1 同一个病：
+        # 新工具只加进注册表，没加进展示层）⇒ 动作日志回落通用兜底句
+        # 「执行工具 todo_write（累计失败 N 次）」，英文工具名裸奔给用户。
+        # 成果语口径（同其它条目）：只讲对外可见结果，不暴露内部记账机制。
+        # 入参是模型原始 args（本函数调用点 = fc_tool_runner:466，早于执行），
+        # 故从 `todos` 里的 status 数 in_progress；非法形态安全回落不带数。
+        _todos = args.get("todos")
+        if not isinstance(_todos, list):
+            _todos = []
+        _n = sum(1 for t in _todos if isinstance(t, dict)
+                 and str(t.get("status") or "") == "in_progress")
+        return f"更新任务进度清单（{_n} 项进行中）" if _n else "更新任务进度清单"
     return f"执行工具 {name}"

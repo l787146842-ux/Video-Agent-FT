@@ -60,25 +60,12 @@ _DEGRADATION_FLAG_SECTIONS = (
 _PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
 
 
-def _read_todos_from_raw(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """从原始状态读**当前会话**的 todo 清单（2026-09-23 批8）。
-
-    清单按会话作用域存放（照抄 dsh `todo_write` 的每会话作用域；
-    会话对象挂在 `_raw_state["conversations"]` 上）。本函数按
-    「绑定会话 → 活跃会话 → conv-main」同会话口径解析目标会话，
-    避免主代理与子代理的清单互相覆盖。
-    纯读，任何异常回落空（不阻断尾部消息构建）。
-    """
-    try:
-        cid = str(raw.get("_boundConversationId") or raw.get("activeConversationId") or "conv-main")
-        convs = raw.get("conversations") or []
-        for c in convs:
-            if isinstance(c, dict) and str(c.get("id") or "") == cid:
-                items = c.get("todos") or []
-                return items if isinstance(items, list) else []
-    except Exception:
-        return []
-    return []
+# 2026-09-23 批13（用户裁决）：`_read_todos_from_raw` 与 `build_todo_note`
+# 已**整段删除**（清单尾部注入退役）。原「读会话 todo 清单并回注」链路
+# 与 dsh 原版相反——原版注释明写清单事件是 UI/replay 状态而非第二条模型
+# 消息（`dsh-tool-todo` lib/index.js:6-8），本平台多造了这条注入；
+# 且主代理侧与 Skill `<planner>` 段构成同一事实源两份（P1）。
+# 主代理已改为无 todo_write（CHILD_ONLY_TOOLS），注入随之无消费方。
 
 # v3 元数据头展示标签（kind/language）已随用户裁决 2026-08-31 退役
 # （外部标杆对齐：frontmatter 只留 name/description/source 等最小键）。
@@ -226,11 +213,8 @@ class PromptBuilder:
             note = self.build_storyboard_progress_note()
             if note:
                 parts.append(note)
-        # 2026-09-23 批8（用户裁决照抄 dsh `todo_write`）：模型自记的进度清单
-        # （任何 Skill 下都注入——它是「这个任务做到哪了」，与故事板是否存在无关）。
-        _prog = self.build_todo_note()
-        if _prog:
-            parts.append(_prog)
+        # 2026-09-23 批13：模型自记进度清单的尾部注入已退役（见上方模块注释；
+        # 主代理已无 todo_write，注入无消费方，且与 Skill <planner> 构成双事实源）。
         # 选中草稿指针（批 B3 自 system order 75 移入尾部）：UI 选中态属
         # 每请求可变事实（P3 状态归位）；移入尾部后 system 静态核心跨请求
         # 字节稳定（UI 点击不再击穿 selected_skill 段前缀）
@@ -292,51 +276,6 @@ class PromptBuilder:
                     "分节缺失，降级引导段不注入")
             return text
         return ""
-
-    def build_todo_note(self) -> str:
-        """任务进度清单注入（2026-09-23 批8，用户裁决：照抄 dsh `todo_write`）。
-
-        模型自己经 `todo_write` 写的清单，每轮随状态尾部回显——
-        让「我做到第几步」成为**外部事实**而非推理记忆，
-        把大任务切成「一步一更新」（实跑反证：2222 子代理首轮推理 12867 字、
-        占全会话 48.2%，之后推理≈0 纯批量执行；散文劝告只被吸收一半）。
-
-        **每会话一份**（照抄 dsh 作用域）：清单存在会话对象上，
-        主代理与其子代理各自一份、互不覆盖（此前存项目级会让两者互相顶掉）。
-
-        契约：清单为空则整段不注入（尾部消息「零增量」口径，同
-        `build_storyboard_progress_note`）；只呈现事实，不给排序意见。
-        文案外置 prompts/shared/todo_list.md。
-        """
-        if self._get_raw_state is None:
-            return ""
-        try:
-            raw = self._get_raw_state()
-        except Exception:
-            return ""
-        # 会话作用域读取：会话对象挂在 _raw_state["conversations"] 上，
-        # 故直接扫该结构（不经 _get_raw_state 的类目视图）。
-        items = _read_todos_from_raw(raw)
-        if not items:
-            return ""
-        _marks = {"completed": "[x]", "in_progress": "[>]", "pending": "[ ]"}
-        lines: List[str] = []
-        for it in items[:64]:
-            if not isinstance(it, dict):
-                continue
-            content = str(it.get("content") or "").strip()
-            if not content:
-                continue
-            status = str(it.get("status") or "pending").strip().lower()
-            lines.append(f"{_marks.get(status, '[ ]')} {content}")
-        if not lines:
-            return ""
-        # 文案外置（prompts/shared/todo_write.md 的 LIST_* 分节；唯一源住外置文件）
-        _header = load_prompt_section("shared/todo_write.md", "LIST_HEADER")
-        _footer = load_prompt_section("shared/todo_write.md", "LIST_FOOTER")
-        if not _header:
-            return ""
-        return f"{_header}\n" + "\n".join(lines) + (f"\n{_footer}" if _footer else "")
 
     def build_storyboard_progress_note(self) -> str:
         """故事板客观进度描述（纯数据）——只报三类已建组数（批补丁：

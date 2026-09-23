@@ -53,7 +53,8 @@ def test_child_only_visibility(svc):
         skill_name=SKILL, subagent_depth=1, use_studio_context=True,
         subagent_deny=child_deny_set("script_analyze")))
     assert "structured_output" not in child
-    assert CHILD_ONLY_TOOLS == frozenset({"structured_output"})
+    # 2026-09-23 批13：todo_write 并入本集（主代理摘除、子代理保留）
+    assert CHILD_ONLY_TOOLS == frozenset({"structured_output", "todo_write"})
 
 
 def test_unavailable_section_hides_child_only(svc):

@@ -100,15 +100,44 @@ class TestToolShapeMatchesDsh:
         """纯记账：risk=low（无外部副作用）。"""
         assert ToolManager.get_tool_risk("todo_write") == "low"
 
-    def test_visible_to_both_agents(self):
-        """主代理与子代理都持有（记账是两边共同需求）。"""
+    def test_visible_to_child_only(self):
+        """**仅子代理持有**（2026-09-23 批13，用户裁决）。
+
+        批8 原为「主代理与子代理都持有」；批13 收窄为子代理专属，依据是
+        dsh 原版对照取证：dsh 的 Skill **无步骤流**（todo 是流程唯一来源），
+        而本平台 16/16 Skill 都有 `<planner>` 段（步骤 + 依赖全文注入）——
+        主代理的 todo 只是把同一份步骤誊第二遍（同一事实源两份，P1 违规）。
+        子代理拿到的是**单个阶段章节**而非全流程，todo 在那边仍是填空缺。
+        """
         from src.video_agent.core.subagent import (
-            MAIN_AGENT_DENY, SUBAGENT_TOOL_DENY, STAGE_TOOL_DENY_EXTRA,
+            CHILD_ONLY_TOOLS, MAIN_AGENT_DENY, SUBAGENT_TOOL_DENY,
+            STAGE_TOOL_DENY_EXTRA,
         )
 
-        assert "todo_write" not in MAIN_AGENT_DENY
+        assert "todo_write" in CHILD_ONLY_TOOLS, "主代理面未摘除 todo_write"
+        # 摘除走 CHILD_ONLY_TOOLS（子代理专属机制），不是阶段 deny 集：
+        # 后者语义是「不允许任何子代理持有」，与「仅子代理持有」正相反。
         assert "todo_write" not in SUBAGENT_TOOL_DENY
         assert "todo_write" not in STAGE_TOOL_DENY_EXTRA
+        # MAIN_AGENT_DENY 是「阶段产物写入工具」集，有 fail-loud 校验要求
+        # 成员必须属某 _STAGE_TOOLS 阶段；todo 不是阶段产物工具，不该进去。
+        assert "todo_write" not in MAIN_AGENT_DENY
+
+    def test_main_agent_excluded_child_keeps_it(self, svc):
+        """可见性按 depth 分流：主代理被裁、子代理保留（端到端裁剪断言）。"""
+        from src.video_agent.core.planner import Planner, PlannerContext
+        from src.video_agent.core.subagent import child_deny_set
+
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        SKILL = "AI-短剧一站式生成"
+        main = planner._compute_excluded_tools(
+            PlannerContext(skill_name=SKILL, subagent_depth=0,
+                           use_studio_context=True))
+        assert "todo_write" in main, "主代理（生产编排上下文）应看不到 todo_write"
+        child = planner._compute_excluded_tools(PlannerContext(
+            skill_name=SKILL, subagent_depth=1, use_studio_context=True,
+            subagent_deny=child_deny_set("script_analyze")))
+        assert "todo_write" not in child, "子代理必须保留 todo_write"
 
 
 class TestParallelPolicy:
@@ -215,25 +244,29 @@ class TestSessionScope:
         assert [t["content"] for t in read_session_todos(svc, "conv-child")] == ["子代理步骤"]
 
 
-class TestTailInjection:
-    """清单随状态尾部注入（模型每轮看得见自己写到哪）。"""
+class TestTailInjectionRetired:
+    """尾部注入**已整段退役**（2026-09-23 批13，用户裁决：回到 dsh 原版）。
 
-    async def test_note_marks(self, svc):
-        svc.bound_conversation_id = "conv-main"
-        await ToolManager.invoke_tool("todo_write", {"todos": [
-            {"content": "已做", "status": "completed"},
-            {"content": "在做", "status": "in_progress"},
-            {"content": "未做", "status": "pending"},
-        ]})
-        note = _pb(svc).build_todo_note()
-        assert "[x] 已做" in note
-        assert "[>] 在做" in note
-        assert "[ ] 未做" in note
+    dsh 原版不回注模型——投影 README「模型体验：无」，原版注释原文
+    「the complete `todo/write` session event is UI and replay state,
+    **not a second model message**」。批8 自加的尾部注入与 Skill
+    `<planner>` 段构成同一事实源两份（P1），故删除。
+    """
 
-    def test_empty_not_injected(self, svc):
-        assert _pb(svc).build_todo_note() == ""
+    def test_note_builder_is_gone(self):
+        """`build_todo_note` 必须真的删掉（不是留空壳）。"""
+        assert not hasattr(_pb(None), "build_todo_note"), \
+            "build_todo_note 仍在 = 注入链路未真正删除（禁止留兼容空壳）"
 
-    async def test_reaches_state_tail(self, svc):
+    def test_reader_helper_is_gone(self):
+        """`_read_todos_from_raw`（注入侧读取器）必须一并删掉。"""
+        import src.video_agent.core.prompt_builder as pb_mod
+
+        assert not hasattr(pb_mod, "_read_todos_from_raw"), \
+            "_read_todos_from_raw 仍在 = 死代码未清"
+
+    async def test_list_not_injected_into_state_tail(self, svc):
+        """即便写了清单，尾部消息也**不得**再出现清单内容（无第二条模型消息）。"""
         from src.video_agent.core.planner import PlannerContext
 
         svc.bound_conversation_id = "conv-main"
@@ -242,4 +275,73 @@ class TestTailInjection:
         ctx = PlannerContext(use_studio_context=True)
         ctx.state_builder = lambda: '{"keyElements":[],"shots":[],"audioItems":[]}'
         tail = _pb(svc).build_state_tail_message(ctx)
-        assert "登记角色" in tail, "清单未进尾部消息（模型看不见=白记）"
+        assert "登记角色" not in tail, "清单仍被注入尾部（未回到 dsh 原版口径）"
+        assert "进度清单" not in tail
+
+    def test_list_sections_removed_from_prompt_file(self):
+        """外置文案的 LIST_* 分节必须同批删除（无消费方=不得留孤立文案）。"""
+        from src.video_agent.utils.prompts import load_prompt_section
+
+        for key in ("LIST_HEADER", "LIST_FOOTER"):
+            assert load_prompt_section("shared/todo_write.md", key) == "", \
+                f"{key} 分节仍在（注入已删，属孤立文案）"
+
+
+class TestDshValidationParity:
+    """补齐 dsh 漏抄项：空/重复 content 一律 **fail-loud**（批13）。
+
+    dsh `toTodoList`（lib/index.js:45-62）对二者都 `throw`，注释原文：
+    「the logged snapshot must equal what the model believes it wrote...
+    **fails loud at the schema boundary instead of silently flattening**」。
+    批8 只抄了 schema 层形状，漏了这条；旧实现空 content `continue` 静默跳过、
+    重复项照收——恰好是原版点名禁止的 silently flattening（账本≠模型所写）。
+    """
+
+    async def test_empty_content_rejected(self, svc):
+        r = await ToolManager.invoke_tool("todo_write", {"todos": [
+            {"content": "  ", "status": "pending"}]})
+        assert r.success is False
+        assert "non-empty" in r.error
+
+    async def test_duplicate_content_rejected(self, svc):
+        r = await ToolManager.invoke_tool("todo_write", {"todos": [
+            {"content": "登记角色", "status": "pending"},
+            {"content": "登记角色", "status": "in_progress"}]})
+        assert r.success is False
+        assert "duplicate" in r.error
+
+    async def test_rejection_is_not_silent(self, svc):
+        """拒收必须**不落盘**（账本不得被部分写入）。"""
+        from src.video_agent.tools.todo_tools import read_session_todos
+
+        await ToolManager.invoke_tool("todo_write", {"todos": [
+            {"content": "A", "status": "pending"},
+            {"content": "A", "status": "completed"}]})
+        assert read_session_todos(svc) == [], "非法提交污染了账本"
+
+    async def test_over_count_rejected_not_truncated(self, svc):
+        """超条数上限**拒收**而非静默截断（截断即 silently flatten）。"""
+        from src.video_agent.tools.todo_tools import ITEM_MAX_COUNT
+
+        r = await ToolManager.invoke_tool("todo_write", {"todos": [
+            {"content": f"步骤{i}", "status": "pending"}
+            for i in range(ITEM_MAX_COUNT + 1)]})
+        assert r.success is False
+        assert "at most" in r.error
+
+    async def test_over_length_rejected_not_truncated(self, svc):
+        """超单条长度上限**拒收**而非静默截断（落盘内容必须等于模型所写）。"""
+        from src.video_agent.tools.todo_tools import ITEM_MAX_CHARS
+
+        r = await ToolManager.invoke_tool("todo_write", {"todos": [
+            {"content": "长" * (ITEM_MAX_CHARS + 1), "status": "pending"}]})
+        assert r.success is False
+        assert "exceeds" in r.error
+
+    async def test_valid_list_still_passes(self, svc):
+        """正常清单不受新校验影响（回归护栏）。"""
+        r = await ToolManager.invoke_tool("todo_write", {"todos": [
+            {"content": "A", "status": "completed"},
+            {"content": "B", "status": "in_progress"}]})
+        assert r.success is True, r.error
+        assert r.data["count"] == 2
