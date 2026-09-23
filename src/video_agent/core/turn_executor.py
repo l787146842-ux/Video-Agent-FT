@@ -590,6 +590,12 @@ class TurnExecutor:
         # 收尾，让具体拒因回喂被下一轮消费（对齐 v6 §2/断言#1）；零工具纯文本轮不受影响。
         _extra["had_tool_failure"] = any(
             not tr.get("ok", True) for tr in (tool_results or []))
+        # 2026-09-22 批2（Q4.4）：structured_output 打卡成功标记上抛——
+        # agent_loop 填入 RoundEndContext，轮末假停闸据此不判「纯文本收尾轮」
+        # （打卡轮本身就是零工具调用轮，无此标记必被误判续跑，实跑空转两轮）。
+        # 读 FCToolRunner 轮内旗标（单点 owning，本模块不复制判定）。
+        _extra["structured_captured"] = bool(
+            getattr(self.planner._fc_runner, "_structured_captured", False))
         # C2：本轮 tool_calls 原样上抛（agent_loop 轮末组 assistant.tool_calls
         # 消息，与 _pending_feedback_msgs 的 tool 消息按 id 配对）
         _extra["_fc_tool_calls"] = [

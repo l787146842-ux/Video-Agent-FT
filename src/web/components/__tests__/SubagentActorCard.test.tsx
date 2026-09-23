@@ -126,13 +126,14 @@ describe('批G：子代理思考可见（事故 4444/Q4）', () => {
     seed();
     seedReasoning('我先读剧本，再登记关键元素。');
     const { getByTestId, queryByTestId } = renderCard('conv-sub-9');
-    // 默认折叠：内容不显示
-    expect(queryByTestId('subagent-actor-reasoning')).toBeNull();
+    // 2026-09-22 批4（Q4.1）：running 态默认**展开**（对齐主对话框流式自动展开）；
+    // 本用例在 running 下渲染，故内容已可见，点标题即折叠
     const toggle = getByTestId('subagent-actor-reasoning-toggle');
     expect(toggle.textContent).toContain('子代理思考');
-    await fireEvent.click(toggle);
     expect(getByTestId('subagent-actor-reasoning').textContent)
       .toBe('我先读剧本，再登记关键元素。');
+    await fireEvent.click(toggle);
+    expect(queryByTestId('subagent-actor-reasoning')).toBeNull();
   });
 
   it('无思考时不渲染折叠入口（防空行）', () => {
@@ -141,14 +142,24 @@ describe('批G：子代理思考可见（事故 4444/Q4）', () => {
     expect(queryByTestId('subagent-actor-reasoning-toggle')).toBeNull();
   });
 
-  it('执行中即可见（不必等做完）——running 态下已可展开', async () => {
+  it('执行中即可见（不必等做完）——running 态下思考自动展开', async () => {
     seed();
     seedReasoning('正在拆解角色清单…');
     const { getByTestId } = renderCard('conv-sub-9');
     // 尚未 finishDelegate：actor 仍是 running
     expect(getByTestId('subagent-actor-card').textContent).toContain('执行中');
-    await fireEvent.click(getByTestId('subagent-actor-reasoning-toggle'));
+    // 2026-09-22 批4（Q4.1）：不再需要手点才看得到——逐字推流直接可见
     expect(getByTestId('subagent-actor-reasoning').textContent).toBe('正在拆解角色清单…');
+  });
+
+  it('完成后默认折叠（不长期占用卡面高度）——Q4.1 反向钉', () => {
+    seed();
+    seedReasoning('收尾思考。');
+    finishDelegate(true);
+    const { getByTestId, queryByTestId } = renderCard('conv-sub-9');
+    // settled：折叠，但入口在（点开仍可回看）
+    expect(queryByTestId('subagent-actor-reasoning')).toBeNull();
+    expect(getByTestId('subagent-actor-reasoning-toggle')).toBeTruthy();
   });
 });
 

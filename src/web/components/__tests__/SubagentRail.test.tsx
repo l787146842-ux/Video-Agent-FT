@@ -127,4 +127,88 @@ describe('轮询增量更新（引用稳定化）', () => {
     expect(out[1]).not.toBe(prev[1]);
     expect(out[1].text).toBe('新正文');
   });
+
+  // 2026-09-22 批4（Q4.1）：在途步的正文/耗时随轮询增长，比较器必须感知，
+  // 否则稳定化把新对象误判为「未变」→ 复用旧引用 → Solid 不重渲染 → 永远不流式。
+  it('在途步正文增长 → 不判为「未变」（否则实时增量长不出来）', () => {
+    const prev = [{ sender: 'assistant' as const, text: '正在登记', streaming: true, elapsed_ms: 1000 }];
+    const next = [{ sender: 'assistant' as const, text: '正在登记 22 组', streaming: true, elapsed_ms: 2500 }];
+    expect(sameRecordMsg(prev[0], next[0])).toBe(false);
+    const out = stabilizeItems(prev, next, sameRecordMsg);
+    expect(out[0]).toBe(next[0]);
+  });
+
+  it('elapsed_ms / streaming 变化即视为变更（耗时角标要走）', () => {
+    const base = { sender: 'assistant' as const, text: '同一段', elapsed_ms: 1000 };
+    expect(sameRecordMsg(base, { ...base, elapsed_ms: 2000 })).toBe(false);
+    expect(sameRecordMsg(base, { ...base, streaming: true })).toBe(false);
+    expect(sameRecordMsg(base, { ...base })).toBe(true);
+  });
+});
+
+// 2026-09-22 批4（Q4.1+Q4.2）：在途步渲染 + 每步耗时角标
+describe('批4：在途步与耗时呈现（Q4.1+Q4.2）', () => {
+  beforeEach(() => {
+    apiMock.getSubagentThreads.mockResolvedValue({
+      subagents: [
+        { conversation_id: 'c1', title: '子代理', label: '分镜', parent_conversation: '', status: 'running', steps: 2 },
+      ],
+    });
+  });
+
+  it('在途步：思考默认展开、挂 live 类，并显示耗时', async () => {
+    apiMock.getSubagentRecord.mockResolvedValue({
+      conversation_id: 'c1',
+      messages: [
+        { sender: 'user', text: '拆镜' },
+        { sender: 'assistant', reasoning_content: '正在数镜头……', streaming: true, elapsed_ms: 4200 },
+      ],
+    });
+    const { findByTestId, getByTestId } = render(() => <SubagentRail />);
+    fireEvent.click(await findByTestId('subagent-card'));
+    await findByTestId('subagent-record-list');
+    const list = getByTestId('subagent-record-list');
+    // live 类挂上（色条提示「还在长」）
+    expect(list.querySelector('.subagent-step-live')).toBeTruthy();
+    // 思考自动展开：<details open> 且内容已在
+    const details = list.querySelector('details.subagent-reasoning') as HTMLDetailsElement;
+    expect(details).toBeTruthy();
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain('正在数镜头');
+    // Q4.2：耗时角标出现（4.2s）
+    expect(details.textContent).toContain('4.2s');
+  });
+
+  it('已完成步：思考保持折叠但有耗时角标（不长期占高度）', async () => {
+    apiMock.getSubagentRecord.mockResolvedValue({
+      conversation_id: 'c1',
+      messages: [
+        { sender: 'user', text: '拆镜' },
+        { sender: 'assistant', reasoning_content: '想完了', elapsed_ms: 12000 },
+      ],
+    });
+    const { findByTestId, getByTestId } = render(() => <SubagentRail />);
+    fireEvent.click(await findByTestId('subagent-card'));
+    await findByTestId('subagent-record-list');
+    const list = getByTestId('subagent-record-list');
+    expect(list.querySelector('.subagent-step-live')).toBeNull();
+    const details = list.querySelector('details.subagent-reasoning') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain('12.0s');
+  });
+
+  it('无思考的纯工具步：耗时挂条目尾部（回看可知每步多久）', async () => {
+    apiMock.getSubagentRecord.mockResolvedValue({
+      conversation_id: 'c1',
+      messages: [
+        { sender: 'assistant', actionLog: ['storyboard_create_group'], elapsed_ms: 3400 },
+      ],
+    });
+    const { findByTestId, getByTestId } = render(() => <SubagentRail />);
+    fireEvent.click(await findByTestId('subagent-card'));
+    await findByTestId('subagent-record-list');
+    const list = getByTestId('subagent-record-list');
+    expect(list.querySelector('details.subagent-reasoning')).toBeNull();
+    expect(list.textContent).toContain('3.4s');
+  });
 });

@@ -1,13 +1,19 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
 import { FiArrowLeft } from 'solid-icons/fi';
 import { getSubagentThreads, getSubagentRecord } from '@/api/conversations';
+import { formatElapsed } from '@/lib/timeline';
 import { clearPendingSubagentRecord, pendingSubagentRecord } from '@/stores/chat/subagent-actors';
 import type { SubagentThread, SubagentRecordMessage } from '@/types';
 import { MarkdownBubble } from '../right-panel/MarkdownBubble';
 
 /** 子任务视图打开期间的轮询间隔：子级在父本轮内联同步跑完，
- *  父阻塞期间无独立 SSE 帧可推，故靠轻量轮询把 running→completed 过渡显形。 */
-const POLL_MS = 4000;
+ *  父阻塞期间无独立 SSE 帧可推，故靠轻量轮询把 running→completed 过渡显形。
+ *  2026-09-22 批4（Q4.1）：4000ms → 1500ms。子代理思考此前「做完几步才刷新
+ *  完整」，一半原因在这里：后端 5s 才落一条增量、前端又 4s 才问一次，两级
+ *  延迟叠加。后端已按步内增量实时落流（见 session_log.project_readable_record），
+ *  前端降低轮询粒度后即可呈现近似流式的观感（dsh 走真事件流，本层受现有
+ *  轮询架构约束，取「够用且不压服务器」的折中）。 */
+const POLL_MS = 1500;
 
 function statusClass(s: string): string {
   return s === 'running' ? 'running' : s === 'completed' ? 'completed'
@@ -24,12 +30,17 @@ function formatHHMM(ts?: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** 条目内容等价判定（轮询增量更新用；不比较对象引用） */
+/** 条目内容等价判定（轮询增量更新用；不比较对象引用）。
+ *  2026-09-22 批4（Q4.1）：必须比较 elapsed_ms/streaming——在途步的正文会随
+ *  轮询增长，若漏比这两个字段，稳定化会把新对象误判为「未变」而复用旧引用，
+ *  Solid 便不重渲染，实时增量永远长不出来（本批要修的正是这个观感）。 */
 export function sameRecordMsg(a: SubagentRecordMessage, b: SubagentRecordMessage): boolean {
   return a.sender === b.sender
     && a.text === b.text
     && a.ts === b.ts
     && a.reasoning_content === b.reasoning_content
+    && a.elapsed_ms === b.elapsed_ms
+    && !!a.streaming === !!b.streaming
     && (a.actionLog || []).join('\u0001') === (b.actionLog || []).join('\u0001');
 }
 
@@ -213,10 +224,20 @@ export function SubagentRail() {
                   <Show
                     when={m.sender === 'user'}
                     fallback={
-                      <div class="chat-msg agent">
+                      <div class={`chat-msg agent${m.streaming ? ' subagent-step-live' : ''}`}>
+                        {/* 2026-09-22 批4（Q4.1）：在途步默认展开思考并随轮询长出，
+                            不再要求用户手点 <details> 才看得到（对齐主对话框
+                            流式中自动展开的口径）。已完成步保持折叠。 */}
                         <Show when={m.reasoning_content}>
-                          <details class="subagent-reasoning">
-                            <summary>思考</summary>
+                          <details class="subagent-reasoning" open={!!m.streaming}>
+                            <summary>
+                              {m.streaming ? '思考中…' : '思考'}
+                              <Show when={m.elapsed_ms != null}>
+                                <span class="subagent-step-elapsed">
+                                  · {formatElapsed(m.elapsed_ms || 0)}
+                                </span>
+                              </Show>
+                            </summary>
                             <div class="subagent-reasoning-body">{m.reasoning_content}</div>
                           </details>
                         </Show>
@@ -227,6 +248,10 @@ export function SubagentRail() {
                           <div class="subagent-tool-line">
                             执行：{(m.actionLog || []).join('、')}
                           </div>
+                        </Show>
+                        {/* 无思考的步（纯工具步）：耗时挂条目尾部，回看可知每步多久 */}
+                        <Show when={!m.reasoning_content && m.elapsed_ms != null}>
+                          <div class="subagent-step-elapsed">· {formatElapsed(m.elapsed_ms || 0)}</div>
                         </Show>
                       </div>
                     }

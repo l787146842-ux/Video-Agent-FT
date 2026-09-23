@@ -111,7 +111,7 @@ async def test_dispatch_intercepts_run_subagent():
     runner = FCToolRunner(tool_manager=object())  # invoke_tool 不应被调用
     seen = {}
 
-    async def launcher(task, kind="", stage="", on_event=None):
+    async def launcher(task, kind="", stage="", current_step="", on_event=None):
         seen["task"] = task
         seen["stage"] = stage
         return "子摘要:" + task
@@ -172,7 +172,7 @@ async def test_dispatch_passes_runner_on_event_to_launcher():
     runner = FCToolRunner(tool_manager=object())
     seen = {}
 
-    async def launcher(task, kind="", stage="", on_event=None):
+    async def launcher(task, kind="", stage="", current_step="", on_event=None):
         seen["on_event"] = on_event
         return "摘要"
 
@@ -360,6 +360,102 @@ def test_project_readable_record_and_status(svc):
     assert rec[1]["actionLog"] == ["storyboard_create_group"]
     assert rec[2]["text"] == "完成：3 个关键元素"
 
+    assert session_log.thread_status(svc, cid)["status"] == "running"  # 无 turn/end
+    session_log.append_turn_end(svc, cid)
+    st = session_log.thread_status(svc, cid)
+    assert st["status"] == "completed" and st["steps"] == 2
+
+
+# ---------- 2026-09-22 批4（Q4.1+Q4.2）：记录态增量腿 + 每步耗时 ----------
+
+
+def test_record_includes_inflight_partial_as_streaming_entry(svc):
+    """在途步（有增量、无完整消息让位）→ 落一条 streaming 条目。
+
+    事故（用户 2026-09-22 目击）：中间面板「只能做完几步才刷新完整」——
+    根因 = 本投影此前整体忽略 assistant/partial，只认完整 assistant/message。
+    """
+    cid = "conv-sub-live"
+    session_log.append_user_message(svc, cid, "拆镜头")
+    session_log.append_assistant_message(svc, cid, 1, "第一步完成", reasoning_content="r1")
+    # 第 2 步在跑：只有增量，尚无完整消息
+    session_log.append_partial(svc, cid, 1 + 1, "reasoning", "正在数镜头")
+    session_log.append_partial(svc, cid, 2, "reasoning", "……共 22 个")
+    session_log.append_partial(svc, cid, 2, "text", "正在登记")
+
+    rec = session_log.project_readable_record(svc, cid)
+    assert [e["sender"] for e in rec] == ["user", "assistant", "assistant"]
+    live = rec[-1]
+    assert live["streaming"] is True, "在途步须挂实时标记（前端据此展开思考）"
+    assert "正在数镜头" in live["reasoning_content"]
+    assert "共 22 个" in live["reasoning_content"]
+    assert live["text"] == "正在登记"
+    # 已完成步不挂实时标记
+    assert rec[1].get("streaming") in (None, False)
+
+
+def test_record_partial_yields_to_settled_message(svc):
+    """完整消息为准据：同一步的增量到达后**整体让位**，不双显（对齐 dsh 瞬态替换）。"""
+    cid = "conv-sub-yield"
+    session_log.append_user_message(svc, cid, "任务")
+    session_log.append_partial(svc, cid, 1, "reasoning", "半截思考")
+    session_log.append_partial(svc, cid, 1, "text", "半截正文")
+    session_log.append_assistant_message(svc, cid, 1, "完整正文", reasoning_content="完整思考")
+
+    rec = session_log.project_readable_record(svc, cid)
+    assert [e["sender"] for e in rec] == ["user", "assistant"]
+    assert rec[1]["text"] == "完整正文"
+    assert rec[1]["reasoning_content"] == "完整思考"
+    assert "半截" not in rec[1]["text"], "增量不得与完整消息并存（会重复显示）"
+
+
+def test_record_elapsed_ms_anchors_on_settled_events(svc):
+    """每步耗时 = 本条时刻 − 上一**已结算**事件时刻。
+
+    防回归钉（实跑踩过）：第一版按「上一条事件」推进锚点，紧邻完整消息的
+    最后一条 partial 与之同刻，耗时被压成 0.0s（实测 13 步全 +0.0s）。
+    partial 是同一轮模型调用的中间产物，不得推进锚点。
+    （本测用真实时间间隔：事件毫秒级同刻时 0 是正确值，无法区分两种口径。）
+    """
+    import time as _time
+
+    cid = "conv-sub-elapsed"
+    session_log.append_user_message(svc, cid, "任务")
+    _time.sleep(0.03)
+    # 步内增量紧贴完整消息：旧口径下会把锚点推到此刻 → 耗时归零
+    session_log.append_partial(svc, cid, 1, "reasoning", "增量")
+    session_log.append_assistant_message(svc, cid, 1, "正文", reasoning_content="思考")
+
+    rec = session_log.project_readable_record(svc, cid)
+    step = rec[-1]
+    assert step["sender"] == "assistant"
+    assert step.get("elapsed_ms") is not None, "assistant 条目须携耗时（Q4.2 时间标记）"
+    assert step["elapsed_ms"] >= 20, (
+        f"耗时被 partial 归零 = 锚点被步内增量推进（Q4.2 回归）：{step['elapsed_ms']}ms")
+    # 首条无前序锚点：只有一条 user 时其 elapsed 不挂
+    assert "elapsed_ms" not in rec[0] or rec[0].get("elapsed_ms") is None
+
+
+def test_record_interrupted_partial_not_marked_streaming(svc):
+    """中断步（其后已落 turn/end）保留现场但不挂实时标记（不再伪装「在跑」）。"""
+    cid = "conv-sub-abort"
+    session_log.append_user_message(svc, cid, "任务")
+    session_log.append_partial(svc, cid, 1, "reasoning", "被中断的思考")
+    session_log.append_turn_end(svc, cid, reason="stopped")
+
+    rec = session_log.project_readable_record(svc, cid)
+    assert rec[-1]["sender"] == "assistant"
+    assert "被中断的思考" in rec[-1]["reasoning_content"]
+    assert rec[-1].get("streaming") in (None, False), "已收轮不得挂在途标记"
+
+
+def test_thread_status_running_then_completed(svc):
+    """隐藏线程状态机（批4 新用例）：无 turn/end = running；
+    落 turn/end 后 = completed 且步数取 assistant 消息数。"""
+    cid = "conv-sub-status"
+    session_log.append_user_message(svc, cid, "任务")
+    session_log.append_assistant_message(svc, cid, 1, "一")
+    session_log.append_assistant_message(svc, cid, 2, "二")
     assert session_log.thread_status(svc, cid)["status"] == "running"  # 无 turn/end
     session_log.append_turn_end(svc, cid)
     st = session_log.thread_status(svc, cid)
@@ -555,6 +651,79 @@ async def test_subagent_label_truncation(svc, monkeypatch):
     label = labels_seen[-1]
     assert len(label) == _SUBAGENT_LABEL_MAX
     assert label == "b" * (_SUBAGENT_LABEL_MAX - 1) + "\u2026"
+
+
+# ---------- 2026-09-22 批1（Q2）：子线程落地名与 live actor 卡同源 ----------
+
+
+async def test_stage_delegation_persists_stage_label_not_task(svc, monkeypatch):
+    """带 stage 委派：scope.label 必须存**阶段展示名**，与 actor 卡同源。
+
+    事故（用户 2026-09-22 目击）：干活时卡上显示「分镜」，刷新后变成
+    「目标：按所选 Skill 的 storyboard_shots 章节规范，将剧…」——因为落地
+    存的是任务书前 40 字，而 SSE meta 存的是 STAGE_LABELS。两处不同源 ⇒
+    刷新即丢名字（刷新只能读 scope.label）。
+    任务书原文不丢：子级任务另作隐藏线程首条 user/message 落流。
+    （2026-09-22 批6：示例阶段随故事板三合一改为 storyboard_design。）
+    """
+    from src.video_agent.skill_runtime.registry import STAGE_LABELS
+
+    labels_seen: list = []
+    from src.video_agent.state import conversation_ops
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    _orig_create = conversation_ops.create_scoped_conversation
+
+    def _spy_create(state_manager, scope, **kw):
+        labels_seen.append(str(scope.get("label") or ""))
+        return _orig_create(state_manager, scope, **kw)
+
+    monkeypatch.setattr(conversation_ops, "create_scoped_conversation", _spy_create)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    long_task = "目标：按所选 Skill 的 storyboard_design 章节规范，将剧本拆解为故事板"
+
+    await parent._launch_subagent(
+        long_task, PlannerContext(subagent_depth=0), stage="storyboard_design")
+
+    # 落地名 = 阶段展示名（逐字等于 STAGE_LABELS），**不是**任务书前 40 字
+    assert labels_seen[-1] == STAGE_LABELS["storyboard_design"]
+    assert labels_seen[-1] == "故事板设计"
+    assert long_task[:40] not in labels_seen[-1]
+    # 刷新读回路径同源：subagent_threads() 的 label 就是它
+    threads = svc.subagent_threads()
+    assert threads[0]["label"] == "故事板设计"
+
+
+async def test_generic_delegation_still_persists_task_excerpt(svc, monkeypatch):
+    """防回归钉：通用委派（无 stage）没有阶段名可用 → 仍回落任务摘要前段。"""
+    from src.video_agent.state import conversation_ops
+
+    labels_seen: list = []
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    _orig_create = conversation_ops.create_scoped_conversation
+
+    def _spy_create(state_manager, scope, **kw):
+        labels_seen.append(str(scope.get("label") or ""))
+        return _orig_create(state_manager, scope, **kw)
+
+    monkeypatch.setattr(conversation_ops, "create_scoped_conversation", _spy_create)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+
+    await parent._launch_subagent("自由任务", PlannerContext(subagent_depth=0))
+    assert labels_seen[-1] == "自由任务"
 
 
 # ---------- 流式二期：子事件打标（actor 归组数据源） ----------

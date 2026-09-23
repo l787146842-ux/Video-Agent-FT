@@ -147,9 +147,21 @@ class RoundEndContext:
     # 0 = 本轮是连续第 1 轮（假停嫌疑，续跑）；≥1 = 连续第 2 轮
     # （模型已重申完成，真完成放行）。
     text_round_streak: int = 0
-    # 子代理深度（R6 豁免）：subagent_depth > 0 时 fakestop 闸机不触发续跑
-    # （子代理有自己的汇报结构，双重续跑会造成「子代理汇报 + 闸机续跑」冲突）。
+    # 子代理深度（R6 豁免）：**已退役**（K6 批，2026-09-16）——子代理收尾
+    # 改由 structured_output 打卡判定，故 depth>0 不再结构豁免续跑；
+    # 本字段保留供其它策略/测试读取，**fakestop 条件不得再引用它**。
+    # （2026-09-22 批2 订正：本行旧注释曾写「depth>0 时 fakestop 闸机不触发
+    # 续跑」，与 K6 之后的实际代码相反——代码早就把排除条件删了，注释没跟上，
+    # 属 P1 双份事实源；事故取证见下 structured_captured 段。）
     subagent_depth: int = 0
+    # 打卡已完成（2026-09-22 批2，Q4.4；事故：子代理打完卡被续跑空转两轮）：
+    # structured_output 打卡成功 ⇒ 子代理**已按契约声明完工**，轮末不得再
+    # 按「纯文本收尾轮」判假停（打卡轮本身就是零工具调用轮，必然命中旧条件）。
+    # 取值 = FCToolRunner._structured_captured（轮内生命周期，随轮重置），
+    # 经 turn_executor 5 元组 extra 上抛、agent_loop 填入。
+    # 打卡工具是子代理专属（CHILD_ONLY_TOOLS，主代理面无），故本字段
+    # 在等价意义上即「子代理已完工」；主代理恒 False、行为零变化。
+    structured_captured: bool = False
     # 输出态（策略写入，agent_loop 回读）
     hard_break: bool = False
     hard_break_finish: str = ""
@@ -443,6 +455,29 @@ async def run_round_end_policies(
 # 防复活见 scripts/check_legacy_orchestration.py FORBIDDEN。
 
 
+def accumulate_visible(prev: str, visible: str, *, last_only: bool) -> str:
+    """可见正文累积口径（唯一实现，agent_loop 与轮末策略共用；防两处各写一遍）。
+
+    - 主代理（last_only=False，默认现状）：各步正文**按序拼接**——主对话是
+      面向用户的多段叙述，「第 1 轮我做了 A / 第 2 轮我做了 B」都要留。
+    - 子代理（last_only=True，2026-09-22 批3，Q4.3）：**只取最后一条非空正文**，
+      与 dsh 同规则——`packages/subagent/subagent/src/assistant-output.ts`
+      "select the last non-empty assistant message"。
+      依据：子代理只回摘要给主代理（dsh 明言 "You receive its result, not its
+      intermediate steps"），而拼接会把每一步的过渡叙述全塞进摘要。
+      4411 项目实跑取证（conv-main seq=46）：**2980 字**，内含 4 段近义汇报
+      （1171 + 789 + 交付摘要 + 自检清单）；取末条 → 789 字。
+      子代理的完整过程不丢：逐步 assistant/message 全在它自己的隐藏线程
+      事件流里（只读记录可查），摘要只是「交给主代理的那一份」。
+    """
+    v = str(visible or "").strip()
+    if not v:
+        return prev
+    if last_only:
+        return v
+    return f"{prev}\n\n{v}".strip() if prev else v
+
+
 def _cond_false_claim_audit(ctx: RoundEndContext) -> bool:
     # 虚报检测与正文拼接收纳在同一块内；正文即模型可见文本，无需清洗
     return bool((ctx.content or "").strip())
@@ -462,9 +497,10 @@ async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None
                 "检测到虚报：正文声称已完成" + "、".join(unbacked)
                 + "，但项目状态中对应产物实际缺失；请以工作台实际产物为准。"
             )
-        ctx.result_text = (
-            f"{ctx.result_text}\n\n{visible}".strip() if ctx.result_text else visible
-        )
+        # 2026-09-22 批3（Q4.3）：子代理取末条（不拼接），主代理现状不变
+        ctx.result_text = accumulate_visible(
+            ctx.result_text, visible,
+            last_only=bool(ctx.subagent_depth))
 
 
 def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
@@ -477,11 +513,21 @@ def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
     # K6 批（2026-09-16）：R6 子代理结构豁免退役——子代理收尾改由
     # structured_output 打卡判定（完成=一次工具调用），纯文本收尾轮同受
     # 机械续跑口径（cap=2 封死拉锯）。
+    #
+    # 2026-09-22 批2（Q4.4，事故：子代理打完卡仍被续跑空转两轮）：
+    # K6 只说对了半句——「子代理收尾由打卡判定」这半句**从未接线**：本条件
+    # 当时只删了 depth 排除，没加打卡感知，于是打卡轮（零工具调用的纯文本轮）
+    # 必然命中假停条件。实跑取证（4411 项目 conv-1790074054-f0e43ab0）：
+    # seq=88 打卡成功 → seq=93 又说 1171 字 → seq=96 又说 789 字，
+    # 白烧 9s 并产出两份重复汇报（回摘要因此膨胀）。
+    # 修法（**打卡感知**，不是恢复 depth 豁免——那样会让没打卡的子代理
+    # 静默欠交付）：已打卡 ⇒ 已按契约声明完工，不得再判假停。
     return (
         settings.fakestop_auto_resume_enabled
         and bool(ctx.skill)
         and ctx.text_round_streak == 0
         and not ctx.confirmation
+        and not ctx.structured_captured
         and ctx.resumes_used < FAKESTOP_AUTO_RESUME_MAX
     )
 
@@ -511,11 +557,15 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
 
     RoundEndPolicy("false_claim_audit", KIND_POST_PROCESS, 120,
                    _cond_false_claim_audit, _apply_false_claim_audit,
-                   requires=("content", "executor")),
+                   # 2026-09-22 批3：正文累积口径按深度分流（子代理取末条），
+                   # 故 subagent_depth 升为本策略的显式输入依赖。
+                   requires=("content", "executor", "subagent_depth")),
     RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,
                    _cond_aborted_continuation_audit, _apply_aborted_continuation_audit,
+                   # 2026-09-22 批2：requires 补 structured_captured（打卡感知，
+                   # 未登记的隐藏依赖会被登记期 AST 自检机械拒收）。
                    requires=("skill", "text_round_streak", "confirmation",
-                             "resumes_used")),
+                             "resumes_used", "structured_captured")),
 ]
 
 # 登记期依赖自检（模块加载即执行；引用不存在字段的死策略在 import 期报错）

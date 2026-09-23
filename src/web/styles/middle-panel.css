@@ -157,5 +157,10 @@
   .subagent-reasoning summary { cursor: pointer; color: var(--text-dim); }
   .subagent-reasoning-body { margin-top: 4px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
   .subagent-tool-line { font-size: var(--font-2xs); color: var(--text-dim); }
+  /* 2026-09-22 批4（Q4.1+Q4.2）：在途步实时态与每步耗时。
+     —— 在途步（尚无完整 assistant/message 让位）：左侧色条 + 呼吸点提示「还在长」；
+     —— 耗时角标与主对话框 tl-panel-elapsed 同观感（思考块折叠时也看得到多久）。 */
+  .subagent-step-live { border-left: 2px solid var(--color-info); padding-left: 8px; }
+  .subagent-step-elapsed { margin-left: 6px; font-size: var(--font-2xs); color: var(--text-dim); font-variant-numeric: tabular-nums; }
   /* 完成章条目（dsh A2）：本轮宣告完成 + 当时客观账本快照 */
 }

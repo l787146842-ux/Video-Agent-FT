@@ -217,6 +217,105 @@ def test_resume_fires_when_subagent_depth_zero(resume_on):
     assert ctx.continue_turn is True, "主代理（depth=0）应触发续跑"
 
 
+# ---------- 2026-09-22 批2（Q4.4）：打卡感知（不再空转两轮） ----------
+
+
+def test_resume_skips_when_structured_captured(resume_on):
+    """打卡成功 ⇒ 已完工，不得再判假停续跑（事故：子代理打完卡空转两轮）。
+
+    实跑取证（4411 项目 conv-1790074054-f0e43ab0）：seq=88 打卡成功 →
+    seq=93 又 1171 字 → seq=96 又 789 字，白烧 9s 并产出两份重复汇报。
+    打卡轮本身就是零工具调用轮，无本标记必被旧条件误判。
+    """
+    ctx = RoundEndContext(
+        step=6, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="22 个 shot 组全部落账核验通过。完成打卡：",
+        applied=0, resumes_used=0, text_round_streak=0,
+        subagent_depth=1, structured_captured=True,
+    )
+    _run_policies(ctx)
+    assert ctx.continue_turn is False, "已打卡不得续跑（Q4.4 事故根因）"
+
+
+def test_resume_still_fires_without_capture(resume_on):
+    """反向钉（防「一律不续跑」式假修）：子代理**没打卡**的纯文本收尾轮
+    仍受续跑约束——否则子代理可少干活不交差（静默欠交付）。"""
+    ctx = RoundEndContext(
+        step=3, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="我先看看接下来做什么。",
+        applied=0, resumes_used=0, text_round_streak=0,
+        subagent_depth=1, structured_captured=False,
+    )
+    _run_policies(ctx)
+    assert ctx.continue_turn is True, "未打卡的子代理仍须被续跑约束"
+
+
+def test_resume_skips_capture_even_at_streak_zero(resume_on):
+    """打卡优先于 streak 语义：打卡轮恒不续跑（不依赖连续轮计数）。"""
+    for streak in (0, 1, 2):
+        ctx = RoundEndContext(
+            step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
+            content="完成汇报。",
+            applied=0, resumes_used=0, text_round_streak=streak,
+            structured_captured=True,
+        )
+        _run_policies(ctx)
+        assert ctx.continue_turn is False, f"streak={streak} 打卡后仍续跑了"
+
+
+# ---------- 2026-09-22 批3（Q4.3）：可见正文累积口径（子代理取末条） ----------
+
+
+def test_accumulate_visible_main_agent_concatenates():
+    """主代理：各步正文按序拼接（现状不变，防误伤主对话多段叙述）。"""
+    from src.video_agent.core.round_end_policies import accumulate_visible
+
+    out = accumulate_visible("第一步：登记完成。", "第二步：开始拆镜。", last_only=False)
+    assert out == "第一步：登记完成。\n\n第二步：开始拆镜。"
+
+
+def test_accumulate_visible_subagent_keeps_last_only():
+    """子代理：只取最后一条非空正文（dsh assistant-output.ts 同规则）。
+
+    4411 实跑：拼接曾把摘要吹到 2980 字（4 段近义汇报）；取末条 → 单段。
+    """
+    from src.video_agent.core.round_end_policies import accumulate_visible
+
+    acc = ""
+    for seg in ("已读取剧本。", "建组入参键序有要求，重建 4 组：", "22 组全部落账核验通过。"):
+        acc = accumulate_visible(acc, seg, last_only=True)
+    assert acc == "22 组全部落账核验通过。"
+    assert "已读取剧本" not in acc, "子代理摘要不得残留中间步叙述"
+
+
+def test_accumulate_visible_empty_step_keeps_previous():
+    """空步不覆盖已有正文（防「末条」被空串清空）。"""
+    from src.video_agent.core.round_end_policies import accumulate_visible
+
+    assert accumulate_visible("有内容", "   ", last_only=True) == "有内容"
+    assert accumulate_visible("有内容", "", last_only=True) == "有内容"
+    assert accumulate_visible("", "首条", last_only=True) == "首条"
+
+
+def test_false_claim_audit_applies_subagent_last_only():
+    """轮末策略腿同口径：子代理轮取末条，主代理轮拼接（两腿不得各写一遍）。"""
+    ctx_sub = RoundEndContext(
+        step=2, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="末条汇报。", applied=0, subagent_depth=1,
+    )
+    ctx_sub.result_text = "中间叙述。"
+    _run_policies(ctx_sub)
+    assert ctx_sub.result_text == "末条汇报。"
+
+    ctx_main = RoundEndContext(
+        step=2, executor=_StubExec(), skill="AI-短剧一站式生成",
+        content="末条汇报。", applied=0, subagent_depth=0,
+    )
+    ctx_main.result_text = "中间叙述。"
+    _run_policies(ctx_main)
+    assert ctx_main.result_text == "中间叙述。\n\n末条汇报。"
+
+
 # ---------- agent_loop 级集成回归（生产构造点字段可达性） ----------
 
 

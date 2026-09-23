@@ -651,28 +651,69 @@ def thread_status(svc: Any, conversation_id: str = "") -> Dict[str, Any]:
 
 def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[str, Any]]:
     """子代理隐藏线程事件流 → 只读执行记录条目（形状兼容 chatMessages entry：
-    sender/text/ts/reasoning_content/actionLog）。
+    sender/text/ts/reasoning_content/actionLog/elapsed_ms/streaming）。
 
     只取面向人的表面：真人任务（source=user）+ assistant 正文/思考 + 工具活动
     名单；跳过 state/feedback/media/checkpoint/turn-start-end/compaction 等
     模型向噪声（与 derive_messages 的 LLM 口径不同，本函数专供 UI 只读回放）。
     只读、不改事件流。（完成章 turn/stamp 随 2026-09-10 盖章退役批一并退场：
-    task_complete 工具已删除，历史 turn/stamp 事件按未知类型跳过。）"""
+    task_complete 工具已删除，历史 turn/stamp 事件按未知类型跳过。）
+
+    2026-09-22 批4（Q4.1+Q4.2，用户目击「子代理思考没有流式过程、没有时间标记」）：
+    ① **步内增量腿**：`assistant/partial`（8888 事故批落的步内流式增量，此前
+       本函数整体忽略）按 step 累积；同一 step 的完整 `assistant/message` 到达
+       时**让位**（完整消息是准据）——口径对齐 dsh 瞬态条目被结算原子替换
+       （`assistant/live-chunk` → `settleAssistant`）。尚未结算的步（正在跑、
+       或被中断）落一条 `streaming=True` 的实时条目，思考/正文随增量长出，
+       中间面板因此从「做完几步才弹一整块」变成逐段可见。
+    ② **耗时腿**：assistant 条目的 `elapsed_ms` = 本条事件时刻 − **上一个已结算
+       事件**（上一条 user/assistant/tool 结果/步回喂）时刻——即该步「模型思考+
+       生成」的真实墙钟（步内 partial 增量不参与锚点推进，否则紧邻完整消息的
+       增量会把耗时刻度归零）。在途条目的耗时 = 增量首末之差。
+       此前只有 user 条目显示 HH:MM，思考块无任何时间信息。"""
     try:
         events = load_events(svc, conversation_id)
     except Exception:
         return []
     out: List[Dict[str, Any]] = []
+    # 步内增量缓冲：step → {reasoning[], text[], first_ms, last_ms, last_seq}
+    partials: Dict[int, Dict[str, Any]] = {}
+    # 已结算事件锚点（上一轮模型调用的起点基准）：只有 user/assistant/tool/feedback
+    # 推进它；assistant/partial 是同一轮模型调用的中间产物，推进锚点会把该步耗时
+    # 压成 0（实跑取证：紧邻完整消息的最后一条增量与消息同刻）。
+    settled_ms: Optional[int] = None
+    last_end_seq = 0
+
+    def _touch_settled(ts: int) -> None:
+        nonlocal settled_ms
+        settled_ms = ts
+
     for ev in events:
         ev_type = str(ev.get("type") or "")
+        try:
+            seq = int(ev.get("seq") or 0)
+        except (TypeError, ValueError):
+            seq = 0
         ts_ms = int(float(ev.get("time") or 0) * 1000)
+        if ev_type == EV_TURN_END:
+            last_end_seq = max(last_end_seq, seq)
         if ev_type == EV_USER and _ev_source(ev) == SOURCE_USER:
             content = ev.get("content")
             text = content if isinstance(content, str) else ""
             if text.strip():
-                out.append({"sender": "user", "text": text, "ts": ts_ms})
+                entry: Dict[str, Any] = {"sender": "user", "text": text, "ts": ts_ms}
+                if settled_ms is not None and ts_ms >= settled_ms:
+                    entry["elapsed_ms"] = ts_ms - settled_ms
+                out.append(entry)
+            _touch_settled(ts_ms)
         elif ev_type == EV_ASSISTANT:
-            entry: Dict[str, Any] = {"sender": "assistant", "ts": ts_ms}
+            try:
+                cur_step = int(ev.get("step") or 0)
+            except (TypeError, ValueError):
+                cur_step = 0
+            # 完整消息为准据：本步已结算的增量条目让位（不双显）
+            partials.pop(cur_step, None)
+            entry = {"sender": "assistant", "ts": ts_ms}
             text = str(ev.get("content") or "")
             rc = str(ev.get("reasoning_content") or "").strip()
             calls = ev.get("tool_calls") or []
@@ -686,8 +727,51 @@ def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[st
             if names:
                 entry["actionLog"] = names
             if text.strip() or rc or names:
+                if settled_ms is not None and ts_ms >= settled_ms:
+                    entry["elapsed_ms"] = ts_ms - settled_ms
                 out.append(entry)
-        # tool/result / step/feedback / turn/start|end / compaction/* / log/imported：不入只读记录
+            _touch_settled(ts_ms)
+        elif ev_type == EV_ASSISTANT_PARTIAL:
+            try:
+                cur_step = int(ev.get("step") or 0)
+            except (TypeError, ValueError):
+                cur_step = 0
+            buf = partials.get(cur_step)
+            if buf is None:
+                buf = {"reasoning": [], "text": [],
+                       "first_ms": ts_ms, "last_ms": ts_ms, "last_seq": seq}
+                partials[cur_step] = buf
+            kind = str(ev.get("kind") or "")
+            piece = str(ev.get("text") or "")
+            if piece and kind in ("reasoning", "text"):
+                buf[kind].append(piece)
+            buf["last_ms"] = ts_ms
+            buf["last_seq"] = seq
+        elif ev_type == EV_TOOL_RESULT:
+            _touch_settled(ts_ms)
+        elif ev_type == EV_STEP_FEEDBACK:
+            _touch_settled(ts_ms)
+        # turn/start|end / compaction/* / log/imported：不推进锚点（非模型调用边界）
+    # 在途/中断步：无完整消息让位 ⇒ 增量自成一条实时条目（思考与正文随增量长出）
+    for cur_step in sorted(partials):
+        buf = partials[cur_step]
+        text = "".join(buf["text"]).strip()
+        rc = "".join(buf["reasoning"]).strip()
+        if not text and not rc:
+            continue
+        # 该步之后已落 turn/end ⇒ 步被中断（非在跑），不挂实时标记但仍保留现场
+        ended = last_end_seq > int(buf.get("last_seq") or 0)
+        entry = {
+            "sender": "assistant",
+            "ts": buf["first_ms"],
+            "streaming": not ended,
+            "elapsed_ms": max(0, int(buf["last_ms"]) - int(buf["first_ms"])),
+        }
+        if text:
+            entry["text"] = text
+        if rc:
+            entry["reasoning_content"] = rc
+        out.append(entry)
     return out
 
 

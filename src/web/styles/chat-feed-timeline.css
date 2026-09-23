@@ -82,6 +82,9 @@
   .actor-card-steps { flex-shrink: 0; font-size: var(--font-2xs); color: var(--text-dim); }
   .actor-tools-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--font-2xs); color: var(--text-dim); }
   .actor-tools-toggle:hover { color: var(--text-main); }
+  /* 2026-09-22 批4（Q4.2）：子代理思考耗时角标（运行中实时走秒 / 完成定型），
+     对齐主对话框 tl-panel-elapsed；tabular-nums 防走秒时数字宽度抖动。 */
+  .actor-reasoning-elapsed { font-size: var(--font-2xs); color: var(--text-dim); font-variant-numeric: tabular-nums; }
   .actor-tools { margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; list-style: none; }
   .actor-tool { display: flex; align-items: center; gap: 5px; font-size: var(--font-2xs); color: var(--text-dim); line-height: 1.6; }
   .actor-tool-mark { flex-shrink: 0; }

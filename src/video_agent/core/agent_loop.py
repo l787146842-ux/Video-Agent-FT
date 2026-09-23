@@ -45,6 +45,7 @@ from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 from src.video_agent.core.round_end_policies import (
     RoundEndContext,
     FAKESTOP_AUTO_RESUME_MAX,
+    accumulate_visible,  # 2026-09-22 批3：可见正文累积口径唯一实现
     claims_unbacked_products,  # 批 12 对账扩展：产物族宣称 ↔ 账本对账
     run_round_end_policies,
 )
@@ -199,7 +200,9 @@ async def run_agent_loop(
     stop_scope_own: Optional[str] = None,
     session_conversation_id: str = "",
     state_event_content: str = "",
-    # 子代理深度（R6 fakestop 豁免）：> 0 时轮末 fakestop 闸机不触发续跑
+    # 子代理深度（R6 豁免）：**已退役**（K6 批）——子代理收尾由
+    # structured_output 打卡判定，不再据深度豁免假停续跑；本参数仅供
+    # 其它消费面/取证透传（2026-09-22 批2 订正过期注释）。
     subagent_depth: int = 0,
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
@@ -596,7 +599,13 @@ async def run_agent_loop(
                     await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
                 visible = (content or "").strip()
                 if visible:
-                    result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
+                    # 2026-09-22 批3（Q4.3）：累积口径与轮末策略共用单一实现
+                    # （accumulate_visible）——子代理只取**最后一条非空正文**
+                    # （dsh assistant-output.ts 同规则），主代理照旧按序拼接。
+                    # 4411 实证：子代理摘要曾因此膨胀到 2980 字（4 段近义汇报）。
+                    result.text = accumulate_visible(
+                        result.text, visible,
+                        last_only=bool(subagent_depth))
                 # 步事实日志已前移到 llm_call 返回点（覆盖全部出口，含模型名）
                 # 会话事件流镜像（v4 批 E1）：本分支所有出口统一落流——
                 # 问即停/提前终止出口的工具结果今天随内存列表
@@ -725,8 +734,15 @@ async def run_agent_loop(
                 # 假停机械续跑批（词表退役）：传本轮**之前**的连续纯文本轮数，
                 # 0 = 连续第 1 轮（嫌疑续跑）、≥1 = 连续第 2 轮（真完成放行）
                 text_round_streak=_text_round_streak,
-                # 子代理深度（R6 豁免）：透传至轮末策略层
+                # 子代理深度（R6 豁免）：透传至轮末策略层。
+                # 2026-09-22 批2 订正：**不再参与 fakestop 判定**（K6 批已
+                # 退役该豁免，改由打卡判定）；保留透传供其它策略/取证读取。
                 subagent_depth=subagent_depth,
+                # 2026-09-22 批2（Q4.4）：structured_output 打卡成功 ⇒ 子代理已
+                # 按契约声明完工，轮末不得再判假停续跑（打卡轮 = 零工具调用轮，
+                # 无此标记必被误判；实跑空转两轮、产出重复汇报）。
+                structured_captured=bool(
+                    (fc_extra or {}).get("structured_captured")),
                 result_text=result.text,
 
             )
@@ -749,10 +765,22 @@ async def run_agent_loop(
             # 策略层已判「Skill 进行中 + 纯文本收尾轮 + 连续第 1 轮 + 开关开 +
             # 未达上限」（continue_turn）——结构性判定取代词表匹配（1111 实证
             # 5 种句式全漏网），并翻案 2026-09-10「模型自决收尾即收尾」裁决
-            # （本批 CHANGELOG 留痕）。机械补两消息保持对话链（纯文本轮
-            # assistant 正文本不入 messages）：模型原文 + FAKESTOP_RESUME_NOTE，
-            # 随后 continue 进下一步——模型要么补发工具调用，要么重申完成
-            # （下一轮 streak≥1 放行，结构封死无限续跑）。
+            # （本批 CHANGELOG 留痕）。机械补两消息保持对话链：模型原文 +
+            # FAKESTOP_RESUME_NOTE，随后 continue 进下一步——模型要么补发工具
+            # 调用，要么重申完成（下一轮 streak≥1 放行，结构封死无限续跑）。
+            #
+            # I1 回流案（2026-09-22，事故 9999/Q2）：补的 assistant 消息**必须与
+            # FC 分支（上方 L674–L680）同口径带上 reasoning_content**——否则本轮的
+            # 思考（含模型已写好的产出草稿）不进 messages，续跑后模型看不见自己
+            # 上一轮的稿子，只能从零重拟。9999 实证：step1 已产出合规草稿
+            # （220 中文字 / 1 标题行，仅存在于 reasoning），被本分支丢弃后
+            # step2 重拟为 359 中文字 / 7 标题行，落盘 503 / 7 ——真实膨胀 +283。
+            # 外部同款修复：dsh 主源码 `.agents/notes/archived/bug-fix/
+            # 2026-08-19-deepseek-reasoning-passback-every-turn.zh.md`（原适配器
+            # 只在带工具调用的轮次回传 reasoning，未调工具的纯作答轮丢推理导致
+            # 会话重建分叉）→ 修为「每个携带推理的 assistant 轮次都发出该字段，
+            # 与是否有工具调用无关」；**无推理块时仍不发该字段**（本处同口径：
+            # strip 后为空即不设键，非思考轮次行为不变）。
             # 位置约束：必须位于确认/hard_break break 之后（确认卡优先于续跑）。
             if _re_ctx.continue_turn:
                 _fakestop_resumes += 1
@@ -762,7 +790,14 @@ async def run_agent_loop(
                     f"（第 {_fakestop_resumes}/{FAKESTOP_AUTO_RESUME_MAX} 次）",
                     {"count": _fakestop_resumes, "cap": FAKESTOP_AUTO_RESUME_MAX},
                 ))
-                messages.append({"role": "assistant", "content": content or ""})
+                _resume_asst: Dict[str, Any] = {"role": "assistant", "content": content or ""}
+                # I1 回流案：与 FC 分支（L674–L680）逐字同口径——同门控
+                # （settings.llm_reasoning_passthrough）、同 fc_extra 取值、
+                # 同 .strip() 非空判定；无推理时不设键（不凭空造空字段）。
+                if settings.llm_reasoning_passthrough \
+                        and str((fc_extra or {}).get("reasoning_content") or "").strip():
+                    _resume_asst["reasoning_content"] = str((fc_extra or {}).get("reasoning_content") or "")
+                messages.append(_resume_asst)
                 _resume_note = load_prompt_section(
                     "planner/feedback.md", "FAKESTOP_RESUME_NOTE")
                 if not _resume_note:  # 分节缺失诚实降级（Rule 6 口径）

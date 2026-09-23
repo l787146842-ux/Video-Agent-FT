@@ -9,7 +9,7 @@
  * 状态语义色复用 .subagent-status 三态（--color-info/--color-success/--color-danger），
  * 卡体排版另立 .actor-* 类，均走 token（scripts/check_semantic_colors.py 闸）。
  */
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import {
   FiCheckCircle, FiChevronDown, FiLoader, FiXCircle,
 } from 'solid-icons/fi';
@@ -33,10 +33,41 @@ function statusText(s: SubagentActor['status']): string {
 
 export function SubagentActorCard(props: { actor: () => SubagentActor | undefined }) {
   const [open, setOpen] = createSignal(false);
-  /** 子代理思考折叠区（批G；与子工具名单各自独立开合） */
-  const [reasoningOpen, setReasoningOpen] = createSignal(false);
+  /** 子代理思考折叠区（批G；与子工具名单各自独立开合）。
+   *  2026-09-22 批4（Q4.1，用户目击「思考过程一直看不到流式」）：
+   *  初值按**运行态**取——执行中默认展开（与主对话框 AgentTimeline 的
+   *  `createSignal(isLive())` 同口径），完成后默认折叠。
+   *  此前恒 false：子代理思考其实一直在逐字推流（批G 已接通），但被折叠盖住，
+   *  用户不手点就一条都看不见，观感等同于「没有流式」。 */
+  const [reasoningOpen, setReasoningOpen] = createSignal(
+    props.actor()?.status === 'running');
   /** 有子线程 id 才可点进只读记录（降级不落流的 actor 无记录可看） */
   const clickable = () => !!props.actor()?.cid;
+
+  /** 2026-09-22 批4（Q4.2）：运行中思考耗时走秒（500ms 一跳，只在 running 期开表，
+   *  对齐主对话框 AgentTimeline 的走秒口径；完成即定型停止，不空转）。 */
+  const [now, setNow] = createSignal(Date.now());
+  let tickTimer: ReturnType<typeof setInterval> | undefined;
+  createEffect(() => {
+    const running = props.actor()?.status === 'running';
+    if (running && tickTimer === undefined) {
+      setNow(Date.now());
+      tickTimer = setInterval(() => setNow(Date.now()), 500);
+    } else if (!running && tickTimer !== undefined) {
+      clearInterval(tickTimer);
+      tickTimer = undefined;
+    }
+  });
+  onCleanup(() => { if (tickTimer !== undefined) clearInterval(tickTimer); });
+
+  /** 思考耗时文本（运行中=实时差值；完成=起止定型；无起点则空串不占位） */
+  const reasoningElapsed = (): string => {
+    const a = props.actor();
+    if (!a || !a.startedAt) return '';
+    const end = a.status === 'running' ? now() : (a.finishedAt || a.startedAt);
+    const ms = Math.max(0, end - a.startedAt);
+    return ms > 0 ? ` · ${formatElapsed(ms)}` : '';
+  };
 
   function openRecord(): void {
     const cid = props.actor()?.cid || '';
@@ -68,7 +99,9 @@ export function SubagentActorCard(props: { actor: () => SubagentActor | undefine
 
           {/* 子代理思考（2026-09-21 批G，事故 4444/Q4）：执行中即可展开查看。
               此前子代理走非流式通道 → 无 reasoning_delta → 这些内容只有做完
-              才在只读记录里看得到；现在执行中实时累计（超上限按尾部截断）。 */}
+              才在只读记录里看得到；现在执行中实时累计（超上限按尾部截断）。
+              2026-09-22 批4（Q4.2）：挂耗时角标（运行中实时走秒 / 完成定型），
+              对齐主对话框「深度思考 · 45.6s」的观感。 */}
           <Show when={(actor().reasoning || '').trim()}>
             <button
               type="button"
@@ -78,6 +111,7 @@ export function SubagentActorCard(props: { actor: () => SubagentActor | undefine
               data-testid="subagent-actor-reasoning-toggle"
             >
               {t('rp.actor.reasoning')}
+              <span class="actor-reasoning-elapsed">{reasoningElapsed()}</span>
               <FiChevronDown size={11} class={`tl-item-toggle-arrow${reasoningOpen() ? ' expanded' : ''}`} />
             </button>
             <Show when={reasoningOpen()}>
