@@ -385,6 +385,16 @@ def format_tool_results(
             # （一句话总结只报「执行成功」被模型吞掉）
             data = tr.get("data") or {}
             detail = str(data.get("detail") or "").strip()
+            # 2026-09-23 批2（Q3，用户裁决）：**建组回执必须带 group_id**。
+            # storyboard_create_group 的 data["group_id"] 此前从不回喂
+            # （本分支只取 detail），模型建完组拿不到 id，只能靠 `current`
+            # 兜底——而 `current` 恒指 keyElements[0]（类目顺序决定，非"最近组"），
+            # 于是后续 add_draft 的卡落错组（3333 三张音色卡落进音频层的机制根因）。
+            # 此处把 group_id 拼进回喂正文（与 detail 合并，不新起通道）。
+            _gid = str(data.get("group_id") or "").strip()
+            if _gid:
+                _gid_line = f"分组 ID = {_gid}（后续 add_draft/patch 请显式传 group_id，勿依赖 current）"
+                detail = f"{_gid_line}。{detail}" if detail else _gid_line
             # 上下文剪枝：只剪回喂进 history 的副本，白名单起步
             # （生成类大返回）；写类工具不在白名单，其回喂行归 digest 杠杆管
             detail = prune_tool_feedback(name, detail)
@@ -443,8 +453,18 @@ def compose_failure_feedback(
     kind = str(error_code or "") or classify_tool_failure(error_text)
     # C1（批②中断对齐 dsh「失败永不空且可行动」）：生产端未带原因时，
     # 不得只回“未知错误”（死胡同），改回工具名+可执行下一步（纯事实，不推断）。
+    #
+    # 2026-09-23 批1（Q9，用户裁决「工具失败文案不能截断」）：
+    # **本处是回喂模型的正文，一律不设固定字符上限**——对齐 dsh 口径
+    # 「按去向分流」而非「按内容分流」（dsh 对模型可见内容不设字符硬顶；
+    # 只有落库存档/UI 展示侧才设限，见 hook-protocol events.ts 的
+    # stderrSummary 500 上限 vs codec.ts 的 output.reason 完整）。
+    # 原 `[:120]` 砍掉的恰是行动指引尾部（如「去 write_media_prompt 阶段
+    # 生成图像卡」），使模型拿到不可行动的残句。上下文膨胀由既有
+    # context_prune/prune_pass（压力触发、头+省略标注+尾）兜底，
+    # 不在此处做固定 N 字硬截断。
     raw = str(error_text or
-              f"工具 {name} 未返回具体失败原因，请核对入参后重试（必要时先读当前状态确认）")[:120]
+              f"工具 {name} 未返回具体失败原因，请核对入参后重试（必要时先读当前状态确认）")
     if fail_count >= 2:
         hint = FAILURE_HINT_REPEAT
     elif kind == "validation":
@@ -480,6 +500,8 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         return f"新增草稿「{label or '未命名'}」"
     if name == "storyboard_delete_group":
         return f"删除分组 {args.get('group_id', '')}"
+    if name == "storyboard_delete_draft":
+        return f"删除草稿「{label or draft_id or '当前草稿'}」"
     if name == "storyboard_confirm_draft":
         return f"确认草稿「{label or draft_id or '当前草稿'}」"
     if name == "storyboard_media_to_chat":
