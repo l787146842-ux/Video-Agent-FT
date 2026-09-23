@@ -10,7 +10,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 /** 旁路子件打桩（同 GroupCard-badge.test.tsx） */
 vi.mock('@/components/left-panel/DraftCard', () => ({ DraftCard: () => null }));
-vi.mock('@/components/left-panel/group-card/SceneRefsChips', () => ({ SceneRefsChips: () => null }));
+vi.mock('@/components/left-panel/group-card/ShotRefsChips', () => ({ ShotRefsChips: () => null }));
 vi.mock('@/components/left-panel/group-card/GroupDescEditor', () => ({ GroupDescEditor: () => null }));
 vi.mock('@/components/left-panel/group-card/GroupAdjustBox', () => ({ GroupAdjustBox: () => null }));
 vi.mock('@/components/left-panel/group-card/ShotDescEditor', () => ({ ShotDescEditor: () => null }));

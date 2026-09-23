@@ -151,14 +151,14 @@ ALLOWED_NEW_DRAFT_FIELDS = ALLOWED_DRAFT_FIELDS + ("id",)
 # 存量数据只读保留；badgeLabel 同批退役写口 2026-09-17：用户裁决类别标识
 # 全链删除，存量数据只读透传）
 ALLOWED_GROUP_FIELDS = (
-    "title", "desc", "duration", "timeRange", "prompt", "sceneRefs", "summary",
+    "title", "desc", "duration", "timeRange", "prompt", "shotRefs", "summary",
     # 2026-09-23 批5：关键元素组的元素种类（character / scene / prop）
     "elementType",
 )
 
 
-def dedup_scene_refs(refs: Any) -> List[str]:
-    """flova 对齐批（2026-09-17）：sceneRefs canonical 去重——同一元素的裸名与
+def dedup_shot_refs(refs: Any) -> List[str]:
+    """flova 对齐批（2026-09-17）：shotRefs canonical 去重——同一元素的裸名与
     Element_ 前缀形态算同一引用（去重键 = strip_type_prefix），去重保序留首；
     杜绝 K4 三源合并产同元素双份（场景 chips 行重复 chip）。纯函数，不改状态。"""
     out: List[str] = []
@@ -195,28 +195,28 @@ def strip_type_prefix(title: str) -> str:
     return t
 
 
-# ---------- sceneRefs canonical 引用键（读口，2026-09-23 批10，事故 4444/P0-A） ----------
+# ---------- shotRefs canonical 引用键（读口，2026-09-23 批10，事故 4444/P0-A） ----------
 # 病灶：**写口与读口口径漂移**。
-#   - 写口 `dedup_scene_refs`（见上）以 `strip_type_prefix` 为去重键，
+#   - 写口 `dedup_shot_refs`（见上）以 `strip_type_prefix` 为去重键，
 #     docstring 明写「同一元素的裸名与 Element_ 前缀形态算同一引用」；
-#   - 读口 `resolve_scene_refs` / `resolve_scene_audio_refs` 却是**逐字精确比对**
+#   - 读口 `resolve_shot_refs` / `resolve_shot_audio_refs` 却是**逐字精确比对**
 #     （`id != ref and title != ref`），而落盘组标题带前缀（`Element_程心`）、
-#     sceneRefs 存裸名（`程心`）⇒ 恒不命中。
+#     shotRefs 存裸名（`程心`）⇒ 恒不命中。
 # 实跑取证（4444 / proj-1790159421-bfd25491，真实 state 复算）：
-#   22 镜 90 条 sceneRefs → image_refs **0**、audio_refs **0**；
+#   22 镜 90 条 shotRefs → image_refs **0**、audio_refs **0**；
 #   改用 canonical 键复算 → **90/90 命中**。
 # 同源失配在别处**已修过**：`core/prompt_refs.py` 批3 R3 判词「平台在别处
 #   （scan_bare_name_mentions、前端 desc-ref-utils）早就做了裸名归一，
 #   唯独本引用链漏了，属口径漂移而非设计」——本函数即把该判词落到引用链上。
 # 为何是根因而非补丁：同一份 canonical 规则在**同一个文件里**已存在
-#   （strip_type_prefix/dedup_scene_refs），本处只是让读口复用写口的口径，
+#   （strip_type_prefix/dedup_shot_refs），本处只是让读口复用写口的口径，
 #   未引入新规则、未新增拒收闸。
 
 
 def canonical_ref_key(ref: Any) -> str:
-    """sceneRefs 引用键（canonical）：剥容器类型前缀 + 去首尾空白。
+    """shotRefs 引用键（canonical）：剥容器类型前缀 + 去首尾空白。
 
-    与写口 `dedup_scene_refs` 的去重键、`prompt_refs.build_storyboard_media_map`
+    与写口 `dedup_shot_refs` 的去重键、`prompt_refs.build_storyboard_media_map`
     的裸名别名**同一口径**（P1 单一事实源：本函数是引用匹配的唯一入口）。
     """
     return strip_type_prefix(str(ref or "").strip())
@@ -239,9 +239,9 @@ def build_ref_index(state: Dict[str, Any], cat_key: str) -> Dict[str, Dict[str, 
 
 
 def find_ref_group(state: Dict[str, Any], ref: Any) -> Optional[Dict[str, Any]]:
-    """按场景引用（裸名 / 带前缀标题 / 组 id 三种写法均可）取关键元素组。
+    """按引用（裸名 / 带前缀标题 / 组 id 三种写法均可）取关键元素组。
 
-    读口唯一入口：`resolve_scene_refs` / `resolve_scene_audio_refs` /
+    读口唯一入口：`resolve_shot_refs` / `resolve_shot_audio_refs` /
     `web/routes/generate_image.py` / `web/multimodal_builder.py` 四处共用，
     杜绝同一条引用链各写一遍比对式（本次事故正是四处各写一遍且全部逐字比对）。
     """
@@ -422,8 +422,8 @@ def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, Lis
     changed = False
     for field in ALLOWED_GROUP_FIELDS:
         if field in patch:
-            # sceneRefs 写口同口径 canonical 去重（与 create_group 三源合并一致）
-            group[field] = dedup_scene_refs(patch[field]) if field == "sceneRefs" else patch[field]
+            # shotRefs 写口同口径 canonical 去重（与 create_group 三源合并一致）
+            group[field] = dedup_shot_refs(patch[field]) if field == "shotRefs" else patch[field]
             changed = True
     return changed, dropped
 
@@ -554,22 +554,22 @@ def collect_drafts(
     return []
 
 
-def resolve_scene_refs(
+def resolve_shot_refs(
     state: Dict[str, Any], group: Optional[Dict[str, Any]], limit: int = 5,
 ) -> List[Dict[str, str]]:
-    """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图（默认最多 5 张）。
+    """解析分镜的 shotRefs → 对应关键元素的概念图 URL 作为参考图（默认最多 5 张）。
 
     2026-09-23 批10（事故 4444/P0-A）：比对改走 `find_ref_group`。
-    旧实现逐字比对 `id`/`title`，而落盘标题带前缀、sceneRefs 存裸名 ⇒ 恒不命中
+    旧实现逐字比对 `id`/`title`，而落盘标题带前缀、shotRefs 存裸名 ⇒ 恒不命中
     （4444 实测 22 镜 image_refs = 0）。canonical 口径见 `canonical_ref_key`。
     """
     refs: List[Dict[str, str]] = []
     if not group:
         return refs
-    scene_refs = group.get("sceneRefs") or []
-    if not scene_refs:
+    shot_refs = group.get("shotRefs") or []
+    if not shot_refs:
         return refs
-    for ref_title in scene_refs:
+    for ref_title in shot_refs:
         if not isinstance(ref_title, str):
             continue
         ke_group = find_ref_group(state, ref_title)
@@ -583,17 +583,17 @@ def resolve_scene_refs(
     return refs[:limit]
 
 
-def resolve_scene_audio_refs(
+def resolve_shot_audio_refs(
     state: Dict[str, Any], group: Optional[Dict[str, Any]],
 ) -> List[Dict[str, str]]:
-    """批 6 · A3：按分镜组 sceneRefs 收集关键元素卡的 audioUrl（音色锚点）。
+    """批 6 · A3：按分镜组 shotRefs 收集关键元素卡的 audioUrl（音色锚点）。
 
-    与 resolve_scene_refs 同构（imgUrl→reference 的姊妹轴）：分镜引用了
+    与 resolve_shot_refs 同构（imgUrl→reference 的姊妹轴）：分镜引用了
     带音色参考的元素时，视频生成自动把该音色挂为 reference_audio，
     对齐外部标杆「按引用自动挂声音锚点」。只读，不改状态。
 
     2026-09-23 批10（事故 4444/P0-A）两处修复：
-    ① 比对照 `resolve_scene_refs` 同改 canonical（`find_ref_group`）；
+    ① 比对照 `resolve_shot_refs` 同改 canonical（`find_ref_group`）；
     ② 音色卡优先取 `audioType == 'voice'` 的卡（Skill 明文的 key_element_audio）。
        归属契约 = 挂在角色**自己的 keyElements 组内**（见 `CATEGORY_MEDIA_MATRIX`
        的 keyElement 行「可放音频」，及 `prompt_refs`/前端 `isVoiceCard` 同口径）。
@@ -602,7 +602,7 @@ def resolve_scene_audio_refs(
     refs: List[Dict[str, str]] = []
     if not group:
         return refs
-    for ref_title in group.get("sceneRefs") or []:
+    for ref_title in group.get("shotRefs") or []:
         if not isinstance(ref_title, str):
             continue
         ke_group = find_ref_group(state, ref_title)
@@ -657,7 +657,7 @@ def scan_bare_name_mentions(
     镜像前端 desc-ref-utils.ts descChipNames 语义：候选源 = keyElements
     全集（原全称 + 归一裸名两形态，Set 去重、≥2 字符守卫、最长优先防重叠）；
     命中规则 = 候选名在 desc 子串出现；返回 = 命中的关键元素组标题
-    （sceneRefs 存储口径，去重保序）。纯函数，不改状态。"""
+    （shotRefs 存储口径，去重保序）。纯函数，不改状态。"""
     text = str(desc or "")
     if not text:
         return []
@@ -680,6 +680,54 @@ def scan_bare_name_mentions(
         if cand in text and title not in hits:
             hits.append(title)
     return hits
+
+
+def merge_shot_refs(
+    state: Dict[str, Any], desc: str, explicit_refs: Any = None,
+) -> List[str]:
+    """**shotRefs 三源合并的唯一实现**（2026-09-23 批12，事故 4444/B-1）。
+
+    ## 为什么抽这一层（根因）
+
+    此前**写口与读口各写一遍**，且口径不同：
+      - 写口（`storyboard_create_group` 的 aexecute）：显式 `shot_refs`
+        ∪ `[元素名]` 令牌 ∪ 裸名提及 —— **三源合并**；
+      - 读口（`fc_gates.structure_integrity_gate`）：**只读显式
+        `args.get("shot_refs")`**，不看 desc。
+
+    而工具对模型的**文档承诺**是「`shot_refs` 留空时系统自动从分组描述里的
+    `[元素名]` 令牌与裸名提及解析合并」。于是模型照文档留空 ⇒ **闸机在合并
+    之前就把它拒了**。
+
+    4444 实证（`conv-1790159633` seq55–59）：前 5 次建镜头按文档留空
+    `shot_refs`、把元素规范写进 desc 的 `[令牌]` ⇒ **5 次全被拒**
+    （回喂「shotRefs 为空」）；此后 22 次改为一律显式重抄 ⇒
+    **平台亲手教模型放弃了它的正确行为**。
+    全量统计：该子代理 53 次建组，31 次未传 `shot_refs`、22 次传了。
+
+    ## 口径（三源合并 + canonical 去重）
+
+    显式 `shot_refs` ∪ `[元素名]` 令牌匹配 ∪ 裸名提及，**canonical 去重保序留首**
+    （裸名与 `Element_` 前缀算同一引用，去重键 = `strip_type_prefix`）。
+    与 2026-09-17 flova 对齐批同口径，注释与行为逐字保留。
+
+    **单一事实源**：写口与闸机**必须同引本函数**——两处各写一遍正是本次事故成因。
+    纯函数，不改状态。
+    """
+    explicit = [r for r in (explicit_refs or []) if str(r).strip()]
+    tokens = parse_element_tokens(desc or "")
+    matched_titles, _unmatched = match_element_titles_report(state, tokens)
+    bare_hits = scan_bare_name_mentions(
+        desc or "", state.get(CAT_KEY_ELEMENTS, []))
+    merged: List[str] = []
+    seen: set = set()
+    for ref in list(explicit) + matched_titles + bare_hits:
+        key = strip_type_prefix(str(ref))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(ref)
+    return merged
 
 
 def match_element_titles_report(

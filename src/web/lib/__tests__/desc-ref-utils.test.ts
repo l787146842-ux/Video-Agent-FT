@@ -5,11 +5,11 @@
  *    去重 + ≥2 字符守卫 + 长度降序（最长优先防重叠标题误切）；
  * ③ render/serialize roundtrip：\n\n 分段保留、块还原纯名（不带 @）；
  * ④ editable 块内产 × 删除钮，读态不产；有概念图产缩略图、无图纯名块；
- * ⑤ syncSceneRefsAfterEdit：旧 − 正文已消失提及 + @ 插入；无增删返回 null。
+ * ⑤ syncShotRefsAfterEdit：旧 − 正文已消失提及 + @ 插入；无增删返回 null。
  */
 import { describe, it, expect } from 'vitest';
 import {
-  resolveRefTitle, descChipNames, renderDescToDOM, serializeDescDOM, syncSceneRefsAfterEdit,
+  resolveRefTitle, descChipNames, renderDescToDOM, serializeDescDOM, syncShotRefsAfterEdit,
   stripTypePrefix, normalizeDisplayTitle, normalizeDisplayGroupTitle, canonicalGroupTitle,
 } from '@/lib/desc-ref-utils';
 
@@ -28,8 +28,8 @@ describe('desc-ref-utils', () => {
   });
 
   it('descChipNames 候选源为 keyElements 全集；去重并按长度降序', () => {
-    // 传入的 sceneRefs 被忽略（候选不再依赖本镜 sceneRefs），全集产出
-    const names = descChipNames({ sceneRefs: [] }, KES);
+    // 传入的 shotRefs 被忽略（候选不再依赖本镜 shotRefs），全集产出
+    const names = descChipNames({ shotRefs: [] }, KES);
     expect(names).toEqual(['S1 星环号球形舱', '程心AA', '程心', 'AA']);
   });
 
@@ -39,14 +39,14 @@ describe('desc-ref-utils', () => {
       { id: 'k2', title: 'Element_刀' },    // 名字「刀」单字被 ≥2 守卫剔除，仅留全称
       { id: 'k3', title: '乙' },           // 单字全称本身被守卫剔除
     ];
-    const names = descChipNames({ sceneRefs: [] }, kes);
+    const names = descChipNames({ shotRefs: [] }, kes);
     expect(names).toEqual(['Element_程心', 'Element_刀', '程心']);
   });
 
   it('render/serialize roundtrip：分段保留、块还原纯名', () => {
     const el = document.createElement('div');
     const text = '【空间锚点】程心 在舱内。\n\n【台词】AA：为什么？';
-    renderDescToDOM(el, text, descChipNames({ sceneRefs: ['ke-1', 'ke-2'] }, KES), KES, false);
+    renderDescToDOM(el, text, descChipNames({ shotRefs: ['ke-1', 'ke-2'] }, KES), KES, false);
     const chips = [...el.querySelectorAll('.mention-chip')] as HTMLElement[];
     expect(chips.map((c) => c.dataset.name)).toEqual(['程心', 'AA']);
     // 有概念图 → 缩略图；无概念图 → 纯名块（无图标无图）
@@ -67,29 +67,29 @@ describe('desc-ref-utils', () => {
   it('最长优先：重叠标题切成一个块', () => {
     const el = document.createElement('div');
     renderDescToDOM(
-      el, '程心AA 在窗侧', descChipNames({ sceneRefs: ['ke-1', 'ke-4'] }, KES), KES, false,
+      el, '程心AA 在窗侧', descChipNames({ shotRefs: ['ke-1', 'ke-4'] }, KES), KES, false,
     );
     const chips = [...el.querySelectorAll('.mention-chip')] as HTMLElement[];
     expect(chips.map((c) => c.dataset.name)).toEqual(['程心AA']);
   });
 
-  it('syncSceneRefsAfterEdit：旧 − 消失提及 + @ 插入；无增删 null', () => {
-    expect(syncSceneRefsAfterEdit(['ke-1', 'ke-2'], '程心 与 AA 都在', [], KES)).toBeNull();
-    expect(syncSceneRefsAfterEdit(['ke-1', 'ke-2'], '只剩 程心', [], KES)).toEqual(['ke-1']);
-    expect(syncSceneRefsAfterEdit(['ke-1'], '程心 与曹彬？', ['曹彬'], KES))
+  it('syncShotRefsAfterEdit：旧 − 消失提及 + @ 插入；无增删 null', () => {
+    expect(syncShotRefsAfterEdit(['ke-1', 'ke-2'], '程心 与 AA 都在', [], KES)).toBeNull();
+    expect(syncShotRefsAfterEdit(['ke-1', 'ke-2'], '只剩 程心', [], KES)).toEqual(['ke-1']);
+    expect(syncShotRefsAfterEdit(['ke-1'], '程心 与曹彬？', ['曹彬'], KES))
       .toEqual(['ke-1', '曹彬']);
   });
 
-  it('syncSceneRefsAfterEdit auto 源：正文裸名提及自动补绑（K4 批提及即绑定）', () => {
+  it('syncShotRefsAfterEdit auto 源：正文裸名提及自动补绑（K4 批提及即绑定）', () => {
     const kes = [
       { id: 'ke-1', title: 'Element_程心', drafts: [] },
       { id: 'ke-2', title: 'S1 星环号球形舱', drafts: [] },
     ];
     // prevRefs 空且无 @ 插入：正文名字提及自动补绑（存储口径 = 元素原标题，最长优先）
-    expect(syncSceneRefsAfterEdit([], '程心 在 S1 星环号球形舱 内苏醒', [], kes))
+    expect(syncShotRefsAfterEdit([], '程心 在 S1 星环号球形舱 内苏醒', [], kes))
       .toEqual(['S1 星环号球形舱', 'Element_程心']);
     // 已绑引用不重复补绑；无增删返回 null
-    expect(syncSceneRefsAfterEdit(['ke-1'], '程心 苏醒', [], kes)).toBeNull();
+    expect(syncShotRefsAfterEdit(['ke-1'], '程心 苏醒', [], kes)).toBeNull();
   });
 });
 

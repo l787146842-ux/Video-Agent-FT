@@ -1,10 +1,10 @@
 /**
- * 分镜正文内联引用块纯工具（对齐 Flova 批）：正文里的引用 = 本镜 sceneRefs
+ * 分镜正文内联引用块纯工具（对齐 Flova 批）：正文里的引用 = 本镜 shotRefs
  * 在 desc 文本中的视图。
- * - 识别：sceneRefs 解析为标题后在 desc 中出现的 → 内联块（最长优先防重叠误切）；
+ * - 识别：shotRefs 解析为标题后在 desc 中出现的 → 内联块（最长优先防重叠误切）；
  * - 渲染：纯文本 ↔ DOM（块复用 mention-chip 概念图+名称 chip；编辑态块内带 ×）；
  * - 序列化：保存时块还原为纯名（desc 存储保持纯文本，不带 @ token）；
- * - 同步：编辑保存时 sceneRefs 按「旧 − 正文已消失提及 + @ 插入」派生。
+ * - 同步：编辑保存时 shotRefs 按「旧 − 正文已消失提及 + @ 插入」派生。
  */
 import { escapeRe, makeChip, type MediaKind } from '@/lib/prompt-ref-utils';
 import type { DraftType, ShotGroup } from '@/types';
@@ -45,7 +45,7 @@ export function canonicalGroupTitle(title: string, type: DraftType): string {
   return prefix + t;
 }
 
-/** sceneRefs 存关键元素 id（ke-xxx）或标题；统一解析为归一标题（同 SceneRefsChips 口径） */
+/** shotRefs 存关键元素 id（ke-xxx）或标题；统一解析为归一标题（同 ShotRefsChips 口径） */
 export function resolveRefTitle(ref: string, keyElements: KeyElementLike[]): string {
   const el = keyElements.find((k) => k.id === ref || k.title === ref);
   return stripTypePrefix(el?.title || String(ref));
@@ -82,13 +82,13 @@ export function normalizeDisplayGroupTitle(title: string): string {
 }
 
 /**
- * 内联块候选名：候选源 = keyElements 全集（不再局限本镜 sceneRefs）。
+ * 内联块候选名：候选源 = keyElements 全集（不再局限本镜 shotRefs）。
  * 每个元素产两种形态——原全称 + 归一名字（stripTypePrefix），Set 去重，
  * ≥2 字符守卫（此处为唯一加守卫点），按长度降序（最长优先防重叠误切）。
- * group 参数保留仅为调用点稳定，候选不再依赖 sceneRefs。
+ * group 参数保留仅为调用点稳定，候选不再依赖 shotRefs。
  */
 export function descChipNames(
-  _group: Pick<ShotGroup, 'sceneRefs'>,
+  _group: Pick<ShotGroup, 'shotRefs'>,
   keyElements: KeyElementLike[],
 ): string[] {
   const titles = new Set<string>();
@@ -174,10 +174,10 @@ export function serializeDescDOM(root: HTMLElement): string {
   return out;
 }
 
-/** 编辑保存时 sceneRefs 同步：新 = 旧 − 正文已消失提及的引用 + @ 插入的标题
+/** 编辑保存时 shotRefs 同步：新 = 旧 − 正文已消失提及的引用 + @ 插入的标题
  *  + 裸名提及 auto 源（K4 批 2026-09-16 对齐 flova：提及即绑定）。
  *  无增删返回 null（调用方不必写库）。 */
-export function syncSceneRefsAfterEdit(
+export function syncShotRefsAfterEdit(
   prevRefs: string[],
   serializedText: string,
   insertedTitles: string[],
@@ -194,7 +194,7 @@ export function syncSceneRefsAfterEdit(
     ...added.map((t) => stripTypePrefix(String(t))),
   ]);
   const auto: string[] = [];
-  descChipNames({ sceneRefs: [] }, keyElements).forEach((n) => {
+  descChipNames({ shotRefs: [] }, keyElements).forEach((n) => {
     if (!serializedText.includes(n)) return;
     const el = keyElements.find(
       (k) => k.title === n || stripTypePrefix(k.title || '') === n);

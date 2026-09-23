@@ -32,7 +32,7 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
         title="Shot_太空艇与宇航员坍缩",
         desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
         summary="长镜头含内部剪辑（约10s）",
-        scene_refs=["Element_监视太空艇", "Element_二维空间平面"],
+        shot_refs=["Element_监视太空艇", "Element_二维空间平面"],
         duration="10s",
         draft={"label": "分镜卡片", "prompt": "p"},
     ))
@@ -40,7 +40,7 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
     shot = svc.state_dict["shots"][-1]
     # shotType 已退役（2026-09-14）：多内切镜格式唯一载体 = desc，不再有单值镜头语言字段
     assert "shotType" not in shot
-    assert shot["sceneRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
+    assert shot["shotRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
     assert "0-4s" in shot["desc"]
     assert shot["duration"] == "10s"
 
@@ -48,11 +48,11 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
 def test_update_group_shot_fields(svc):
     shot = svc.state_dict["shots"][0]
     changed, dropped = ops.patch_group(
-        shot, {"shotType": "特写", "sceneRefs": ["Element_A"]})
+        shot, {"shotType": "特写", "shotRefs": ["Element_A"]})
     assert changed
     # shotType 不在 group patch 白名单 → 被丢弃（镜头语言唯一载体 = desc）
     assert "shotType" in dropped
-    assert svc.state_dict["shots"][0]["sceneRefs"] == ["Element_A"]
+    assert svc.state_dict["shots"][0]["shotRefs"] == ["Element_A"]
 
 
 def test_delete_draft(svc):

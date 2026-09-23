@@ -8,7 +8,7 @@
 （执行器机械调用档位/截断保险/拆解边界/规格注入用例已随任务#36 B5
 执行器一步退役删除：被测对象（executors._executor_thinking/_rollback_split_groups/
 _run_storyboard_split/_split_kinds_for_section/_apply_actions/_spec_override_clauses
-与 StoryboardShotsTool）不复存在；分组类型阶段边界与 sceneRefs 完整度改由
+与 StoryboardShotsTool）不复存在；分组类型阶段边界与 shotRefs 完整度改由
 fc_gates.structure_integrity_gate 承接。）
 """
 import json

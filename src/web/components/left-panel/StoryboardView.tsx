@@ -110,7 +110,7 @@ export function StoryboardView() {
     if (!tick) return;
     // 等 subTab 切换后的重渲染完成，再查找目标 DOM
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      // 优先按分组定位（分镜 sceneRefs 跳转：目标元素没有草稿卡时也能看到）
+      // 优先按分组定位（分镜 shotRefs 跳转：目标元素没有草稿卡时也能看到）
       const gid = state.locateGroupId;
       let target: HTMLElement | null = null;
       if (gid) {

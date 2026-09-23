@@ -93,7 +93,11 @@ describe('toolDetailTier 工具详情分级', () => {
   it('值得展开档：产出/关键交互类工具（后端 detail_tier=expand 声明生成）', () => {
     [
       'document_write', 'storyboard_create_group', 'storyboard_add_draft',
-      'storyboard_patch_draft', 'generate_video',
+      'storyboard_patch_draft',
+      // 2026-09-23 批12（事故 4444/C-1）：批10 新增改分组工具（detail_tier=expand）
+      // 时本清单未同步——本清单是前端唯一的工具档位契约面，漏登记无门禁可拦。
+      'storyboard_patch_group',
+      'generate_video',
       'image_generate', 'workflow_pause', 'canvas_add_node',
       'canvas_update_node', 'canvas_batch_add_nodes',
     ].forEach((n) => expect(toolDetailTier(n)).toBe('expand'));

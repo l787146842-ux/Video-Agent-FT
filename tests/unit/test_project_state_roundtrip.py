@@ -54,7 +54,7 @@ def _payload() -> dict:
         "shots": [{
             "id": "sh-1", "title": "分镜组", "duration": "3s",
             "roughDesc": "粗描述", "shotType": "特写",
-            "cameraMovement": "pan", "sceneRefs": ["s1"],
+            "cameraMovement": "pan", "shotRefs": ["s1"],
             "transition": "fade", "audioCue": "cue", "timeRange": "0-3",
             "generationConfig": {"steps": 20, "cfg": 7.5},
             "status": "ready", "linkedSceneId": "scene-9",

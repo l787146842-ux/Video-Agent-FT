@@ -43,7 +43,7 @@ def _seed_big_state(svc, groups=20, desc_len=1500):
     svc.state_dict[CAT_SHOTS] = [
         {
             "id": f"sh{i}", "title": f"分镜{i}", "roughDesc": "镜" * desc_len,
-            "sceneRefs": ["主角"], "duration": "5s", "shotType": "中景",
+            "shotRefs": ["主角"], "duration": "5s", "shotType": "中景",
             "drafts": [{"id": f"sd{i}", "prompt": "x" * 100, "label": f"卡{i}"}],
         }
         for i in range(groups)
@@ -68,7 +68,7 @@ def test_shot_desc_injected_with_budget(svc):
     roughDesc 只读注入不变（存量兼容）。"""
     svc.state_dict[CAT_SHOTS] = [{
         "id": "sh1", "title": "S01", "desc": "镜" * 500,
-        "roughDesc": "粗" * 50, "sceneRefs": ["主角"],
+        "roughDesc": "粗" * 50, "shotRefs": ["主角"],
         "drafts": [],
     }]
     parsed = json.loads(build_agent_context(svc.state_dict, "bound"))

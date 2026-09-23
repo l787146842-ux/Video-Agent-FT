@@ -97,7 +97,7 @@ export async function generateVideo(): Promise<void> {
   const duration = parseInt(draft.duration || '5s', 10) || 5;
   const aspectRatio = draft.videoAspectRatio || draft.aspectRatio || '16:9';
   // @引用解析（C3）：参考素材对齐 Seedance 2.5 能力（图30/视频10/音频10，共50）；
-  // 后端会再自动补充分镜 sceneRefs 元素图与音色参考音频（去重）
+  // 后端会再自动补充分镜 shotRefs 元素图与音色参考音频（去重）
   const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], VIDEO_GEN_LIMITS.total);
   const imageRefs: Array<{ url: string; role: string }> = [];
   const videoRefs: Array<{ url: string; role: string }> = [];

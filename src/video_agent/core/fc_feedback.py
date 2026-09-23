@@ -494,6 +494,16 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         return "素材分析已完成"
     if name == "storyboard_create_group":
         return "故事板已更新"
+    if name == "storyboard_patch_group":
+        # 2026-09-23 批12（事故 4444/C-1）：批10 新增改分组工具后漏登记本表，
+        # FC 轨动作日志回落成通用兜底句「执行工具 storyboard_patch_group」，
+        # 而其它故事板工具都是成果语（同文件既有口径）。改分组是**增量动作**，
+        # 故用「引用已更新」而非笼统的「故事板已更新」——让用户看得出改了什么。
+        _fields = sorted((args.get("patch") or {}).keys()) if isinstance(
+            args.get("patch"), dict) else []
+        if _fields:
+            return f"故事板引用已更新（{'/'.join(_fields[:3])}）"
+        return "故事板引用已更新"
     if name == "storyboard_patch_draft":
         return f"更新草稿「{label or draft_id or '当前草稿'}」"
     if name == "storyboard_add_draft":

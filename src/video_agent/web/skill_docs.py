@@ -210,7 +210,7 @@ description: 用户上传剧本/故事文档以生成视频；关键阶段暂停
 1. 剧本正文不会自动注入上下文：先用 read_uploaded_doc 读取剧本全文；
    若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守；
    然后分析素材 → document_write(制片规格.md) → workflow_pause
-2. 规划故事板：storyboard_create_group keyElement(只写 title+desc) + storyboard_create_group shot(只写 title+sceneRefs+duration，完整镜头格式写在 desc)
+2. 规划故事板：storyboard_create_group keyElement(只写 title+desc) + storyboard_create_group shot(只写 title+shotRefs+duration，完整镜头格式写在 desc)
    此阶段不写详细提示词 → workflow_pause "故事板已建立，请审阅"
 
 ### 第二段：提示词草案
@@ -219,7 +219,7 @@ description: 用户上传剧本/故事文档以生成视频；关键阶段暂停
 
 ### 第三段：生成（用户明确发起）
 5. 用户说"生成概念图" → image_generate(target="all_keyElements")
-6. 用户说"生成关键帧" → image_generate(target="all_shots")，自动注入 sceneRefs 参考图
+6. 用户说"生成关键帧" → image_generate(target="all_shots")，自动注入 shotRefs 参考图
 
 ### 【铁律】
 - 规划阶段不写详细提示词，只建结构

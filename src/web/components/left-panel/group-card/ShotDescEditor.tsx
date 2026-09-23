@@ -5,16 +5,16 @@ import { usePromptMention } from '@/hooks/use-prompt-mention';
 import { PromptMentionPopup } from '@/components/middle-panel/PromptMentionPopup';
 import { promptEditorKeyDown } from '@/components/middle-panel/prompt-editor-keys';
 import {
-  descChipNames, renderDescToDOM, serializeDescDOM, syncSceneRefsAfterEdit,
+  descChipNames, renderDescToDOM, serializeDescDOM, syncShotRefsAfterEdit,
 } from '@/lib/desc-ref-utils';
 import type { ShotGroup } from '@/types';
 
 /**
  * 分镜正文编辑器（对齐 Flova）：
- * - 读态：默认折叠两行，正文中本镜 sceneRefs 提及的关键元素渲染为内联块
- *   （块 = sceneRefs 在正文中的视图；点块跳转该元素）；单击展开/收起；
+ * - 读态：默认折叠两行，正文中本镜 shotRefs 提及的关键元素渲染为内联块
+ *   （块 = shotRefs 在正文中的视图；点块跳转该元素）；单击展开/收起；
  * - 编辑态：双击进入（contenteditable 蓝框），块带 × 可删，打 @ 弹关键元素
- *   面板插回；失焦保存（desc 序列化回纯文本、sceneRefs 按「旧 − 正文已消失
+ *   面板插回；失焦保存（desc 序列化回纯文本、shotRefs 按「旧 − 正文已消失
  *   提及 + @ 插入」同步），Esc 放弃。存储格式不变（desc 纯文本）。
  */
 export function ShotDescEditor(props: { group: ShotGroup }) {
@@ -22,7 +22,7 @@ export function ShotDescEditor(props: { group: ShotGroup }) {
   const [editing, setEditing] = createSignal(false);
   let bodyRef: HTMLParagraphElement | undefined;
   let editRef: HTMLDivElement | undefined;
-  /** 本次编辑经 @ 插入的标题（保存时同步 sceneRefs 用） */
+  /** 本次编辑经 @ 插入的标题（保存时同步 shotRefs 用） */
   let insertedTitles: string[] = [];
   /** 单击展开/收起的延迟计时器：双击时取消，避免第一击先切展开导致布局抖动、dblclick 配对失败 */
   let clickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -30,7 +30,7 @@ export function ShotDescEditor(props: { group: ShotGroup }) {
   const desc = () => props.group.desc || '';
   const names = () => descChipNames(props.group, state.keyElements);
 
-  /* 读态正文：desc / sceneRefs / 关键元素变化时重渲内联块 */
+  /* 读态正文：desc / shotRefs / 关键元素变化时重渲内联块 */
   createEffect(() => {
     if (editing() || !bodyRef) return;
     renderDescToDOM(bodyRef, desc(), names(), state.keyElements, false);
@@ -69,17 +69,17 @@ export function ShotDescEditor(props: { group: ShotGroup }) {
     syncPrompt: () => {},
   });
 
-  /** 失焦保存：desc 序列化回纯文本；sceneRefs 按事件同步（无增删不写库） */
+  /** 失焦保存：desc 序列化回纯文本；shotRefs 按事件同步（无增删不写库） */
   function commit() {
     mention.closeMention();
     if (!editRef) { setEditing(false); return; }
     const text = serializeDescDOM(editRef);
-    const prevRefs = (props.group.sceneRefs || []).map(String);
-    const nextRefs = syncSceneRefsAfterEdit(prevRefs, text, insertedTitles, state.keyElements);
+    const prevRefs = (props.group.shotRefs || []).map(String);
+    const nextRefs = syncShotRefsAfterEdit(prevRefs, text, insertedTitles, state.keyElements);
     if (text !== desc()) {
       studioActions.renameGroupLocal('shot', props.group.id, { desc: text });
     }
-    if (nextRefs) studioActions.setSceneRefsLocal(props.group.id, nextRefs);
+    if (nextRefs) studioActions.setShotRefsLocal(props.group.id, nextRefs);
     setEditing(false);
   }
 

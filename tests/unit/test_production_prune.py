@@ -143,7 +143,7 @@ def test_stage_tools_mapping():
     # 2026-09-23 批2（Q3）：并入 delete_draft（接线既有 ops.delete_draft，
     # 给模型撤销建错卡的手段——此前建错卡无任何工具可删）。
     # 2026-09-23 批10（事故 4444/P1-1）：并入 patch_group（接线既有
-    # ops.patch_group——此前改一个 sceneRefs 只能删光整个类目再重建）。
+    # ops.patch_group——此前改一个 shotRefs 只能删光整个类目再重建）。
     assert stage_tools("storyboard_design") == frozenset(
         {"storyboard_create_group", "storyboard_delete_group",
          "storyboard_delete_draft", "storyboard_patch_group",

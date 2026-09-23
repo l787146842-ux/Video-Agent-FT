@@ -1,23 +1,23 @@
 /**
  * ShotDescEditor 交互测试（对齐 Flova 批）：
- * ① 读态：keyElements 全集提及渲染为内联块（候选源为关键元素全集，不再局限 sceneRefs）；
+ * ① 读态：keyElements 全集提及渲染为内联块（候选源为关键元素全集，不再局限 shotRefs）；
  * ② 读态点块 = 跳转该关键元素；
  * ③ 双击进编辑态（contenteditable + 块内 ×）；
- * ④ 编辑态 × 删块 + 失焦保存：desc 序列化回纯文本、sceneRefs 同步减引用；
+ * ④ 编辑态 × 删块 + 失焦保存：desc 序列化回纯文本、shotRefs 同步减引用；
  * ⑤ Esc 放弃退出（不写库）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const renameGroupLocal = vi.fn();
-const setSceneRefsLocal = vi.fn();
+const setShotRefsLocal = vi.fn();
 const jumpToElementByTitle = vi.fn();
 
 vi.mock('@/stores/studio', () => ({
   state: { keyElements: [], shots: [], audioItems: [] },
   studioActions: {
     renameGroupLocal: (...args: unknown[]) => renameGroupLocal(...args),
-    setSceneRefsLocal: (...args: unknown[]) => setSceneRefsLocal(...args),
+    setShotRefsLocal: (...args: unknown[]) => setShotRefsLocal(...args),
     jumpToElementByTitle: (...args: unknown[]) => jumpToElementByTitle(...args),
   },
 }));
@@ -26,15 +26,15 @@ import { state } from '@/stores/studio';
 import { ShotDescEditor } from '../left-panel/group-card/ShotDescEditor';
 import type { ShotGroup } from '@/types';
 
-function makeGroup(desc: string, sceneRefs: string[]): ShotGroup {
-  return { id: 'shot-1', desc, sceneRefs } as unknown as ShotGroup;
+function makeGroup(desc: string, shotRefs: string[]): ShotGroup {
+  return { id: 'shot-1', desc, shotRefs } as unknown as ShotGroup;
 }
 
 const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
   renameGroupLocal.mockClear();
-  setSceneRefsLocal.mockClear();
+  setShotRefsLocal.mockClear();
   jumpToElementByTitle.mockClear();
   state.keyElements = [
     { id: 'ke-1', title: '程心', drafts: [{ imgUrl: '/a/cx.png' }] },
@@ -44,8 +44,8 @@ beforeEach(() => {
 });
 
 describe('ShotDescEditor（分镜正文内联块与编辑）', () => {
-  it('读态：keyElements 全集提及成块（不再局限 sceneRefs）', async () => {
-    // sceneRefs 仅含 ke-1，但正文提及的「曹彬」同属 keyElements 全集 → 也成块
+  it('读态：keyElements 全集提及成块（不再局限 shotRefs）', async () => {
+    // shotRefs 仅含 ke-1，但正文提及的「曹彬」同属 keyElements 全集 → 也成块
     const { container } = render(() => (
       <ShotDescEditor group={makeGroup('程心 与曹彬对峙', ['ke-1'])} />
     ));
@@ -106,7 +106,7 @@ describe('ShotDescEditor（分镜正文内联块与编辑）', () => {
     expect(body.className).not.toContain('sb-design-body--collapsed');
   });
 
-  it('编辑态 × 删块 + 失焦保存：desc 回纯文本、sceneRefs 同步减引用', async () => {
+  it('编辑态 × 删块 + 失焦保存：desc 回纯文本、shotRefs 同步减引用', async () => {
     const { container } = render(() => (
       <ShotDescEditor group={makeGroup('程心 与 AA 苏醒', ['ke-1', 'ke-2'])} />
     ));
@@ -119,7 +119,7 @@ describe('ShotDescEditor（分镜正文内联块与编辑）', () => {
     fireEvent.blur(editor);
     await tick(220);
     expect(renameGroupLocal).toHaveBeenCalledWith('shot', 'shot-1', { desc: ' 与 AA 苏醒' });
-    expect(setSceneRefsLocal).toHaveBeenCalledWith('shot-1', ['ke-2']);
+    expect(setShotRefsLocal).toHaveBeenCalledWith('shot-1', ['ke-2']);
   });
 
   it('Esc 放弃退出：不写库', async () => {
@@ -134,6 +134,6 @@ describe('ShotDescEditor（分镜正文内联块与编辑）', () => {
     await tick(220);
     expect(container.querySelector('.sb-design-body--editing')).toBeNull();
     expect(renameGroupLocal).not.toHaveBeenCalled();
-    expect(setSceneRefsLocal).not.toHaveBeenCalled();
+    expect(setShotRefsLocal).not.toHaveBeenCalled();
   });
 });

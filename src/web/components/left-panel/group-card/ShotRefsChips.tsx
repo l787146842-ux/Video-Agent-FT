@@ -5,15 +5,15 @@ import { normalizeDisplayTitle } from '@/lib/desc-ref-utils';
 import type { ShotGroup } from '@/types';
 
 /**
- * 场景引用 chips（仅分镜组）。
+ * 引用 chips（仅分镜组）。
  * 点击跳转；× 删除与 + 添加（为 LLM 写提示词提供依据，
  * 并决定出图/出视频时自动挂哪些元素概念图）。
  */
-export function SceneRefsChips(props: { group: ShotGroup }) {
-  const sceneRefs = () => props.group.sceneRefs || [];
+export function ShotRefsChips(props: { group: ShotGroup }) {
+  const shotRefs = () => props.group.shotRefs || [];
   const [refPickerOpen, setRefPickerOpen] = createSignal(false);
 
-  /** sceneRefs 存储的是关键元素 id（ke-xxx）或标题；展示时解析为元素标题
+  /** shotRefs 存储的是关键元素 id（ke-xxx）或标题；展示时解析为元素标题
    * （解析不到才显示原值），再经显示层归一单一事实源 normalizeDisplayTitle
    * （K7 批收敛，与 GroupHeader/desc chips 同口径）。 */
   const rawResolve = (ref: string) => {
@@ -22,12 +22,12 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
   };
   const refLabel = (ref: string) => normalizeDisplayTitle(rawResolve(ref));
 
-  /** flova 对齐批（2026-09-17）：显示层兜底去重——存量 sceneRefs 同元素裸名与
+  /** flova 对齐批（2026-09-17）：显示层兜底去重——存量 shotRefs 同元素裸名与
    *  Element_ 双份（K4 三源合并历史数据）按解析标签去重保序留首；
    *  写口去重已在后端同步落地，新数据不再产双份。 */
   const visibleRefs = () => {
     const seen = new Set<string>();
-    return sceneRefs().filter((r) => {
+    return shotRefs().filter((r) => {
       const label = refLabel(String(r));
       if (seen.has(label)) return false;
       seen.add(label);
@@ -37,21 +37,21 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
 
   /** 尚未引用的关键元素标题（添加候选；按原始标题去重，不受显示归一影响） */
   const availableElements = () => {
-    const have = new Set(sceneRefs().map((r) => rawResolve(String(r))));
+    const have = new Set(shotRefs().map((r) => rawResolve(String(r))));
     return state.keyElements
       .map((k) => k.title)
       .filter((t): t is string => !!t && !have.has(t));
   };
 
-  function removeSceneRef(ref: string) {
-    studioActions.setSceneRefsLocal(
+  function removeShotRef(ref: string) {
+    studioActions.setShotRefsLocal(
       props.group.id,
-      sceneRefs().filter((r) => String(r) !== ref).map(String),
+      shotRefs().filter((r) => String(r) !== ref).map(String),
     );
   }
 
-  function addSceneRef(title: string) {
-    studioActions.setSceneRefsLocal(props.group.id, [...sceneRefs().map(String), title]);
+  function addShotRef(title: string) {
+    studioActions.setShotRefsLocal(props.group.id, [...shotRefs().map(String), title]);
     setRefPickerOpen(false);
   }
 
@@ -60,7 +60,7 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
     if (!refPickerOpen()) return;
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && el.closest('.scene-ref-add-wrap')) return;
+      if (el && el.closest('.shot-ref-add-wrap')) return;
       setRefPickerOpen(false);
     };
     document.addEventListener('pointerdown', onDown, true);
@@ -68,15 +68,15 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
   });
 
   return (
-    <div class="scene-refs">
+    <div class="shot-refs">
       <Show when={visibleRefs().length > 0}>
-        <span class="scene-refs-label">场景:</span>
+        <span class="shot-refs-label">引用:</span>
         <For each={visibleRefs()}>
           {(ref) => (
-            <span class="scene-ref-chip scene-ref-editable">
+            <span class="shot-ref-chip shot-ref-editable">
               <button
                 type="button"
-                class="scene-ref-jump"
+                class="shot-ref-jump"
                 title="点击跳转到该关键元素"
                 onClick={() => studioActions.jumpToElementByTitle(String(ref))}
               >
@@ -84,9 +84,9 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
               </button>
               <button
                 type="button"
-                class="scene-ref-remove"
-                title="移除场景引用（出视频时不再自动挂该元素概念图）"
-                onClick={() => removeSceneRef(String(ref))}
+                class="shot-ref-remove"
+                title="移除引用（出视频时不再自动挂该元素概念图）"
+                onClick={() => removeShotRef(String(ref))}
               >
                 <FiX size={10} />
               </button>
@@ -94,23 +94,23 @@ export function SceneRefsChips(props: { group: ShotGroup }) {
           )}
         </For>
       </Show>
-      <span class="scene-ref-add-wrap">
+      <span class="shot-ref-add-wrap">
         <button
           type="button"
-          class="scene-ref-chip scene-ref-add"
-          title="添加场景引用（本镜头出场的关键元素）"
+          class="shot-ref-chip shot-ref-add"
+          title="添加引用（本镜头出场的关键元素）"
           onClick={() => setRefPickerOpen((v) => !v)}
         >
           <FiPlus size={10} /> 添加
         </button>
         <Show when={refPickerOpen()}>
-          <div class="scene-ref-picker">
+          <div class="shot-ref-picker">
             <Show when={availableElements().length} fallback={
-              <div class="scene-ref-picker-empty">没有可添加的关键元素</div>
+              <div class="shot-ref-picker-empty">没有可添加的关键元素</div>
             }>
               <For each={availableElements()}>
                 {(t) => (
-                  <button type="button" class="scene-ref-picker-item" onClick={() => addSceneRef(t)}>
+                  <button type="button" class="shot-ref-picker-item" onClick={() => addShotRef(t)}>
                     {t}
                   </button>
                 )}

@@ -69,7 +69,7 @@ async def generate_video(body: VideoGenRequest):
         result=None,
     )
 
-    # --- 参考素材汇总：显式传入 + 分镜自动挂接（sceneRefs 元素图 + 音色参考音频）---
+    # --- 参考素材汇总：显式传入 + 分镜自动挂接（shotRefs 元素图 + 音色参考音频）---
     image_refs: List[Dict[str, str]] = [
         {"url": i.get("url", ""), "role": i.get("role", "reference")}
         for i in body.images if i.get("url")

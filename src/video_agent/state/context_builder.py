@@ -131,7 +131,7 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
                 # flova 对齐批（2026-09-17）：summary（镜头结构摘要徽标）入状态——
                 # 模型每轮看见自己的写入侧承诺，跨轮维持 desc 与徽标自洽
                 "summary": g.get("summary", ""),
-                "sceneRefs": g.get("sceneRefs", []),
+                "shotRefs": g.get("shotRefs", []),
                 # R4/K3 批（2026-09-16 对齐 flova）：desc=分镜正文唯一载体入状态——
                 # 故事板翻回主代理亲做后，每轮看见先前分镜正文是合规自检前提；
                 # 2026-09-17 裁决（desc 不限字数）：A 档全文注入不截断，
@@ -259,7 +259,7 @@ def _full_scope_group(raw_group: Dict[str, Any], gi: int) -> Dict[str, Any]:
     group.update({
         "id": raw_group.get("id", ""),
         "index": gi + 1,
-        "sceneRefs": raw_group.get("sceneRefs", []) or [],
+        "shotRefs": raw_group.get("shotRefs", []) or [],
         "drafts": drafts,
     })
     return group

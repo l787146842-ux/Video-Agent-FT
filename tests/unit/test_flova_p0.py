@@ -32,7 +32,7 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
         title="Shot_太空艇与宇航员坍缩",
         desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
         summary="长镜头含内部剪辑（约10s）",
-        scene_refs=["Element_监视太空艇", "Element_二维空间平面"],
+        shot_refs=["Element_监视太空艇", "Element_二维空间平面"],
         duration="10s",
         draft={"label": "分镜卡片", "prompt": "p"},
     ))
@@ -40,7 +40,7 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
     shot = svc.state_dict["shots"][-1]
     # shotType 已退役（2026-09-14）：多内切镜格式唯一载体 = desc，不再有单值镜头语言字段
     assert "shotType" not in shot
-    assert shot["sceneRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
+    assert shot["shotRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
     assert "0-4s" in shot["desc"]
     assert shot["duration"] == "10s"
     # flova 对齐批（2026-09-17）：summary 落库（标题旁徽标载体）
@@ -50,11 +50,11 @@ async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
 def test_update_group_shot_fields(svc):
     shot = svc.state_dict["shots"][0]
     changed, dropped = ops.patch_group(
-        shot, {"shotType": "特写", "sceneRefs": ["Element_A"]})
+        shot, {"shotType": "特写", "shotRefs": ["Element_A"]})
     assert changed
     # shotType 不在 group patch 白名单 → 被丢弃（镜头语言唯一载体 = desc）
     assert "shotType" in dropped
-    assert svc.state_dict["shots"][0]["sceneRefs"] == ["Element_A"]
+    assert svc.state_dict["shots"][0]["shotRefs"] == ["Element_A"]
 
 
 # ---------- flova 对齐批（2026-09-17 裁决）：summary 写闸 + canonical 去重 ----------
@@ -71,7 +71,7 @@ async def test_shot_create_without_summary_rejected(svc, monkeypatch):
     r = await StoryboardCreateGroupTool().aexecute(CreateGroupInput(
         group_type="shot",
         title="太空艇与宇航员坍缩",
-        scene_refs=["Element_监视太空艇"],
+        shot_refs=["Element_监视太空艇"],
         duration="10s",
         desc="起初(0-4s)：中景…",
     ))
@@ -82,7 +82,7 @@ async def test_shot_create_without_summary_rejected(svc, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_scene_refs_canonical_dedup_on_create(svc, monkeypatch):
+async def test_shot_refs_canonical_dedup_on_create(svc, monkeypatch):
     """三源合并 canonical 去重：同元素裸名与 Element_ 形态算同一引用，保序留首。"""
     from src.video_agent.tools.storyboard_tools import (
         CreateGroupInput, StoryboardCreateGroupTool,
@@ -93,20 +93,20 @@ async def test_scene_refs_canonical_dedup_on_create(svc, monkeypatch):
         title="追击",
         desc="程心 追击。",
         summary="含内部剪辑（约10s）",
-        scene_refs=["程心", "Element_程心"],
+        shot_refs=["程心", "Element_程心"],
     ))
     assert r.success, r.error
-    assert svc.state_dict["shots"][-1]["sceneRefs"] == ["程心"]
+    assert svc.state_dict["shots"][-1]["shotRefs"] == ["程心"]
 
 
-def test_patch_summary_allowed_and_scene_refs_dedup(svc):
+def test_patch_summary_allowed_and_shot_refs_dedup(svc):
     shot = svc.state_dict["shots"][0]
     changed, dropped = ops.patch_group(
         shot, {"summary": "含3个内切镜头（约18s）",
-               "sceneRefs": ["程心", "Element_程心"]})
+               "shotRefs": ["程心", "Element_程心"]})
     assert changed and not dropped
     assert shot["summary"] == "含3个内切镜头（约18s）"
-    assert shot["sceneRefs"] == ["程心"]
+    assert shot["shotRefs"] == ["程心"]
 
 
 def test_delete_draft(svc):

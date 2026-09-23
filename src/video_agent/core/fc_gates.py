@@ -271,7 +271,7 @@ def structure_integrity_gate(
 ) -> Optional[str]:
     """建组结构完整性闸（两条机械校验的通用工具级下沉，逐条同语义）：
     ① 无标题 add_group 拒收（防整批分组全落默认标题）；
-    ② 分镜 sceneRefs 完整度（非空且覆盖标题提及的关键元素）。
+    ② 分镜 shotRefs 完整度（非空且覆盖标题提及的关键元素）。
     仅 strict 模式启用；返回非 None = 硬拒绝（错误文案回喂模型重写）。"""
     if name != "storyboard_create_group":
         return None
@@ -286,12 +286,26 @@ def structure_integrity_gate(
             "storyboard_create_group 被拒收：未携带非空 title。"
             "分组标题是后续去重/引用的唯一锚点，请携带明确标题后重试。"
         )
-    # ② 分镜 sceneRefs 完整度：非空且覆盖标题提及的关键元素
-    # （标题点名的角色漏引 = 跨镜一致性断链；refs 兼容 id/标题两种写法，
-    # 与 prompt_gates.shot_refs_missing_element 同口径）
+    # ② 分镜 shotRefs 完整度：非空且覆盖标题提及的关键元素
+    # （标题点名的角色漏引 = 跨镜一致性断链）
+    #
+    # 2026-09-23 批12（事故 4444/B-1 + B-2）：本段两半判定原先都坏——
+    #   B-1 **只看显式入参**：`args.get("shot_refs")` 为空即拒，**不看 desc**。
+    #       而工具对模型的文档承诺是「留空时系统自动从描述里的 [元素名] 令牌
+    #       与裸名提及解析合并」，写口也真的这么做 ⇒ 模型按文档留空 = 被误杀。
+    #       4444 实证：前 5 次留空全被拒，此后 22 次被逼显式重抄（教模型放弃正确行为）。
+    #   B-2 **判定式恒空转**：拿带前缀的 KE 标题（`Element_程心`）去比不带前缀的
+    #       镜头标题（`程心…`）⇒ `t in title` 永远 False，`missing` 恒为空。
+    #       4444 实证：全部镜头标题命中数 = 0。
+    # ⇒ 修法（同源，不新造第二套实现）：
+    #   ① 引用集合改走 **写口同一实现** `ops.merge_shot_refs`（三源合并 + canonical 去重）
+    #      —— 闸机判的就是**该镜头真实会落库的那个引用集合**；
+    #   ② 标题覆盖比对改用 canonical（`strip_type_prefix`），与 P0-A 同口径。
     if kind == "shot":
-        refs = [str(r) for r in (args.get("scene_refs") or [])
-                if str(r).strip()]
+        refs = ops.merge_shot_refs(
+            ctx.state(), str(args.get("desc") or ""), args.get("shot_refs"))
+        # canonical 比对（裸名与 Element_ 前缀算同一引用）
+        ref_keys = {ops.strip_type_prefix(str(r)) for r in refs}
         ke_map = [
             (str(k.get("title") or "").strip(), str(k.get("id") or ""))
             for k in (ctx.state().get(CAT_KEY_ELEMENTS) or [])
@@ -299,17 +313,22 @@ def structure_integrity_gate(
         ]
         missing = [
             t for t, kid in ke_map
-            if t and t in title
-            and kid not in refs and t not in refs
+            if t
+            and ops.strip_type_prefix(t) in ops.strip_type_prefix(title)
+            and kid not in refs
+            and ops.strip_type_prefix(t) not in ref_keys
         ]
         if not refs or missing:
             detail = (
-                "sceneRefs 为空" if not refs
-                else f"标题提及的 {'、'.join(missing[:3])} 未被引用"
+                "引用为空" if not refs
+                # 回喂用**裸名**（strip_type_prefix）——内部容器前缀对模型无意义，
+                # 且模型在标题/desc 里写的本来就是裸名
+                else f"标题提及的 {'、'.join(ops.strip_type_prefix(t) for t in missing[:3])} 未被引用"
             )
             return (
                 f"storyboard_create_group 被拒收：分镜「{title[:12]}」{detail}。"
-                "sceneRefs 须非空并覆盖标题提及的角色/场景（关键元素 id 或标题），"
+                "引用须非空并覆盖标题提及的角色/场景（关键元素 id 或标题，"
+                "或写进 desc 的 [元素名] 令牌由系统自动解析）。"
                 "请补全引用后重试。"
             )
     return None

@@ -885,7 +885,7 @@ class ImageGenerateTool(BaseTool):
         # 与手动/批量生图行为一致；全部提交后再逐个等结果（任务是并发的）
         submitted: List[tuple] = []  # (draft, task_id)
         for group, draft, dtype in targets:
-            refs = ops.resolve_scene_refs(state, group) if group else []
+            refs = ops.resolve_shot_refs(state, group) if group else []
             eff_resolution = (
                 spec_image_res or str(draft.get("imageResolution") or "")
                 or settings.default_image_resolution or "1K"

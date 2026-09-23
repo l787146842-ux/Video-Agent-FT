@@ -48,7 +48,7 @@ export interface StudioState {
   lastAppliedAt: number;
   /** 预览框导航按钮触发左面板定位的计数（驱动滚动到选中卡片并闪烁） */
   locateTick: number;
-  /** 定位目标分组 ID（分镜 sceneRefs 点击跳转用；无草稿卡可选时按分组定位） */
+  /** 定位目标分组 ID（分镜 shotRefs 点击跳转用；无草稿卡可选时按分组定位） */
   locateGroupId: string;
   /** 选中操作单调序号：每次 selectDraft/selectAsset 自增。
    * findDraftRecord 响应式读取它，保证"重复点击同一张卡"也能强制所有预览派生重算，

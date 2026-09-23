@@ -351,7 +351,7 @@ export interface GroupPatch {
   roughDesc?: string | undefined;
   duration?: string | undefined;
   timeRange?: string | undefined;
-  sceneRefs?: string[] | undefined;
+  shotRefs?: string[] | undefined;
   prompt?: string | undefined;
 }
 

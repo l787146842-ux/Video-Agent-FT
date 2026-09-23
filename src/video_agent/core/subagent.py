@@ -127,7 +127,7 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
     "storyboard_design": frozenset(
         {"storyboard_create_group", "storyboard_delete_group",
          "storyboard_delete_draft",
-         # 2026-09-23 批10（事故 4444/P1-1）：改分组工具——模型补 sceneRefs
+         # 2026-09-23 批10（事故 4444/P1-1）：改分组工具——模型补 shotRefs
          # 不再需要「删光整类目再重建」（4444 为此删 22 建 22、耗时 261.6s）
          "storyboard_patch_group",
          "storyboard_add_draft", "storyboard_patch_draft"}),

@@ -3,7 +3,7 @@ import { FiPlus } from 'solid-icons/fi';
 import { studioActions } from '@/stores/studio';
 import { DraftCard } from './DraftCard';
 import { GroupHeader } from './group-card/GroupHeader';
-import { SceneRefsChips } from './group-card/SceneRefsChips';
+import { ShotRefsChips } from './group-card/ShotRefsChips';
 import { GroupDescEditor } from './group-card/GroupDescEditor';
 import { GroupAdjustBox } from './group-card/GroupAdjustBox';
 import { ShotDescEditor } from './group-card/ShotDescEditor';
@@ -13,9 +13,9 @@ import type {
 
 /**
  * 单个故事板分组卡片
- * 按类型渲染：关键元素（蓝）/ 分镜（紫，含场景引用 chips）/ 音频（绿）
+ * 按类型渲染：关键元素（蓝）/ 分镜（紫，含引用 chips）/ 音频（绿）
  * 支持分组级拖拽排序（drag 事件由 StoryboardView 协调）。
- * 分组头/场景引用/描述编辑/微调行位于 group-card/ 子组件。
+ * 分组头/引用/描述编辑/微调行位于 group-card/ 子组件。
  */
 export function GroupCard(props: {
   group: AnyGroup;
@@ -67,7 +67,7 @@ export function GroupCard(props: {
     const el = t as HTMLElement | null;
     if (!el || typeof el.closest !== 'function') return false;
     // 文字/徽标/按钮/卡片/输入框等交互与内容区域不可拖（用于选中复制与各自交互）
-    if (el.closest('input, textarea, button, a, select, video, audio, img, .sb-title, .sb-desc, .sb-badge-wrap, .sb-index, .draft-card-col, .scene-refs, .sb-design, .card-adjust-box')) return false;
+    if (el.closest('input, textarea, button, a, select, video, audio, img, .sb-title, .sb-desc, .sb-badge-wrap, .sb-index, .draft-card-col, .shot-refs, .sb-design, .card-adjust-box')) return false;
     // 已有选中文字时优先复制
     const sel = window.getSelection();
     if (sel && sel.type === 'Range') return false;
@@ -162,9 +162,9 @@ export function GroupCard(props: {
         onSaveSummary={(v) => studioActions.renameGroupLocal('shot', props.group.id, { summary: v } as never)}
       />
 
-      {/* 场景引用 chips（仅分镜）：子组件承载跳转/删除/添加（C4） */}
+      {/* 引用 chips（仅分镜）：子组件承载跳转/删除/添加（C4） */}
       <Show when={props.type === 'shot'}>
-        <SceneRefsChips group={props.group as ShotGroup} />
+        <ShotRefsChips group={props.group as ShotGroup} />
       </Show>
 
       {/* 描述（双击编辑）——分镜不显 roughDesc 简介行，完整分镜走下方 ShotDesignBlock */}

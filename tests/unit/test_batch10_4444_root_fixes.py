@@ -9,7 +9,7 @@
 
 | # | 事故编号 | 缺陷 | 本文件对应 |
 |---|---|---|---|
-| P0-A | 4444/P0-A | sceneRefs 引用链**写口 canonical / 读口逐字**，恒不命中 | `TestSceneRefsCanonicalResolution` |
+| P0-A | 4444/P0-A | shotRefs 引用链**写口 canonical / 读口逐字**，恒不命中 | `TestShotRefsCanonicalResolution` |
 | P0-B | 4444/P0-B | 下发 schema 丢 `$defs` → `$ref` 悬空，条目字段名到不了模型 | `TestToolSchemaRefInlining` |
 | P1-1 | 4444/P1-1 | 无「改分组」工具 → 改一个引用要删光重建整类目 | `TestPatchGroupTool` |
 | P1-3 | 4444/P1-3 | 失败计数按**工具名**累计，同批第 N 个成员被冤枉「已失败 2 次」 | `TestPerCallFailureCounter` |
@@ -53,17 +53,17 @@ def svc(tmp_path):
 
 
 # =====================================================================
-# P0-A · sceneRefs 引用链 canonical 解析
+# P0-A · shotRefs 引用链 canonical 解析
 # =====================================================================
-class TestSceneRefsCanonicalResolution:
+class TestShotRefsCanonicalResolution:
     """4444/P0-A：**写口 canonical、读口逐字**的口径漂移。
 
     病灶：落盘组标题带容器前缀（`Element_程心`，写口 `normalize_group_title`
-    幂等补），而 `sceneRefs` 存**裸名**（`程心`，写口 `dedup_scene_refs` 明写
+    幂等补），而 `shotRefs` 存**裸名**（`程心`，写口 `dedup_shot_refs` 明写
     「裸名与 Element_ 前缀算同一引用」）。读口旧实现却是
     `if id != ref and title != ref: continue` —— 逐字比对 ⇒ **恒不命中**。
 
-    实跑取证（4444 真实 state 复算）：22 镜 90 条 sceneRefs → `image_refs`
+    实跑取证（4444 真实 state 复算）：22 镜 90 条 shotRefs → `image_refs`
     **0**、`audio_refs` **0**；改 canonical 键复算 → **90/90 命中**。
 
     同源失配在 `core/prompt_refs.py`（批3 R3）**已修过**，判词逐字：
@@ -94,38 +94,38 @@ class TestSceneRefsCanonicalResolution:
 
     def test_bare_name_hits_image_ref(self, state):
         """裸名（真实落盘形态）必须命中 —— 这条就是 4444 恒 0 的那条。"""
-        shot = {"id": "s1", "sceneRefs": ["程心"]}
-        refs = ops.resolve_scene_refs(state, shot)
+        shot = {"id": "s1", "shotRefs": ["程心"]}
+        refs = ops.resolve_shot_refs(state, shot)
         assert [r["url"] for r in refs] == ["http://img/cx.png"], (
-            "裸名 sceneRefs 未命中关键元素图 —— 引用链退回逐字比对")
+            "裸名 shotRefs 未命中关键元素图 —— 引用链退回逐字比对")
 
     def test_prefixed_name_still_hits(self, state):
         """带前缀写法向后兼容（存量数据与既有测试口径不翻）。"""
-        shot = {"id": "s2", "sceneRefs": ["Element_程心"]}
-        assert len(ops.resolve_scene_refs(state, shot)) == 1
+        shot = {"id": "s2", "shotRefs": ["Element_程心"]}
+        assert len(ops.resolve_shot_refs(state, shot)) == 1
 
     def test_group_id_still_hits(self, state):
         """组 id 写法同口径兼容（旧注释声称支持，实测同样失效）。"""
-        shot = {"id": "s3", "sceneRefs": ["ke-chengxin"]}
-        assert len(ops.resolve_scene_refs(state, shot)) == 1
+        shot = {"id": "s3", "shotRefs": ["ke-chengxin"]}
+        assert len(ops.resolve_shot_refs(state, shot)) == 1
 
     def test_unknown_ref_yields_nothing(self, state):
         """查无此元素不命中（不做模糊匹配，避免误挂他人参考图）。"""
-        shot = {"id": "s4", "sceneRefs": ["查无此人"]}
-        assert ops.resolve_scene_refs(state, shot) == []
+        shot = {"id": "s4", "shotRefs": ["查无此人"]}
+        assert ops.resolve_shot_refs(state, shot) == []
 
     def test_voice_anchor_resolves_for_bare_name(self, state):
         """音色锚点（reference_audio）同样按 canonical 命中（姊妹轴）。"""
-        shot = {"id": "s5", "sceneRefs": ["程心", "AA"]}
-        urls = [r["url"] for r in ops.resolve_scene_audio_refs(state, shot)]
+        shot = {"id": "s5", "shotRefs": ["程心", "AA"]}
+        urls = [r["url"] for r in ops.resolve_shot_audio_refs(state, shot)]
         assert urls == ["http://aud/cx.wav", "http://aud/aa.wav"]
 
     def test_voice_card_preferred_over_other_audio(self, state):
         """同组内若有非 voice 音源，**voice 卡优先**（音色锚点的规范载体）。"""
         state["keyElements"][0]["drafts"].append(
             {"mediaType": "audio", "audioType": "sfx", "audioUrl": "http://aud/sfx.wav"})
-        shot = {"id": "s6", "sceneRefs": ["程心"]}
-        urls = [r["url"] for r in ops.resolve_scene_audio_refs(state, shot)]
+        shot = {"id": "s6", "shotRefs": ["程心"]}
+        urls = [r["url"] for r in ops.resolve_shot_audio_refs(state, shot)]
         assert urls == ["http://aud/cx.wav"], "未优先取 voice 卡"
 
     def test_non_voice_falls_back_when_no_voice_card(self, state):
@@ -134,16 +134,16 @@ class TestSceneRefsCanonicalResolution:
             {"id": "ke-x", "title": "Element_程心",
              "drafts": [{"mediaType": "audio", "audioType": "sfx",
                          "audioUrl": "http://aud/only.wav"}]}]
-        shot = {"id": "s7", "sceneRefs": ["程心"]}
-        assert [r["url"] for r in ops.resolve_scene_audio_refs(state, shot)] == \
+        shot = {"id": "s7", "shotRefs": ["程心"]}
+        assert [r["url"] for r in ops.resolve_shot_audio_refs(state, shot)] == \
             ["http://aud/only.wav"]
 
     def test_find_ref_group_is_single_entry_point(self):
         """四处消费共用同一入口（本次事故正是四处各写一遍且全部逐字比对）。"""
         import inspect
-        src = inspect.getsource(ops.resolve_scene_refs)
+        src = inspect.getsource(ops.resolve_shot_refs)
         assert "find_ref_group" in src
-        src2 = inspect.getsource(ops.resolve_scene_audio_refs)
+        src2 = inspect.getsource(ops.resolve_shot_audio_refs)
         assert "find_ref_group" in src2
 
     def test_web_consumers_use_shared_entry_point(self):
@@ -249,7 +249,7 @@ class TestToolSchemaRefInlining:
 # =====================================================================
 class TestPatchGroupTool:
     """4444/P1-1：`ops.patch_group` 与 `PATCH /storyboard/groups/{id}` 早就存在，
-    **却从未接线成模型工具** —— 模型改一个分组的 `sceneRefs` 只能
+    **却从未接线成模型工具** —— 模型改一个分组的 `shotRefs` 只能
     「删除整组 + 重建整组」。4444 为此**删光 22 个 shot 组再重建 22 个**、
     耗时 261.6s，且重建产生**全新 group id**（中途任一批失败即留下残缺故事板）。
 
@@ -260,14 +260,14 @@ class TestPatchGroupTool:
         r = await ToolManager.invoke_tool("storyboard_create_group", {
             "group_type": "shot", "title": "程心苏醒",
             "desc": "[程心] 睁眼", "summary": "缓推（约5s）",
-            "scene_refs": list(refs)})
+            "shot_refs": list(refs)})
         assert r.success is True, r.error
         return r.data["group_id"]
 
     async def test_tool_registered(self):
         assert ToolManager.get_tool("storyboard_patch_group") is not None
 
-    async def test_patch_scene_refs_keeps_group_id_and_order(self, svc):
+    async def test_patch_shot_refs_keeps_group_id_and_order(self, svc):
         """**核心钉**：改引用后分组 **id 与顺序逐个未变**（4444 事故的反面）。
 
         删除重建会换掉全部 id（子代理自己也警告「旧 id 已删除，后续阶段
@@ -280,23 +280,23 @@ class TestPatchGroupTool:
 
         r = await ToolManager.invoke_tool("storyboard_patch_group", {
             "group_id": gid, "group_type": "shot",
-            "patch": {"sceneRefs": ["程心", "AA"]}})
+            "patch": {"shotRefs": ["程心", "AA"]}})
         assert r.success is True, r.error
         assert [g["id"] for g in svc.state_dict["shots"]] == ids_before, \
             "改引用后 group id 变了（退化成删除重建）"
         assert [g["title"] for g in svc.state_dict["shots"]] == order_before
         target = next(g for g in svc.state_dict["shots"] if g["id"] == gid)
-        assert target["sceneRefs"] == ["程心", "AA"]
+        assert target["shotRefs"] == ["程心", "AA"]
 
-    async def test_scene_refs_dedup_canonical(self, svc):
-        """sceneRefs 走 canonical 去重（裸名与带前缀算同一引用，与建组同口径）。"""
+    async def test_shot_refs_dedup_canonical(self, svc):
+        """shotRefs 走 canonical 去重（裸名与带前缀算同一引用，与建组同口径）。"""
         gid = await self._mk_shot(svc)
         r = await ToolManager.invoke_tool("storyboard_patch_group", {
             "group_id": gid, "group_type": "shot",
-            "patch": {"sceneRefs": ["程心", "Element_程心"]}})
+            "patch": {"shotRefs": ["程心", "Element_程心"]}})
         assert r.success is True, r.error
         target = next(g for g in svc.state_dict["shots"] if g["id"] == gid)
-        assert target["sceneRefs"] == ["程心"], "canonical 去重未生效"
+        assert target["shotRefs"] == ["程心"], "canonical 去重未生效"
 
     async def test_whitelist_rejection_is_atomic(self, svc):
         """白名单外字段**原子拒收**：不写入任何字段（含合法字段也不写）。"""

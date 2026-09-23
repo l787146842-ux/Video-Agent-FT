@@ -59,18 +59,18 @@ def test_iron_rules_old_priority_upgraded_in_place():
 # 管线阶段改由通用主路径直走平台工具。
 
 
-# ---------- item 7：sceneRefs ID 兼容（后端解析链路） ----------
+# ---------- item 7：shotRefs ID 兼容（后端解析链路） ----------
 
-def test_resolve_scene_refs_matches_by_id_and_title():
-    """888 现场：sceneRefs 存的是 ke-xxx ID，生视频参考图注入只认标题会全部丢失。"""
-    from src.video_agent.state.storyboard_ops import resolve_scene_refs
+def test_resolve_shot_refs_matches_by_id_and_title():
+    """888 现场：shotRefs 存的是 ke-xxx ID，生视频参考图注入只认标题会全部丢失。"""
+    from src.video_agent.state.storyboard_ops import resolve_shot_refs
 
     state = {"keyElements": [
         {"id": "ke-1", "title": "三维木星", "drafts": [{"imgUrl": "http://x/j.png"}]},
         {"id": "ke-2", "title": "程心", "drafts": [{"imgUrl": "http://x/c.png"}]},
     ]}
-    group = {"id": "shot-1", "sceneRefs": ["ke-1", "程心", "ke-404"]}
-    refs = resolve_scene_refs(state, group)
+    group = {"id": "shot-1", "shotRefs": ["ke-1", "程心", "ke-404"]}
+    refs = resolve_shot_refs(state, group)
     assert [r["url"] for r in refs] == ["http://x/j.png", "http://x/c.png"]
 
 

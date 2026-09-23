@@ -126,7 +126,7 @@ def test_video_adapter_builds_video_url_content():
     assert content[1]["video_url"]["url"] == "/workspace/assets/a.mp4"
 
 
-def test_resolve_scene_refs_limit_param(tmp_path):
+def test_resolve_shot_refs_limit_param(tmp_path):
     from src.video_agent.state import storyboard_ops as ops
     state = {
         "keyElements": [
@@ -135,9 +135,9 @@ def test_resolve_scene_refs_limit_param(tmp_path):
             for i in range(8)
         ],
     }
-    group = {"sceneRefs": [f"ke-{i}" for i in range(8)]}
-    assert len(ops.resolve_scene_refs(state, group)) == 5          # 默认保持旧上限
-    assert len(ops.resolve_scene_refs(state, group, limit=30)) == 8
+    group = {"shotRefs": [f"ke-{i}" for i in range(8)]}
+    assert len(ops.resolve_shot_refs(state, group)) == 5          # 默认保持旧上限
+    assert len(ops.resolve_shot_refs(state, group, limit=30)) == 8
 
 
 # ---------- A：任务管理器累计 model_fallback ----------

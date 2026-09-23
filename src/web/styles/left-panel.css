@@ -71,7 +71,7 @@
   .draft-card.active { border-color: var(--accent-blue); box-shadow: 0 0 8px color-mix(in srgb, var(--color-info-strong) 50%, transparent); }
   /* 预览框导航按钮定位时的闪烁高亮 */
   .draft-card.locate-flash { animation: draft-card-locate-flash 1.4s ease; }
-  /* 分组卡定位闪烁（分镜 sceneRefs 跳转，与草稿卡定位同效果） */
+  /* 分组卡定位闪烁（分镜 shotRefs 跳转，与草稿卡定位同效果） */
   .sb-group.locate-flash { animation: draft-card-locate-flash 1.4s ease; }
   @keyframes draft-card-locate-flash {
     0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--color-info-strong) 50%, transparent); }
@@ -122,24 +122,24 @@
   .card-adjust-btn:hover { background-color: var(--bg-hover); }
 
   /* 场景引用 chips */
-  .scene-refs { font-size: var(--font-2xs); color: var(--text-muted); margin: 2px 0 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-  .scene-refs-label { font-size: var(--font-xs); color: var(--text-dim); }
-  .scene-ref-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); border: 1px solid color-mix(in srgb, var(--color-info-strong) 35%, transparent); color: var(--color-info); cursor: default; transition: background 0.15s; }
-  .scene-ref-chip img { width: 20px; height: 20px; border-radius: 3px; object-fit: cover; }
+  .shot-refs { font-size: var(--font-2xs); color: var(--text-muted); margin: 2px 0 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .shot-refs-label { font-size: var(--font-xs); color: var(--text-dim); }
+  .shot-ref-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); border: 1px solid color-mix(in srgb, var(--color-info-strong) 35%, transparent); color: var(--color-info); cursor: default; transition: background 0.15s; }
+  .shot-ref-chip img { width: 20px; height: 20px; border-radius: 3px; object-fit: cover; }
 
     /* 场景引用增删（C4）：chip 内跳转按钮 + × 删除；行尾 + 添加候选弹层 */
-    .scene-ref-editable { padding-right: 3px; }
-    .scene-ref-jump { border: 0; background: transparent; color: inherit; font-size: inherit; padding: 0; cursor: pointer; }
-    .scene-ref-jump:hover { text-decoration: underline; }
-    .scene-ref-remove { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; padding: 1px; border-radius: 50%; }
-    .scene-ref-remove:hover { opacity: 1; color: var(--color-danger); }
-    .scene-ref-add { cursor: pointer; gap: 2px; opacity: 0.75; }
-    .scene-ref-add:hover { opacity: 1; background: color-mix(in srgb, var(--color-info-strong) 22%, transparent); }
-    .scene-ref-add-wrap { position: relative; display: inline-flex; }
-    .scene-ref-picker { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-floating); min-width: 160px; max-width: 240px; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); box-shadow: 0 6px 18px color-mix(in srgb, var(--color-black) 35%, transparent); }
-    .scene-ref-picker-item { border: 0; background: transparent; color: var(--text-main); font-size: var(--font-xs); text-align: left; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
-    .scene-ref-picker-item:hover { background: var(--bg-hover); color: var(--color-info); }
-    .scene-ref-picker-empty { font-size: var(--font-xs); color: var(--text-dim); padding: 5px 8px; }
+    .shot-ref-editable { padding-right: 3px; }
+    .shot-ref-jump { border: 0; background: transparent; color: inherit; font-size: inherit; padding: 0; cursor: pointer; }
+    .shot-ref-jump:hover { text-decoration: underline; }
+    .shot-ref-remove { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; padding: 1px; border-radius: 50%; }
+    .shot-ref-remove:hover { opacity: 1; color: var(--color-danger); }
+    .shot-ref-add { cursor: pointer; gap: 2px; opacity: 0.75; }
+    .shot-ref-add:hover { opacity: 1; background: color-mix(in srgb, var(--color-info-strong) 22%, transparent); }
+    .shot-ref-add-wrap { position: relative; display: inline-flex; }
+    .shot-ref-picker { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-floating); min-width: 160px; max-width: 240px; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); box-shadow: 0 6px 18px color-mix(in srgb, var(--color-black) 35%, transparent); }
+    .shot-ref-picker-item { border: 0; background: transparent; color: var(--text-main); font-size: var(--font-xs); text-align: left; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+    .shot-ref-picker-item:hover { background: var(--bg-hover); color: var(--color-info); }
+    .shot-ref-picker-empty { font-size: var(--font-xs); color: var(--text-dim); padding: 5px 8px; }
 
   /* 未归类素材 */
   .uncategorized-view { display: flex; flex-direction: column; gap: 12px; }

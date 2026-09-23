@@ -96,7 +96,7 @@ class ShotGroup(BaseModel):
     duration: str = ""
     rough_desc: str = Field(alias="roughDesc", default="")
     camera_movement: str = Field(alias="cameraMovement", default="static")
-    scene_refs: List[str] = Field(alias="sceneRefs", default_factory=list)
+    shot_refs: List[str] = Field(alias="shotRefs", default_factory=list)
     transition: str = "cut"
     audio_cue: str = Field(alias="audioCue", default="")
     time_range: str = Field(alias="timeRange", default="")
@@ -137,7 +137,7 @@ class StoryGroup(BaseModel):
     time_range: str = Field(alias="timeRange", default="")
     transition: str = "cut"
     audio_cue: str = Field(alias="audioCue", default="")
-    scene_refs: List[str] = Field(alias="sceneRefs", default_factory=list)
+    shot_refs: List[str] = Field(alias="shotRefs", default_factory=list)
     # 生成配置
     generation_config: Dict[str, Any] = Field(alias="generationConfig", default_factory=dict)
     # 草稿列表
@@ -231,7 +231,7 @@ class ProjectState(BaseModel):
                 id=g.group_id, groupType="shot", title=g.title,
                 cameraMovement=g.camera_movement,
                 roughDesc=g.rough_desc, duration=g.duration,
-                sceneRefs=g.scene_refs, transition=g.transition,
+                shotRefs=g.shot_refs, transition=g.transition,
                 audioCue=g.audio_cue, timeRange=g.time_range,
                 generationConfig=g.generation_config,
                 status=g.status, linkedSceneId=g.linked_scene_id,

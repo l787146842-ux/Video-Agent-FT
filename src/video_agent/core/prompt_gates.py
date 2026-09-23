@@ -87,11 +87,11 @@ def has_voice_reference(raw_state: Dict[str, Any]) -> bool:
     音色卡（Skill 明文的 `key_element_audio`）的规范归属 = 挂在角色**自己的
     keyElements 组内**（`mediaType=audio` + `audioType=voice`）——
     见 `storyboard_ops.CATEGORY_MEDIA_MATRIX` 的 keyElement 行「可放音频」、
-    `resolve_scene_audio_refs`、前端 `isVoiceCard`（`type==='keyElement' &&
+    `resolve_shot_audio_refs`、前端 `isVoiceCard`（`type==='keyElement' &&
     mediaType==='audio'`）与 `CHANGELOG` 2026-09-21 批4 用户裁决。
     旧实现**只扫 `audioItems`**，与契约恰好相反：契约一旦被遵守，
     本条软提醒会静默失效（探测源与归属契约反向漂移）。
-    两个类目同扫 = 与 `resolve_scene_audio_refs` 的 voice 优先口径一致。
+    两个类目同扫 = 与 `resolve_shot_audio_refs` 的 voice 优先口径一致。
     """
     for cat in (CAT_KEY_ELEMENTS, CAT_AUDIO_ITEMS):
         for g in raw_state.get(cat) or []:

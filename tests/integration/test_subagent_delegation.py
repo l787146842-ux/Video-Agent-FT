@@ -194,7 +194,7 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
         "id": "grp-s01", "title": "Shot_S01 开场", "group_type": "shot",
         "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
                 "分镜语法：中景+平视+缓推。",
-        "summary": "含内部剪辑（约10s）", "sceneRefs": ["星环号球形舱"], "drafts": [],
+        "summary": "含内部剪辑（约10s）", "shotRefs": ["星环号球形舱"], "drafts": [],
     }]
     adapter = _ScriptedAdapter([
         # 1) 父：委派媒体提示词编写阶段
@@ -263,13 +263,13 @@ async def test_stage_delegation_storyboard_design(svc, fakestop_off):
         {"tool": "run_subagent", "args": {
             "task": "按已确认规格与关键元素拆解分镜",
             "stage": "storyboard_design"}},
-        # 2) 子：真调建组工具（shot 组 sceneRefs 强非空是闸机硬要求，带上引用）
+        # 2) 子：真调建组工具（shot 组 shotRefs 强非空是闸机硬要求，带上引用）
         {"tool": "storyboard_create_group", "args": {
             "group_type": "shot", "title": "S01 开场",
             "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
                     "分镜语法：中景+平视+缓推。",
             "summary": "含内部剪辑（约10s）",
-            "scene_refs": ["星环号球形舱"]}},
+            "shot_refs": ["星环号球形舱"]}},
         # 3) 子：摘要收尾
         {"text": "已建 1 组分镜（S01 开场）。"},
         # 4) 父：向用户交代

@@ -20,7 +20,7 @@ from src.video_agent.storage.media_urls import resolve_injectable_url
 from src.video_agent.web.attachments import attachment_context, collect_image_urls
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
-# 2026-09-23 批10（事故 4444/P0-A）：sceneRefs 解析唯一入口 = ops.find_ref_group
+# 2026-09-23 批10（事故 4444/P0-A）：shotRefs 解析唯一入口 = ops.find_ref_group
 from src.video_agent.state import storyboard_ops as ops
 
 # selected_type（前端 DraftType）→ 快照列表键
@@ -120,7 +120,7 @@ async def build_multimodal_content(
 def _selected_draft_related_urls(svc: StateManager, selected_draft_id: str, selected_type: str) -> List[str]:
     """收集与当前选中草稿强相关的媒体 URL（优先注入给 LLM）。
 
-    包括：草稿自身媒体与 refAssets；分镜时额外含 sceneRefs 指向的
+    包括：草稿自身媒体与 refAssets；分镜时额外含 shotRefs 指向的
     关键元素概念图（它们就是该镜头画面的参考依据）。
     """
     related: List[str] = []
@@ -128,7 +128,7 @@ def _selected_draft_related_urls(svc: StateManager, selected_draft_id: str, sele
         return related
     category = _TYPE_TO_CATEGORY.get(selected_type, selected_type)
     raw_state = svc.state_dict
-    scene_ref_titles: List[str] = []
+    shot_ref_titles: List[str] = []
     for group in (raw_state.get(category) or []):
         if not isinstance(group, dict):
             continue
@@ -143,10 +143,10 @@ def _selected_draft_related_urls(svc: StateManager, selected_draft_id: str, sele
                 if u and u not in related:
                     related.append(u)
             if category == CAT_SHOTS:
-                scene_ref_titles = [t for t in (group.get("sceneRefs") or []) if isinstance(t, str)]
-    for title in scene_ref_titles:
+                shot_ref_titles = [t for t in (group.get("shotRefs") or []) if isinstance(t, str)]
+    for title in shot_ref_titles:
         # 2026-09-23 批10（事故 4444/P0-A）：比对改走 ops.find_ref_group 唯一入口。
-        # 旧实现逐字比对 ke_group.title == title，而落盘标题带前缀、sceneRefs
+        # 旧实现逐字比对 ke_group.title == title，而落盘标题带前缀、shotRefs
         # 存裸名 ⇒ 恒不命中（同一失配在本文件的第三份抄写）。
         ke_group = ops.find_ref_group(raw_state, title)
         if ke_group is None:

@@ -104,7 +104,7 @@ def test_is_audio_url():
 
 
 def test_collect_shot_video_refs_scene_images_and_timbre_audio():
-    """分镜参考自动挂接：sceneRefs 元素概念图 + refAssets/audioUrl 音色参考音频"""
+    """分镜参考自动挂接：shotRefs 元素概念图 + refAssets/audioUrl 音色参考音频"""
     state = {
         "keyElements": [
             {"id": "ke-1", "title": "Element_侦探", "drafts": [
@@ -117,7 +117,7 @@ def test_collect_shot_video_refs_scene_images_and_timbre_audio():
         "shots": [],
         "audioItems": [],
     }
-    group = {"id": "shot-1", "sceneRefs": ["Element_侦探", "Element_办公室"]}
+    group = {"id": "shot-1", "shotRefs": ["Element_侦探", "Element_办公室"]}
     draft = {
         "id": "d-shot1",
         "refAssets": ["http://aud/voice.mp3", "http://img/extra.png"],
@@ -130,8 +130,8 @@ def test_collect_shot_video_refs_scene_images_and_timbre_audio():
     assert audios[0] == {"url": "http://aud/voice.mp3", "role": "reference_audio"}
 
 
-def test_collect_shot_video_refs_no_scene_refs():
-    """无 sceneRefs 时只挂音色参考音频"""
+def test_collect_shot_video_refs_no_shot_refs():
+    """无 shotRefs 时只挂音色参考音频"""
     draft = {"id": "d-1", "refAssets": [], "audioUrl": "http://aud/timbre.m4a"}
     images, audios = collect_shot_video_refs({}, None, draft)
     assert images == []

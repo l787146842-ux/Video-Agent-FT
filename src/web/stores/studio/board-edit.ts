@@ -154,11 +154,11 @@ export const boardEditActions = {
     persistBoard();
   },
 
-  /** 分镜场景引用增删（C4）：本地更新后走防抖整板保存（与其他本地编辑同路径）。
+  /** 分镜引用增删（C4）：本地更新后走防抖整板保存（与其他本地编辑同路径）。
    * 删除某元素后：出视频不再自动挂该元素概念图，卡片场景 chips 同步消失 */
-  setSceneRefsLocal(groupId: string, refs: string[]) {
+  setShotRefsLocal(groupId: string, refs: string[]) {
     setState(CAT_SHOTS, (prev: AnyGroup[]) =>
-      prev.map((g) => (g.id === groupId ? { ...g, sceneRefs: refs } : g)),
+      prev.map((g) => (g.id === groupId ? { ...g, shotRefs: refs } : g)),
     );
     persistBoard();
   },

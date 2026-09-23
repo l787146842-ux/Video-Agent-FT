@@ -55,7 +55,7 @@ def submit_image_task(
     从 action_executor 下沉：Agent 与路由层共用的生图提交管线。
     尺寸由 比例 + 分辨率档位（1K/2K/4K）计算，确保生图模型感知分辨率。
     提示词中的 @引用会被解析为位置标记，被引用的素材（refAssets +
-    sceneRefs 参考图）随请求发送给多模态生图模型。
+    shotRefs 参考图）随请求发送给多模态生图模型。
     on_failure_save: 失败时调用的持久化回调（通常为 svc.save_debounced）。
     返回 task_id。
     """
@@ -77,7 +77,7 @@ def submit_image_task(
     if image_circuit_open(provider_id):
         raise GenerationError(IMAGE_CIRCUIT_ERROR)
 
-    # --- 解析 @引用：重写提示词 + 汇总参考图（草稿自身 refAssets 优先，sceneRefs 其次）---
+    # --- 解析 @引用：重写提示词 + 汇总参考图（草稿自身 refAssets 优先，shotRefs 其次）---
     base_ref_urls: List[str] = [u for u in (draft.get("refAssets") or []) if u]
     for r in refs:
         u = r.get("url") if isinstance(r, dict) else ""
@@ -263,20 +263,20 @@ def collect_shot_video_refs(
     draft: Dict[str, Any],
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """自动收集分镜视频生成的参考素材：
-    1. sceneRefs 引用的关键元素概念图（多参考图，role=reference）；
+    1. shotRefs 引用的关键元素概念图（多参考图，role=reference）；
     2. 草稿 refAssets / audioUrl 中的音色参考音频（role=reference_audio）；
-    3. 批 6 · A3：sceneRefs 引用元素的 audioUrl（元素自带音色锚点，
+    3. 批 6 · A3：shotRefs 引用元素的 audioUrl（元素自带音色锚点，
        外部标杆「按引用自动挂声音锚点」形态）同轴自动挂为 reference_audio。
 
     返回 (image_refs, audio_refs)，均已去重；限额取 settings（C3：Seedance 2.5 口径）。
     """
-    image_refs: List[Dict[str, str]] = ops.resolve_scene_refs(
+    image_refs: List[Dict[str, str]] = ops.resolve_shot_refs(
         state_dict, group, limit=settings.video_ref_limit_image
     )
 
     audio_refs: List[Dict[str, str]] = []
     seen_audio: set = set()
-    scene_audio = ops.resolve_scene_audio_refs(state_dict, group)
+    scene_audio = ops.resolve_shot_audio_refs(state_dict, group)
     for url in ([r["url"] for r in scene_audio]
                 + list(draft.get("refAssets") or [])
                 + [draft.get("audioUrl") or ""]):
@@ -308,7 +308,7 @@ def submit_video_task(
 
     参考素材自动挂接：
     - 提示词 @引用 → 位置标记重写 + 对应素材随请求发送；
-    - image_refs/audio_refs（分镜 sceneRefs 元素图与音色参考音频）与 @引用去重合并；
+    - image_refs/audio_refs（分镜 shotRefs 元素图与音色参考音频）与 @引用去重合并；
     - 存在任一参考素材时走 Seedance 2.0 MultiModalToVideo 媒体列表格式，
       无参考时回退经典首帧格式。
     on_failure_save: 失败时调用的持久化回调（通常为 svc.save_debounced）。

@@ -18,7 +18,7 @@ function resetState() {
   setState({
     keyElements: [makeKeyGroup('ke1', ['d1', 'd2']), makeKeyGroup('ke2', ['d3'])],
     shots: [{
-      id: 'sh1', title: '分镜1', duration: '5s', sceneRefs: [],
+      id: 'sh1', title: '分镜1', duration: '5s', shotRefs: [],
       drafts: [{ id: 'v1', label: 'v1', mediaType: 'video' }],
     }] as ShotGroup[],
     audioItems: [{

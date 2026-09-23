@@ -130,7 +130,7 @@ export interface ShotGroup {
   /** 镜头结构摘要徽标（flova 对齐批 2026-09-17：模型建组必填落库；标题旁徽标位渲染，双击可编辑） */
   summary?: string;
   roughDesc?: string;
-  sceneRefs?: string[];
+  shotRefs?: string[];
   shotType?: string;
   drafts: Draft[];
 }

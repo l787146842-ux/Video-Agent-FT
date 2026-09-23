@@ -280,7 +280,7 @@ def test_generate_video_always_resident(svc, monkeypatch):
 
 def test_ke_first_gate_fc_track(monkeypatch):
     """0817 用户裁决：FC 轨建 shot 无首拆警告。
-    任务#36 护栏移植后：分镜 sceneRefs 完整度由 fc_gates.structure_integrity_gate
+    任务#36 护栏移植后：分镜 shotRefs 完整度由 fc_gates.structure_integrity_gate
     机械校验（承接原 exec_common），故建分镜须带客观引用。"""
     import asyncio
     runner = FCToolRunner(tool_manager=_StubToolManager())
@@ -294,7 +294,7 @@ def test_ke_first_gate_fc_track(monkeypatch):
         {"id": "c1", "type": "function", "function": {
             "name": "storyboard_create_group",
             "arguments": json.dumps({"group_type": "shot", "title": "Shot_1",
-                                     "scene_refs": ["ke-1"]})}},
+                                     "shot_refs": ["ke-1"]})}},
     ])
     applied, *_rest = asyncio.run(runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1

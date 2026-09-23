@@ -55,7 +55,7 @@ _DRAFT_FIELDS_HINT = (
     # keyElement 行「可放音频」、前端 isVoiceCard 同口径；不新增拒收闸）。
     "角色的音色卡挂在该角色自己的 keyElement 组内"
     "（角色组用 elementType=character 声明；音色卡与该角色图像卡同组，"
-    "分镜按 sceneRefs 引用该角色时自动取到音色锚点）。"
+    "分镜按 shotRefs 引用该角色时自动取到音色锚点）。"
 )
 
 # group patch 合法字段枚举（2026-09-23 批10，事故 4444/P1-1）：
@@ -63,7 +63,7 @@ _DRAFT_FIELDS_HINT = (
 # = ops.ALLOWED_GROUP_FIELDS，动态拼接防漂移）。
 _GROUP_FIELDS_HINT = (
     f"合法字段（白名单外字段整单拒收）：{', '.join(ops.ALLOWED_GROUP_FIELDS)}。"
-    "分镜改引用用 sceneRefs（关键元素标题数组；裸名与 Element_ 前缀两种写法"
+    "分镜改引用用 shotRefs（关键元素标题数组；裸名与 Element_ 前缀两种写法"
     "系统都认）；镜头内容改动用 desc；时长用 duration。"
 )
 
@@ -87,7 +87,7 @@ class CreateGroupInput(StrictToolInput):
     desc: str = Field("", description="分组描述（shot 类型：完整镜头设计写这里，唯一载体）")
     duration: str = Field("", description="时长（shot 类型用；整镜总时长）")
     summary: str = Field("", description="shot 类型必填：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段")
-    scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
+    shot_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
@@ -138,7 +138,7 @@ class PatchGroupInput(StrictToolInput):
 
     事故背景：`ops.patch_group` 与 `PATCH /storyboard/groups/{id}`（注释自称
     「用户直接编辑，不经 Planner，<10ms」）**都存在，却从未接线成模型工具**——
-    模型要改一个分组的 `sceneRefs` 只能「删除整组 + 重建整组」。
+    模型要改一个分组的 `shotRefs` 只能「删除整组 + 重建整组」。
     4444 实跑为此**删光 22 个 shot 组再重建 22 个**，耗时 261.6s，且重建产生
     全新 group id（中途任一批失败即留下残缺故事板）。
     本工具即那条缺失的接线（与 09-23 批2 补 `storyboard_delete_draft` 同类）。
@@ -205,7 +205,7 @@ class StoryboardCreateGroupTool(BaseTool):
         "建组规范：关键元素——每个元素单独一组，组名=元素名，"
         "元素设定全文写在分组描述 desc 上；分镜——每个镜头单独一组，组名=镜头名，"
         "完整镜头描述写在 desc 上，引用到的元素用 [元素名] 令牌写在描述里"
-        "（系统会自动解析为引用并挂参考），也可用 scene_refs 显式指定。"
+        "（系统会自动解析为引用并挂参考），也可用 shot_refs 显式指定。"
         "desc 中 [元素名] 令牌与裸名提及由系统自动解析为引用。"
         "shot 类型必填 summary（镜头结构摘要徽标），缺失整单拒收打回重填。"
     )
@@ -291,26 +291,19 @@ class StoryboardCreateGroupTool(BaseTool):
             # shotType 已摘除（2026-09-14 裁决）：单值「镜头语言」字段与 Skill 声明的
             # 多内切镜格式抢方向盘，致分镜时出内切镜时不出——分镜格式唯一载体 = desc。
             # 批 6 · A3 + K4 批（2026-09-16 对齐 flova）：引用三源合并——
-            # 显式 scene_refs ∪ [元素名] 令牌 ∪ 裸名提及（去重保序）；
+            # 显式 shot_refs ∪ [元素名] 令牌 ∪ 裸名提及（去重保序）；
             # 匹配不到的令牌丢弃不拒收，但必须回喂告知——3333 批裁决：
             # 静默丢弃=模型以为挂上了引用
-            tokens = ops.parse_element_tokens(params.desc or "")
-            matched_titles, unmatched_tokens = ops.match_element_titles_report(
-                svc.state_dict, tokens)
-            bare_hits = ops.scan_bare_name_mentions(
-                params.desc or "", svc.state_dict.get(CAT_KEY_ELEMENTS, []))
-            merged_refs: List[str] = []
-            # flova 对齐批（2026-09-17）：canonical 去重——同一元素的裸名与 Element_ 前缀
-            # 形态算同一引用（去重键=strip_type_prefix），去重保序留首；
-            # 杜绝 K4 三源合并产同元素双份（场景 chips 行重复 chip）
-            _seen_norm: set = set()
-            for ref in list(params.scene_refs or []) + matched_titles + bare_hits:
-                _k = ops.strip_type_prefix(str(ref))
-                if _k in _seen_norm:
-                    continue
-                _seen_norm.add(_k)
-                merged_refs.append(ref)
-            new_group["sceneRefs"] = merged_refs
+            #
+            # 2026-09-23 批12（事故 4444/B-1）：合并体抽为 ops.merge_shot_refs
+            # **唯一实现**，闸机（读口）同引之——此前两处各写一遍且口径不同，
+            # 导致「模型按文档留空 shot_refs」被闸机在合并前拒收（5 次实证）。
+            # 未匹配令牌仍由 ops.match_element_titles_report 单独取回供回喂。
+            _tokens = ops.parse_element_tokens(params.desc or "")
+            _, unmatched_tokens = ops.match_element_titles_report(
+                svc.state_dict, _tokens)
+            new_group["shotRefs"] = ops.merge_shot_refs(
+                svc.state_dict, params.desc or "", params.shot_refs)
 
         async with svc.lock:
             svc.state_dict.setdefault(cat_key, []).append(new_group)
@@ -325,7 +318,7 @@ class StoryboardCreateGroupTool(BaseTool):
             _miss = "、".join(unmatched_tokens[:5]) + ("…" if len(unmatched_tokens) > 5 else "")
             result_data["detail"] = (
                 f"已建组，但描述中的 [元素名] 令牌未匹配到关键元素组（已丢弃、未挂引用）：{_miss}。"
-                "元素名须与关键元素组标题一致（read_state_group 可查），必要时显式传 scene_refs。")
+                "元素名须与关键元素组标题一致（read_state_group 可查），必要时显式传 shot_refs。")
             result_data["warnings"] = [
                 f"分镜「{_title[:12]}」的元素令牌未匹配：{_miss}（引用缺失，跨镜一致性可能断链）"]
         return ToolResult(success=True, data=result_data)
@@ -482,7 +475,7 @@ class StoryboardPatchGroupTool(BaseTool):
     事故背景与取舍见 `PatchGroupInput` docstring。本工具**不做**三源合并
     （`[元素名]` 令牌 ∪ 裸名提及）：那是**建组**期的一次性解析语义，若在 patch
     上重做，「删掉某条引用」会立刻被 desc 里的裸名重新加回来（引用删不掉）。
-    故 patch 一律**以模型显式传入的 sceneRefs 为准**（只做 canonical 去重）。
+    故 patch 一律**以模型显式传入的 shotRefs 为准**（只做 canonical 去重）。
     """
     name = "storyboard_patch_group"
     risk = "medium"  # 写内部状态（可再改撤销）

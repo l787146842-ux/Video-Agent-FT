@@ -117,10 +117,10 @@ export function RefAssetBar(props: {
         <div class="ref-thumbs flex-wrap">
           {/* 分镜：绑定元素参考（只读 chips，不显示标题文字） */}
           <Show when={state.selectedType === 'shot'}>
-            <div class="scene-refs">
+            <div class="shot-refs">
               <For each={props.refAssets().filter((u) => boundAssetTitle(u, state.keyElements))}>
                 {(url) => (
-                  <span class="scene-ref-chip">
+                  <span class="shot-ref-chip">
                     <img src={safeUrl(url)} alt="" />
                     {boundAssetTitle(url, state.keyElements)}
                   </span>
