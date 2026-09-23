@@ -20,6 +20,8 @@ from src.video_agent.storage.media_urls import resolve_injectable_url
 from src.video_agent.web.attachments import attachment_context, collect_image_urls
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
+# 2026-09-23 批10（事故 4444/P0-A）：sceneRefs 解析唯一入口 = ops.find_ref_group
+from src.video_agent.state import storyboard_ops as ops
 
 # selected_type（前端 DraftType）→ 快照列表键
 _TYPE_TO_CATEGORY = {"keyElement": CAT_KEY_ELEMENTS, "shot": CAT_SHOTS, "audio": CAT_AUDIO_ITEMS}
@@ -143,13 +145,16 @@ def _selected_draft_related_urls(svc: StateManager, selected_draft_id: str, sele
             if category == CAT_SHOTS:
                 scene_ref_titles = [t for t in (group.get("sceneRefs") or []) if isinstance(t, str)]
     for title in scene_ref_titles:
-        for ke_group in (raw_state.get(CAT_KEY_ELEMENTS) or []):
-            if not isinstance(ke_group, dict) or ke_group.get("title") != title:
-                continue
-            for draft in (ke_group.get("drafts") or []):
-                u = (draft.get("imgUrl") or "") if isinstance(draft, dict) else ""
-                if u and u not in related:
-                    related.append(u)
+        # 2026-09-23 批10（事故 4444/P0-A）：比对改走 ops.find_ref_group 唯一入口。
+        # 旧实现逐字比对 ke_group.title == title，而落盘标题带前缀、sceneRefs
+        # 存裸名 ⇒ 恒不命中（同一失配在本文件的第三份抄写）。
+        ke_group = ops.find_ref_group(raw_state, title)
+        if ke_group is None:
+            continue
+        for draft in (ke_group.get("drafts") or []):
+            u = (draft.get("imgUrl") or "") if isinstance(draft, dict) else ""
+            if u and u not in related:
+                related.append(u)
     return related
 
 

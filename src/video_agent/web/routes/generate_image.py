@@ -15,6 +15,8 @@ from src.video_agent.exceptions import GenerationError, VideoAgentError
 from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES_TUPLE
+# 2026-09-23 批10（事故 4444/P0-A）：sceneRefs 解析唯一入口 = ops.find_ref_group
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.utils import gen_id
 from src.video_agent.web.generation import generate_image_via_provider, image_size_for
 
@@ -182,14 +184,17 @@ async def batch_generate_image(body: BatchImageGenRequest):
     task_ids: List[str] = []
     for group, draft in targets:
         # 自动注入 sceneRefs 参考图
+        # 2026-09-23 批10（事故 4444/P0-A）：比对改走 ops.find_ref_group 唯一入口。
+        # 旧实现逐字比对 ke.title == ref_title，而落盘标题带前缀（Element_程心）、
+        # sceneRefs 存裸名（程心）⇒ 恒不命中（同一失配在本文件的第二份抄写）。
         refs: List[Dict[str, str]] = []
         for ref_title in (group.get("sceneRefs") or []):
-            for ke in state.get(CAT_KEY_ELEMENTS, []):
-                if ke.get("title") == ref_title:
-                    for kd in ke.get("drafts", []):
-                        if kd.get("imgUrl"):
-                            refs.append({"url": kd["imgUrl"], "role": "reference"})
-                            break
+            ke = ops.find_ref_group(state, ref_title)
+            if ke is None:
+                continue
+            for kd in ke.get("drafts", []):
+                if kd.get("imgUrl"):
+                    refs.append({"url": kd["imgUrl"], "role": "reference"})
                     break
 
         task_id = gen_id("img")

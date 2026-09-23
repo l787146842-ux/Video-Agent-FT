@@ -22,11 +22,124 @@ from src.video_agent.state.models import (
 )
 from src.video_agent.utils import gen_id
 
+# ---------- 归属语义字段词表（2026-09-23 批5，用户 D-1/D-2/D-3 裁决） ----------
+# 用户原话：「不能做模型识别到这个字段，自己就知道放在哪里么」——
+# 病灶：平台**注释里写对了**归属（audio ← key_elements 的角色音色卡），
+# 但可执行代码 0 命中、草稿白名单**没有** elementType/audioType，
+# 模型**没有可用字段**表达「这是音色卡」；于是模型自发用 tag='BGM'/desc 表达，
+# 而平台对 tag/timbre 的消费也是 0 命中。
+# ⇒ 修法（D-2=schema 层 / D-3=给字段+正面契约，均不加硬判）：
+#   把归属语义落成**模型可见的字段**，取值词表在此登记为单一事实源。
+#
+# elementType：关键元素组的元素种类（Skill：element character / element scene /
+#   prop element）。属**分组**字段（元素种类是组的属性）。
+ELEMENT_TYPES = ("character", "scene", "prop")
+
+# audioType：音频卡的音频种类。`voice` = Skill 明文的 key_element_audio
+#   （「角色的声音特征（音色/语气/情绪基调）单独登记为 key_element_audio，
+#   与角色元素绑定」）；其余对齐 AudioCategory 并补叙事类。
+#   属**草稿**字段（音频种类是卡的属性）。
+AUDIO_TYPES = ("voice", "bgm", "narration", "sfx", "dialogue", "foley")
+
+# ---------- 类目 × 能力矩阵（2026-09-23 批4，用户 D-2 裁决：落 schema 层） ----------
+# 用户要求（逐字）：
+#   「只有关键元素里面能出图、出视频、出音频，能放图、放视频、放音频；
+#     分镜里面只能放视频、只能出视频；音频里面只能放音频、只能出音频。」
+#
+# 取证结论（报告 03 §Q7）：平台**不存在**这张矩阵——真实出处是前端
+# `ParamControls.tsx` 散落的 if/Switch（隐式矩阵）+ 后端按**阶段**的单点黑名单；
+# 两者维度不同（类目 vs 阶段）**不可互推**，且类目约束缺失已造成实跑混装
+# （2222 keyElement 组内 3 张 audio 卡；3333 shot 组内 15 张 image 卡）。
+#
+# D-2 裁决 = **落 schema 层**；D-3 裁决 = **给字段+正面契约，不加硬判**。
+# ⇒ 本表是矩阵的**单一事实源（数据）**，供字段描述/前端可见性消费；
+#   **不新增拒收闸**（与 2026-09-08「不加机械闸」裁决一致）。
+# 键 = 类目（group_type），值 = 该类的 6 项能力（放/出 × 图/视频/音频）。
+CATEGORY_MEDIA_MATRIX: Dict[str, Dict[str, frozenset]] = {
+    "keyElement": {
+        "place": frozenset({"image", "video", "audio"}),
+        "generate": frozenset({"image", "video", "audio"}),
+    },
+    "shot": {
+        "place": frozenset({"video"}),
+        "generate": frozenset({"video"}),
+    },
+    "audio": {
+        "place": frozenset({"audio"}),
+        "generate": frozenset({"audio"}),
+    },
+}
+
+
+def matrix_media_for(group_type: str, capability: str) -> frozenset:
+    """查矩阵：某类目在某能力（place=放 / generate=出）下允许的媒体类型。
+
+    未知类目/能力返回空集（= 无声明，调用方按"不约束"处理）。
+    纯查表，不做判定——判定策略由调用方裁决（D-3：不加硬判）。
+    """
+    return CATEGORY_MEDIA_MATRIX.get(
+        str(group_type or ""), {}).get(str(capability or ""), frozenset())
+
+
+def matrix_contract_line(group_type: str) -> str:
+    """把矩阵一行渲染成模型可读的正面契约句（供 schema 描述消费）。
+
+    措辞只陈述「该类目能做什么」（正面契约），不写禁令
+    （description lint 拦禁令词；且 3333 实证说明层禁令会吓退模型）。
+    """
+    row = CATEGORY_MEDIA_MATRIX.get(str(group_type or ""))
+    if not row:
+        return ""
+    _label = {"image": "图", "video": "视频", "audio": "音频"}
+    place = "/".join(_label[m] for m in ("image", "video", "audio") if m in row["place"])
+    gen = "/".join(_label[m] for m in ("image", "video", "audio") if m in row["generate"])
+    return f"（该类目可放：{place}；可出：{gen}）"
+
+
+# ---------- 章节 → 类目绑定（2026-09-23 批9 P-1，用户第四/五轮追问的正面回答） ----------
+# 用户原问：「skill 里面这些章节字段到底有没有对应在本项目中，要搞清楚。」
+# 全量审计（16 个 Skill）结论分三层（报告 07）：
+#   ① 章节名 → 平台映射：✅ 全对应、零缺口（15 个 tag 全部被 SECTION_TAG_STAGES 认）；
+#   ② 章节 → 能否注入：⚠️ 4 个发不出去（generation/assembly 不可委派）；
+#   ③ **章节 → 字段/承载：❌ 真消费仅 2** —— 用户所指"对应不上"准确落在这层。
+#
+# 缺口机制：平台有三张映射表，**没有一张是「章节 → 类目」**：
+#   CAPABILITY_TOOL_STAGES : 能力 → section 名
+#   SECTION_TAG_STAGES     : 章节 tag → stage 名
+#   category_for_group_type: 工具入参 group_type → 类目
+# ⇒ 章节语义**止步于平台内部代号**，从未落到模型可见的字段上。
+# 本表即那条缺失的中间一级（D-2 裁决：落 schema 层；不新增拒收闸）。
+#
+# 键 = section 名（registry.CAPABILITY_TOOL_STAGES 右值），值 = 故事板类目。
+SECTION_CATEGORY_BINDING: Dict[str, str] = {
+    "storyboard_ke": CAT_KEY_ELEMENTS,
+    "storyboard_shot": CAT_SHOTS,
+    "storyboard_audio": CAT_AUDIO_ITEMS,
+}
+
+
+def category_for_section(section: str) -> str:
+    """章节 section 名 → 看板类目（空串 = 该章节无故事板承载）。
+
+    消费端示例：委派 `storyboard_design` 时的三章节各自落到哪个类目、
+    音色卡（`key_element_audio`）该挂哪个类目 —— 补齐「章节→类目」这一级。
+    """
+    return SECTION_CATEGORY_BINDING.get(str(section or "").strip(), "")
+
+
+def sections_for_category(cat_key: str) -> List[str]:
+    """类目 → 承载它的全部章节 section（反向查，供审计/契约渲染）。"""
+    target = str(cat_key or "").strip()
+    return [s for s, c in SECTION_CATEGORY_BINDING.items() if c == target]
+
+
 # draft patch 允许写入的字段全集（双轨统一，含 imageResolution / genType / desc）
 ALLOWED_DRAFT_FIELDS = (
     "label", "tag", "mediaType", "genType", "imgUrl", "videoUrl", "audioUrl", "prompt", "mode",
     "model", "providerId", "resolution", "duration", "aspectRatio", "imageResolution",
     "size", "timbre", "refAssets", "desc",
+    # 2026-09-23 批5：音频归属语义（voice=角色音色卡 / bgm / narration / …）
+    "audioType",
 )
 
 # 新建草稿（storyboard_add_draft / storyboard_create_group 附带）允许的字段：
@@ -39,6 +152,8 @@ ALLOWED_NEW_DRAFT_FIELDS = ALLOWED_DRAFT_FIELDS + ("id",)
 # 全链删除，存量数据只读透传）
 ALLOWED_GROUP_FIELDS = (
     "title", "desc", "duration", "timeRange", "prompt", "sceneRefs", "summary",
+    # 2026-09-23 批5：关键元素组的元素种类（character / scene / prop）
+    "elementType",
 )
 
 
@@ -78,6 +193,65 @@ def strip_type_prefix(title: str) -> str:
         if t.startswith(prefix):
             return t[len(prefix):]
     return t
+
+
+# ---------- sceneRefs canonical 引用键（读口，2026-09-23 批10，事故 4444/P0-A） ----------
+# 病灶：**写口与读口口径漂移**。
+#   - 写口 `dedup_scene_refs`（见上）以 `strip_type_prefix` 为去重键，
+#     docstring 明写「同一元素的裸名与 Element_ 前缀形态算同一引用」；
+#   - 读口 `resolve_scene_refs` / `resolve_scene_audio_refs` 却是**逐字精确比对**
+#     （`id != ref and title != ref`），而落盘组标题带前缀（`Element_程心`）、
+#     sceneRefs 存裸名（`程心`）⇒ 恒不命中。
+# 实跑取证（4444 / proj-1790159421-bfd25491，真实 state 复算）：
+#   22 镜 90 条 sceneRefs → image_refs **0**、audio_refs **0**；
+#   改用 canonical 键复算 → **90/90 命中**。
+# 同源失配在别处**已修过**：`core/prompt_refs.py` 批3 R3 判词「平台在别处
+#   （scan_bare_name_mentions、前端 desc-ref-utils）早就做了裸名归一，
+#   唯独本引用链漏了，属口径漂移而非设计」——本函数即把该判词落到引用链上。
+# 为何是根因而非补丁：同一份 canonical 规则在**同一个文件里**已存在
+#   （strip_type_prefix/dedup_scene_refs），本处只是让读口复用写口的口径，
+#   未引入新规则、未新增拒收闸。
+
+
+def canonical_ref_key(ref: Any) -> str:
+    """sceneRefs 引用键（canonical）：剥容器类型前缀 + 去首尾空白。
+
+    与写口 `dedup_scene_refs` 的去重键、`prompt_refs.build_storyboard_media_map`
+    的裸名别名**同一口径**（P1 单一事实源：本函数是引用匹配的唯一入口）。
+    """
+    return strip_type_prefix(str(ref or "").strip())
+
+
+def build_ref_index(state: Dict[str, Any], cat_key: str) -> Dict[str, Dict[str, Any]]:
+    """建「canonical 引用键 → 分组」索引（供引用解析 O(1) 命中）。
+
+    同一 canonical 键出现多组时**保留先出现者**（与 `prompt_refs` 的
+    「后写不覆盖先写」同向：关键元素标题优先）。
+    """
+    index: Dict[str, Dict[str, Any]] = {}
+    for group in state.get(cat_key, []) or []:
+        if not isinstance(group, dict):
+            continue
+        for key in (canonical_ref_key(group.get("title")), str(group.get("id") or "").strip()):
+            if key and key not in index:
+                index[key] = group
+    return index
+
+
+def find_ref_group(state: Dict[str, Any], ref: Any) -> Optional[Dict[str, Any]]:
+    """按场景引用（裸名 / 带前缀标题 / 组 id 三种写法均可）取关键元素组。
+
+    读口唯一入口：`resolve_scene_refs` / `resolve_scene_audio_refs` /
+    `web/routes/generate_image.py` / `web/multimodal_builder.py` 四处共用，
+    杜绝同一条引用链各写一遍比对式（本次事故正是四处各写一遍且全部逐字比对）。
+    """
+    cats = (CAT_KEY_ELEMENTS,)
+    for cat in cats:
+        idx = build_ref_index(state, cat)
+        hit = idx.get(canonical_ref_key(ref))
+        if hit is not None:
+            return hit
+    return None
 
 
 def normalize_group_title(title: str, cat_key: str = "") -> str:
@@ -383,7 +557,12 @@ def collect_drafts(
 def resolve_scene_refs(
     state: Dict[str, Any], group: Optional[Dict[str, Any]], limit: int = 5,
 ) -> List[Dict[str, str]]:
-    """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图（默认最多 5 张）"""
+    """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图（默认最多 5 张）。
+
+    2026-09-23 批10（事故 4444/P0-A）：比对改走 `find_ref_group`。
+    旧实现逐字比对 `id`/`title`，而落盘标题带前缀、sceneRefs 存裸名 ⇒ 恒不命中
+    （4444 实测 22 镜 image_refs = 0）。canonical 口径见 `canonical_ref_key`。
+    """
     refs: List[Dict[str, str]] = []
     if not group:
         return refs
@@ -393,16 +572,14 @@ def resolve_scene_refs(
     for ref_title in scene_refs:
         if not isinstance(ref_title, str):
             continue
-        for ke_group in state.get(CAT_KEY_ELEMENTS, []):
-            # sceneRefs 兼容关键元素 ID（ke-xxx）与标题两种写法
-            if str(ke_group.get("id") or "") != ref_title and str(ke_group.get("title") or "") != ref_title:
-                continue
-            for d in ke_group.get("drafts", []):
-                img = d.get("imgUrl") or ""
-                if img:
-                    refs.append({"url": img, "role": "reference"})
-                    break
-            break
+        ke_group = find_ref_group(state, ref_title)
+        if ke_group is None:
+            continue
+        for d in ke_group.get("drafts", []):
+            img = d.get("imgUrl") or ""
+            if img:
+                refs.append({"url": img, "role": "reference"})
+                break
     return refs[:limit]
 
 
@@ -413,22 +590,37 @@ def resolve_scene_audio_refs(
 
     与 resolve_scene_refs 同构（imgUrl→reference 的姊妹轴）：分镜引用了
     带音色参考的元素时，视频生成自动把该音色挂为 reference_audio，
-    对齐外部标杆「按引用自动挂声音锚点」。只读，不改状态。"""
+    对齐外部标杆「按引用自动挂声音锚点」。只读，不改状态。
+
+    2026-09-23 批10（事故 4444/P0-A）两处修复：
+    ① 比对照 `resolve_scene_refs` 同改 canonical（`find_ref_group`）；
+    ② 音色卡优先取 `audioType == 'voice'` 的卡（Skill 明文的 key_element_audio）。
+       归属契约 = 挂在角色**自己的 keyElements 组内**（见 `CATEGORY_MEDIA_MATRIX`
+       的 keyElement 行「可放音频」，及 `prompt_refs`/前端 `isVoiceCard` 同口径）。
+       非硬判：voice 卡缺失时回落该组任意带 audioUrl 的卡（存量兼容）。
+    """
     refs: List[Dict[str, str]] = []
     if not group:
         return refs
     for ref_title in group.get("sceneRefs") or []:
         if not isinstance(ref_title, str):
             continue
-        for ke_group in state.get(CAT_KEY_ELEMENTS, []):
-            if str(ke_group.get("id") or "") != ref_title and str(ke_group.get("title") or "") != ref_title:
-                continue
-            for d in ke_group.get("drafts", []):
-                audio = str(d.get("audioUrl") or "")
-                if audio:
-                    refs.append({"url": audio, "role": "reference_audio"})
-                    break
-            break
+        ke_group = find_ref_group(state, ref_title)
+        if ke_group is None:
+            continue
+        drafts = [d for d in (ke_group.get("drafts") or []) if isinstance(d, dict)]
+        # ① voice 卡优先（音色锚点的规范载体）
+        pick = next(
+            (d for d in drafts
+             if str(d.get("audioUrl") or "").strip()
+             and str(d.get("audioType") or "").strip() == "voice"),
+            None)
+        # ② 回落：该组任意带音源的首张卡（存量兼容，不加硬判）
+        if pick is None:
+            pick = next(
+                (d for d in drafts if str(d.get("audioUrl") or "").strip()), None)
+        if pick is not None:
+            refs.append({"url": str(pick.get("audioUrl")), "role": "reference_audio"})
     return refs
 
 
@@ -436,9 +628,20 @@ def parse_element_tokens(text: str) -> List[str]:
     """批 6 · A3：提取文本中的 [元素名] 令牌（外部标杆 形态），去重保序。
 
     令牌是写在分镜描述里的人可读引用层；匹配不到元素的令牌由调用方
-    丢弃（不拒收，不锁死）。"""
+    丢弃（不拒收，不锁死）。
+
+    2026-09-23 批3 附带修复：**跳过 Markdown 转义占位** `\\[...\\]`。
+    Skill 模板里的占位符原文是 `\\[角色描述，含年龄/性别/外貌…\\]`
+    （方括号被反斜杠转义），原实现把它当令牌提取，产出末尾还粘上反斜杠
+    （实测 `'角色描述，含年龄/性别/外貌/服装/标志性细节\\\\'`），
+    进而触发「元素令牌未匹配」**误报警告**、污染引用通道。
+    转义方括号是**模板占位**而非元素引用，一律不提取。
+    """
     tokens: List[str] = []
-    for raw in re.findall(r"\[([^\[\]]{1,60})\]", str(text or "")):
+    # 先剔除转义方括号（`\[` / `\]`），再在剩余文本上做令牌提取；
+    # 这样 `\[占位\]` 不会因内部被掏空而残留 `[占位]` 形态。
+    cleaned = re.sub(r"\\[\[\]]", "", str(text or ""))
+    for raw in re.findall(r"\[([^\[\]]{1,60})\]", cleaned):
         token = raw.strip()
         if token and token not in tokens:
             tokens.append(token)
