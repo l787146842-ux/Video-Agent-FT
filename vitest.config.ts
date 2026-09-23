@@ -35,7 +35,8 @@ export default defineConfig({
         'src/web/lib/message-affordances.ts': { lines: 80 },
         'src/web/lib/turn-groups.ts': { lines: 80 },
         'src/web/components/right-panel/StreamingBubble.tsx': { lines: 80 },
-        'src/web/components/right-panel/StageCard.tsx': { lines: 80 },
+        // 2026-09-22 批7（Q1）：StageCard.tsx 整卡删除 → 覆盖率条目随之移除
+        // （vitest 对不存在的文件报错，条目留着会让 fe_cov 假红）。
         'src/web/components/right-panel/GateWarnings.tsx': { lines: 80 },
         'src/web/components/right-panel/AgentTimeline.tsx': { lines: 80 },
         // F0 扩围（轮次账本卡统一的前置安全绳：先锁定既有行为再动刀）

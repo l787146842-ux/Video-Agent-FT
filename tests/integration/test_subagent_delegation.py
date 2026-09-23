@@ -14,6 +14,7 @@ import pytest
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core import session_log
+from src.video_agent.skill_runtime import registry
 from src.video_agent.state import conversation_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.analysis_tools import register_analysis_tools
@@ -242,12 +243,13 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
 
 
-async def test_stage_delegation_storyboard_shots(svc, fakestop_off):
-    """主代理纯编排批（2026-09-19）：故事板设计委派子代理端到端——
+async def test_stage_delegation_storyboard_design(svc, fakestop_off):
+    """主代理纯编排批（2026-09-19）/ 批6 三合一（2026-09-22 Q5）端到端——
     ① 主代理面结构性缺 storyboard_create_group/patch_draft（只能委派）；
-    ② 委派带 stage=storyboard_shots → 子级任务精准注入 storyboard_shot 章节
-      （「分镜语法三件套」探针在场），write_media_prompt 章节探针零在场；
-    ③ 子级真建 shot 组落账、只回摘要；子线程 meta 记 stage:storyboard_shots。
+    ② 委派带 stage=storyboard_design → 子级任务注入**三章并集**
+      （storyboard_ke + storyboard_shot + storyboard_audio；「分镜语法三件套」
+      探针在场），write_media_prompt 章节探针零在场；
+    ③ 子级真建 shot 组落账、只回摘要；子线程 meta 记 stage:storyboard_design。
     用真实 Skill（data/skills）验证章节切割与结构锁。"""
     # ① 主代理（顶级生产轮）结构性缺故事板执行写入工具（纯编排）
     planner = Planner(state_manager=svc, llm_adapter=None, tool_manager=ToolManager)
@@ -257,10 +259,10 @@ async def test_stage_delegation_storyboard_shots(svc, fakestop_off):
     assert "storyboard_patch_draft" in main_excluded
 
     adapter = _ScriptedAdapter([
-        # 1) 父：委派分镜设计阶段
+        # 1) 父：委派故事板设计阶段（关键元素+分镜+音频一次做完，批6/Q5）
         {"tool": "run_subagent", "args": {
             "task": "按已确认规格与关键元素拆解分镜",
-            "stage": "storyboard_shots"}},
+            "stage": "storyboard_design"}},
         # 2) 子：真调建组工具（shot 组 sceneRefs 强非空是闸机硬要求，带上引用）
         {"tool": "storyboard_create_group", "args": {
             "group_type": "shot", "title": "S01 开场",
@@ -281,26 +283,35 @@ async def test_stage_delegation_storyboard_shots(svc, fakestop_off):
     # ③ 落账与摘要回父
     shots = svc.state_dict.get("shots") or []
     assert any(g.get("title") == "Shot_S01 开场" for g in shots), \
-        "storyboard_shots 子级建组未落账"
+        "storyboard_design 子级建组未落账"
     assert "分镜设计已由子代理完成" in (result.text or "")
 
     threads = svc.subagent_threads()
     assert len(threads) == 1
     scope = svc.get_conversation_scope(threads[0]["conversation_id"])
-    assert scope.get("subagent_kind") == "stage:storyboard_shots"
+    assert scope.get("subagent_kind") == "stage:storyboard_design"
     child_first = adapter.calls[1]
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
-    assert "本次委派阶段：分镜" in task_text
-    # ② 章节隔离：storyboard_shot 章节真身在场、write_media_prompt 章节零在场
-    assert "分镜语法三件套" in task_text, "storyboard_shots 章节未精准注入"
-    assert "内切镜时长估算" not in task_text, "write_media_prompt 章节泄漏进分镜子代理"
+    assert "本次委派阶段：故事板设计" in task_text
+    # ② 章节隔离：三章并集在场（storyboard_shot 真身 + ke/audio 两章），
+    #    write_media_prompt 章节零在场
+    assert "分镜语法三件套" in task_text, "storyboard_shot 章节未注入"
+    assert "内切镜时长估算" not in task_text, "write_media_prompt 章节泄漏进子代理"
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
+    # 批6：合并阶段确实注入了另外两章（三合一不是只注分镜）
+    ke_sec = registry.tool_sections(SKILL, "storyboard_key_elements")
+    au_sec = registry.tool_sections(SKILL, "storyboard_audio")
+    if ke_sec.strip():
+        assert ke_sec.strip()[:40] in task_text, "storyboard_ke 章节未注入（三合一缺章）"
+    if au_sec.strip():
+        assert au_sec.strip()[:40] in task_text, "storyboard_audio 章节未注入（三合一缺章）"
 
 
 async def test_key_elements_child_can_build_voice_card_but_not_image_card(
         svc, fakestop_off):
-    """批4 端到端（用户裁决）：key_elements 子代理**能**建音色卡、**不能**建图像卡。
+    """批4 端到端（用户裁决）/ 批6 阶段改名：故事板设计子代理**能**建音色卡、
+    **不能**建图像卡。
 
     真过闸机链、真写工作台（只把模型换成脚本）：
     ① 子代理建 mediaType=audio 的音色卡 → 放行落账（该阶段的正经产出，
@@ -308,23 +319,24 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
     ② 子代理建 mediaType=image 的图像卡 → **被建卡媒体闸拒收**、不落账
        （用户裁决：图像卡含壳与提示词均归 write_media_prompt 阶段）；
     ③ 拒收文案要告诉模型"去哪里做"，防其原地重试。
+    批6（Q5）后本阶段名 = storyboard_design，允许集 = {audio, video}。
     """
     adapter = _ScriptedAdapter([
-        # 1) 父：委派关键元素阶段
+        # 1) 父：委派故事板设计阶段
         {"tool": "run_subagent", "args": {
-            "task": "登记关键元素与角色音色", "stage": "storyboard_key_elements"}},
+            "task": "登记关键元素与角色音色", "stage": "storyboard_design"}},
         # 2) 子：先建元素组（不带卡=纯结构动作，应放行）
         {"tool": "storyboard_create_group", "args": {
             "group_type": "keyElement", "title": "程心",
             "desc": "女主，东方年轻女性，约27岁，温婉而坚毅。"}},
-        # 3) 子：建音色卡（该阶段唯一允许的卡型）→ 应放行
+        # 3) 子：建音色卡（该阶段允许的卡型）→ 应放行
         {"tool": "storyboard_add_draft", "args": {
             "group_id": "current", "group_type": "keyElement",
             "draft": {"label": "Audio_程心", "mediaType": "audio",
                       "tag": "key_element_audio",
                       "timbre": "女中音，温润略带沙哑，语速舒缓",
                       "desc": "声音特征：女中音，音色温润略带沙哑"}}},
-        # 4) 子：试图建图像卡 → 应被拒收
+        # 4) 子：试图建图像卡 → 应被拒收（image 仍不属本阶段）
         {"tool": "storyboard_add_draft", "args": {
             "group_id": "current", "group_type": "keyElement",
             "draft": {"label": "程心-角色设定图", "mediaType": "image",
@@ -354,6 +366,7 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
 
     # ③ 拒收文案指向正确阶段（回喂给子代理的 tool 结果里可见）
     #    子代理被拒后会带着 tool 结果再发一轮，故在**全部**调用里搜（索引不稳）
+    #    批6 后允许集为 audio/video，文案随之变化
     blob = json.dumps(adapter.calls, ensure_ascii=False)
-    assert "只允许 mediaType=audio" in blob, "建卡媒体闸未生效（图像卡未拒收）"
+    assert "只允许 mediaType=audio/video" in blob, "建卡媒体闸未生效（图像卡未拒收）"
     assert "write_media_prompt" in blob, "拒收文案须告诉模型去哪里建图像卡"

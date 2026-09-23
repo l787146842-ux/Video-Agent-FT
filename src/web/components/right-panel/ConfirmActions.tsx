@@ -274,6 +274,14 @@ export function ConfirmActions(props: { message: ChatMessage }) {
       </Show>
       <div class="confirm-actions">
         <Show when={!options().length}>
+          {/* 2026-09-22 批7（Q1，用户裁决「红框那张卡删掉」）：无选项暂停的
+              题面此前**只**由 StageCard 渲染；批7 删除 StageCard 后，题面必须
+              在这里接住，否则只剩两个按钮、用户不知道在确认什么。
+              与有选项分支同用 .confirm-wizard-question（三段式①口径）。 */}
+          {headerBlock()}
+          <Show when={msg().confirm}>
+            <div class="confirm-wizard-question">{msg().confirm}</div>
+          </Show>
           <button
             type="button"
             class="confirm-btn primary"

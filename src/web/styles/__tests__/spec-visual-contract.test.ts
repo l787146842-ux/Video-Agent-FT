@@ -126,28 +126,25 @@ describe('台账 #9（CSS 形态）：微调框缓缓浮现，禁止瞬时弹出
   });
 });
 
-describe('D-09：作废暂停卡（expired 旧卡）去翡翠绿改中性灰 + 标题删除线', () => {
+describe('批7（Q1）：阶段完成卡整卡删除（题面重复显示根因）', () => {
   const cardsCss = readSrc('styles/chat-cards.css');
-  const voidCard = ruleBlock(cardsCss, /^[ \t]*\.stage-card-void[ \t]*\{/m);
-  const voidTitle = ruleBlock(cardsCss, /^[ \t]*\.stage-card-void \.stage-card-title[ \t]*\{/m);
-  // 去翡翠绿：对勾图标与标题共用一条降饱和分组规则（--text-dim）
-  const voidDim = ruleBlock(cardsCss, /^[ \t]*\.stage-card-void \.stage-check,/m);
 
-  it('.stage-card-void 根规则存在且边框改中性 --border-color（不再翡翠绿）', () => {
-    expect(voidCard).not.toBe('');
-    expect(voidCard).toMatch(/border-color:\s*var\(--border-color\)/);
-    // 作废态不得沿用阶段卡翡翠绿族 token
-    expect(voidCard).not.toMatch(/--color-stage/);
+  it('.stage-card 全族样式已摘除（组件删除后不留死 CSS）', () => {
+    // 只断言**选择器规则**不存在（注释里说明历史是允许的，不误伤文档）
+    for (const sel of (['.stage-card', '.stage-card-header', '.stage-card-title',
+      '.stage-card-badge', '.stage-card-body', '.stage-card-summary',
+      '.stage-card-void', '.stage-check'])) {
+      const escaped = sel.replace(/\./g, '\\.');
+      expect(ruleBlock(cardsCss, new RegExp(`^[ \\t]*${escaped}[ \\t]*[,{]`, 'm')))
+        .toBe('');
+    }
   });
 
-  it('.stage-card-void 标题打删除线（作废/失效的通用视觉记号）', () => {
-    expect(voidTitle).not.toBe('');
-    expect(voidTitle).toMatch(/text-decoration:\s*line-through/);
-  });
-
-  it('作废态对勾图标/标题降饱和为 --text-dim（去翡翠绿、走语义色 token）', () => {
-    expect(voidDim).not.toBe('');
-    expect(voidDim).toMatch(/color:\s*var\(--text-dim\)/);
-    expect(voidDim).not.toMatch(/--color-stage/);
+  it('D-09 作废态随组件一并退场（不再有 expired 旧卡的专属视觉）', () => {
+    // 删除依据：同一句题面曾被 StageCard 与 ConfirmActions 各画一遍，
+    // 而 StageCard 的判重只在「active 且带选项」时让位，answered/expired 一律照画
+    // ——用户截图1 红框那张正是 answered 态。题面唯一出口 = ConfirmActions。
+    expect(ruleBlock(cardsCss, /^[ \t]*\.stage-card-void[ \t]*[,{]/m)).toBe('');
+    expect(ruleBlock(cardsCss, /^[ \t]*\.stage-card-void \.stage-card-title/m)).toBe('');
   });
 });

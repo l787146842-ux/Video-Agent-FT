@@ -64,7 +64,9 @@
   --color-confirm: #fb923c; --color-confirm-border: rgba(251, 146, 60, 0.6); --color-confirm-border-soft: rgba(251, 146, 60, 0.35); --color-confirm-border-strong: rgba(251, 146, 60, 0.65); --color-confirm-border-faint: rgba(251, 146, 60, 0.45);
   --color-confirm-bg: rgba(251, 146, 60, 0.12); --color-confirm-bg-hover: rgba(251, 146, 60, 0.2); --color-confirm-bg-selected: rgba(251, 146, 60, 0.3); --color-confirm-bg-active: rgba(251, 146, 60, 0.22);
   --color-confirm-text: #ffedd5; --color-confirm-text-strong: #fed7aa; --color-confirm-text-soft: rgba(255, 237, 213, 0.72); --color-confirm-text-bright: #fdba74;
-  --color-stage: #34d399; --color-stage-border: rgba(52, 211, 153, 0.3); --color-stage-bg: rgba(52, 211, 153, 0.05); --color-stage-bg-hover: rgba(52, 211, 153, 0.08); --color-stage-divider: rgba(52, 211, 153, 0.25);
+  /* 2026-09-22 批7（Q1，用户裁决）：--color-stage* token 族随阶段完成卡
+     （StageCard）整卡删除一并退场——组件与其样式均已移除，token 无消费方
+     = 死 token（留着会被误当成"阶段语义色"继续引用）。 */
   /* ===== 品牌星形渐变（固定品牌色，不随主题翻转） ===== */
   --color-brand-gold: #ffd700;
   --color-brand-gold-deep: #b8860b;
@@ -181,8 +183,7 @@ html.light {
   /* 确认卡橙族亮色档：文字/边框加深保白底对比；彩底档沿用浅橙染 */
   --color-confirm: #ea580c; --color-confirm-border: rgba(234, 88, 12, 0.6); --color-confirm-border-soft: rgba(234, 88, 12, 0.35); --color-confirm-border-strong: rgba(234, 88, 12, 0.65); --color-confirm-border-faint: rgba(234, 88, 12, 0.45);
   --color-confirm-text: #9a3412; --color-confirm-text-strong: #7c2d12; --color-confirm-text-soft: rgba(154, 52, 18, 0.72); --color-confirm-text-bright: #c2410c;
-  /* 阶段卡翡翠绿族亮色档：对齐 --color-success 亮色取值 */
-  --color-stage: #059669; --color-stage-border: rgba(5, 150, 105, 0.35); --color-stage-bg: rgba(5, 150, 105, 0.06); --color-stage-bg-hover: rgba(5, 150, 105, 0.1); --color-stage-divider: rgba(5, 150, 105, 0.3);
+  /* 2026-09-22 批7（Q1）：--color-stage* 亮色档同批退场（见深色档说明）。 */
   --splitter-hover: #3b82f6;
 }
 

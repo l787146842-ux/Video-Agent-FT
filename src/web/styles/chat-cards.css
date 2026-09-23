@@ -1,4 +1,5 @@
-/* ===== 卡片族（确认卡/文档卡/阶段卡/闸机 chips/生图卡片） ===== */
+/* ===== 卡片族（确认卡/文档卡/闸机 chips/生图卡片） =====
+   注：阶段卡（StageCard）已于 2026-09-22 批7（Q1）整卡删除，见下方说明。 */
 @layer components {
   /* 确认操作 */
   .confirm-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
@@ -86,29 +87,12 @@
   .doc-card-name { font-size: var(--font-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-card-status { margin-left: auto; font-size: var(--font-2xs); color: var(--accent-emerald); flex-shrink: 0; }
 
-  /* 阶段卡片（可展开、默认展开；正文=本轮概述+执行清单，与模型正文判重） */
-  .stage-card { border: 1px solid var(--color-stage-border); border-radius: 8px; background: var(--color-stage-bg); margin-bottom: 6px; overflow: hidden; }
-  .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; width: 100%; background: none; border: none; font: inherit; text-align: left; cursor: pointer; }
-  .stage-card-header:hover { background: var(--color-stage-bg-hover); }
-  .stage-check { color: var(--color-stage); flex-shrink: 0; }
-  .stage-card-title { font-size: var(--font-sm); font-weight: 600; color: var(--color-stage); }
-  .stage-card-badge { font-size: var(--font-2xs); color: var(--text-muted); background: color-mix(in srgb, var(--color-white) 6%, transparent); padding: 2px 7px; border-radius: 4px; }
-    /* 过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
-    .stage-card-badge-stale { color: var(--text-dim); background: transparent; border: 1px dashed var(--border-color); }
-  .stage-card-arrow { margin-left: auto; color: var(--text-dim); flex-shrink: 0; }
-  .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed var(--color-stage-divider); }
-  .stage-card-summary { margin: 6px 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-main); }
-  .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
-  .stage-card-ops li { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; }
-
-  /* D-09：作废暂停卡（被新卡取代的 expired 旧卡）——去翡翠绿改中性灰、标题删除线，
-     与有效态（active/answered 翡翠绿）明确区隔，一眼可辨「已失效、仅供回看」。
-     全部走语义色 token + color-mix 现调透明档，零硬编码色值（semantic_colors 门禁口径） */
-  .stage-card-void { border-color: var(--border-color); background: color-mix(in srgb, var(--color-white) 3%, transparent); }
-  .stage-card-void .stage-card-header:hover { background: color-mix(in srgb, var(--color-white) 6%, transparent); }
-  .stage-card-void .stage-check, .stage-card-void .stage-card-title { color: var(--text-dim); }
-  .stage-card-void .stage-card-title { text-decoration: line-through; }
-  .stage-card-void .stage-card-body { border-top-color: var(--border-color); }
+  /* 2026-09-22 批7（Q1，用户裁决）：阶段完成卡（StageCard）整卡删除，
+     其全部 .stage-card* / .stage-check 样式随之摘除（题面重复显示的根因之一；
+     题面唯一出口 = ConfirmActions）。回看信息归用户气泡内的提问回执卡，
+     操作数归 AgentTimeline「已处理操作」面板。
+     --color-stage* token 同时成为死 token，已从 tokens.css 摘除
+     （深/浅两套）。 */
 
   /* 提问回执卡（2026-09-21 A 批，对齐 dsh AskQuestionRow/AskQuestionCard）：
      折叠行「提问 · N/M 已回答」+「查看/收起」展开逐问「问题 → 答案」。

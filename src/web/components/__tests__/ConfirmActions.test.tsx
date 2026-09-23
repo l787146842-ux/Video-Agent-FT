@@ -12,7 +12,9 @@
  * ⑥ 厂商/模型维度渲染级联下拉而非选项卡（888 反馈）；
  * ⑦ 发送被拦截（返回 false）时解锁允许重试；
  * ⑧ 批次C 三段式问卷卡用例拆归 ConfirmActions-three-segment.test.tsx
- *    （前端行数红线内拆分，向导翻页题面断言随三段式调位同步更新）。
+ *    （前端行数红线内拆分，向导翻页题面断言随三段式调位同步更新）；
+ * ⑨ 批7（Q1）：**无选项**暂停的题面渲染在本组件（阶段完成卡删除后的补位，
+ *    否则只剩两个按钮、用户不知道在确认什么）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -70,6 +72,30 @@ describe('ConfirmActions 单发语义与结构化回携', () => {
     await fireEvent.click(btn);
     await fireEvent.click(btn);
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  // 2026-09-22 批7（Q1）：阶段完成卡（StageCard）整卡删除后，**无选项**暂停
+  // 的题面必须由本组件接住——此前该分支只画两个按钮，题面只存在于被删的卡里。
+  // 不补这一行 ⇒ 题面丢失（用户看到两个按钮却不知在确认什么）。
+  it('无选项暂停：题面渲染在本组件（批7 补位，防题面丢失）', () => {
+    const msg = { ...pauseMessage(), confirm: '画幅比例选哪种？' };
+    const { container } = render(() => <ConfirmActions message={msg} />);
+    const q = container.querySelector('.confirm-wizard-question');
+    expect(q?.textContent).toBe('画幅比例选哪种？');
+    // 按钮与题面同区呈现
+    expect(container.querySelector('.confirm-actions .confirm-btn.primary')).toBeTruthy();
+  });
+
+  it('有选项暂停：题面仍归问卷卡（不与本处补位重复渲染）', () => {
+    const msg = pauseMessage([
+      { label: '确认，继续', value: '确认，继续' },
+      { label: '我要调整', value: '我要调整' },
+    ]);
+    const { container } = render(() => <ConfirmActions message={msg} />);
+    const qs = container.querySelectorAll('.confirm-wizard-question');
+    // 有选项分支的题面在 .confirm-wizard 内，且只出现一次
+    expect(qs.length).toBe(1);
+    expect(qs[0].textContent).toBe(msg.confirm);
   });
 
   it('选项卡选择后发送携带机械 value，且连点不重发', async () => {

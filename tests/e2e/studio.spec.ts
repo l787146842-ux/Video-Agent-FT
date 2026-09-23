@@ -143,12 +143,13 @@ test.describe('阶段确认卡片与文档卡片', () => {
         await chatInput.press('Enter');
 
         const feed = page.getByTestId('chat-feed');
-        // 阶段完成卡：标题 + 操作数徽标 + 短确认问句（body 只留概要，明细不双处呈现）
-        const stageCard = feed.locator('.stage-card').last();
-        await expect(stageCard).toContainText('阶段完成');
-        await expect(stageCard).toContainText('已执行 3 个操作');
-        await expect(stageCard.locator('.stage-card-body')).toContainText('故事板已建立，请审阅');
-        await expect(stageCard.locator('.stage-card-body')).not.toContainText('新建关键元素分组');
+        // 2026-09-22 批7（Q1，用户裁决）：阶段完成卡（.stage-card）整卡删除——
+        // 同一句题面曾与 ConfirmActions 各画一遍（用户截图1 红框那张）。
+        // 题面归 ConfirmActions 独家（.confirm-wizard-question）；操作数归时间线。
+        await expect(feed.locator('.stage-card')).toHaveCount(0);
+        await expect(
+            feed.locator('.confirm-wizard-question', { hasText: '故事板已建立，请审阅' })
+        ).toBeVisible();
         // 文档完成卡片
         await expect(feed.locator('.doc-card').last()).toContainText('Final_Video_Spec.md');
         // action_log 明细归时间线「已处理操作」面板单家（非 live 默认折叠，点开头部再断言）
@@ -180,16 +181,11 @@ test.describe('阶段确认卡片与文档卡片', () => {
         await chatInput.press('Enter');
 
         const feed = page.getByTestId('chat-feed');
-        // 成果通道：结构化分析在正文气泡（系统渲染），不在阶段卡
+        // 成果通道：结构化分析在正文气泡（系统渲染），不在任何卡片
         await expect(feed).toContainText('一句话总结');
-        const stageCard = feed.locator('.stage-card').last();
-        // 批次C 让位规则：active 暂停卡带选项（且无 decisionForm）时题面已由
-        // 问卷卡三段式①（confirm-wizard-question）独立成行接管，阶段卡正文
-        // 让位防双显——只留「阶段完成」标题 + 操作数徽标，无正文区
-        await expect(stageCard).toContainText('阶段完成');
-        await expect(stageCard).toContainText('已执行 1 个操作');
-        await expect(stageCard.locator('.stage-card-body')).toHaveCount(0);
-        await expect(stageCard).not.toContainText('一句话总结');
+        // 2026-09-22 批7（Q1）：阶段完成卡已整卡删除 → 完成信息唯一出口 =
+        // 暂停卡通道（ConfirmActions 的 confirm-wizard-question）
+        await expect(feed.locator('.stage-card')).toHaveCount(0);
         // 完成信息改由暂停卡通道承接：题面独立成行，验证意图不削弱
         // 语义过滤定位（不依赖 first() 位置假设）：带 group 的选项组标题行
         // 同用 .confirm-wizard-question，按 hasText 只锁题面行

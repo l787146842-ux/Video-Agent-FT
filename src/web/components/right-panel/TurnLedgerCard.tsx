@@ -17,7 +17,6 @@ import type { ChatMessage } from '@/types';
 import type { TurnLedger, TurnPhase } from '@/lib/turn-ledger';
 import { AgentTimeline } from './AgentTimeline';
 import { StageProgressBar } from './StageProgressBar';
-import { StageCard } from './StageCard';
 
 /** 批次B：prefers-reduced-motion 检测（jsdom 下 matchMedia 缺失时回落允许动画，
  * 测试以 matchMedia mock 真实断言 reduce 场景） */
@@ -52,19 +51,17 @@ export function TurnLedgerCard(props: {
       when={props.phase === 'live'}
       fallback={
         <>
-          {/* 阶段完成卡：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
-              确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失。
-              （A 批：问答回执卡改挂**用户气泡**内——见 UserBubble/AskQuestionReceipt） */}
-          <Show when={msg().confirm}>
-            <StageCard msg={msg} state={props.confirmState || 'none'} class={fadeClass} />
-          </Show>
-
-          {/* 2026-09-21 批K（用户要求）：原「已回应选项对勾区」（AnsweredOptions）
-              已从本卡移除——问答回执改在**用户自己的气泡**内逐问呈现
-              （见 UserBubble/PauseQaBlock）。移除理由：该区把整排选项重画后
-              用文字匹配打勾，多问题时会混在一起、同名选项会互相串。
-              注：`AnsweredOptions` 组件与 `answered-options` 样式保留
-              （其他消费面/回归测试仍引用），只是本卡不再挂载。 */}
+          {/* 2026-09-22 批7（Q1，用户裁决）：原「阶段完成卡」（StageCard）**整卡删除**。
+              用户目击（截图1 红框）：同一句题面在屏幕上画了两遍——StageCard 画一次
+              （`阶段完成 · 已执行 2 个操作 · 已回应` + `画幅比例选哪种?`），
+              ConfirmActions 的 `.confirm-wizard-question` 又画一次。根因是两条渲染
+              路径各画各的，而 StageCard 的判重条件只在「active 且带选项」时让位，
+              answered/expired 一律照画（红框那张正是 answered 态）。
+              删除后题面唯一出口 = ConfirmActions（其无选项分支本批已补题面行，
+              见该文件；无选项暂停此前**只**由本卡承载题面，不补会丢字）。
+              回看不受损：批K 已把「问题→你的选择」搬进**用户自己的气泡**
+              （UserBubble → AskQuestionReceipt → PauseQaBlock），agent 侧无需再承载。
+              操作数徽标另有归属：AgentTimeline「已处理操作」面板（trace 同源）。 */}
 
           {/* 过程时间线（深度思考 + 已处理操作；settled 定型面板形态，
               账目优先消费相位翻转账本，回落路径由 ledger 数据源侧保证） */}

@@ -112,7 +112,7 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
     expect(container.querySelector('.user-bubble-text')?.textContent).toBe('用这个风格再来一段');
   });
 
-  it('已回应暂停卡：agent 卡不再挂「当时所选」对勾区（批K 迁到用户气泡）', () => {
+  it('已回应暂停卡：agent 卡不再挂「当时所选」对勾区，也不挂阶段完成卡（批7）', () => {
     const msg: ChatMessage = {
       sender: 'agent',
       text: '',
@@ -125,8 +125,12 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
     // 2026-09-21 批K（用户要求）：旧「整排选项重画 + 文字匹配打勾」已从 agent 卡移除，
     // 问答回执改在用户气泡内逐问呈现（PauseQaBlock）。
     expect(container.querySelector('.answered-options')).toBeNull();
-    // 阶段完成卡本身照旧渲染（只摘掉对勾区）
-    expect(container.querySelector('.stage-card')).toBeTruthy();
+    // 2026-09-22 批7（Q1，用户裁决）：阶段完成卡整卡删除——同一句题面曾与
+    // ConfirmActions 各画一遍（用户截图1 红框那张正是 answered 态）。
+    // agent 侧不再承载题面；已回应暂停的问答回执在**用户气泡**内（见下一用例）。
+    expect(container.querySelector('.stage-card')).toBeNull();
+    expect(container.querySelector('.confirm-wizard-question')).toBeNull();
+    expect(container.querySelector('.answered-options')).toBeNull();
   });
 
   it('用户气泡内渲染一问一答回执（批K）：问题 → 你的选择', () => {

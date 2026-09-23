@@ -212,38 +212,38 @@ def test_spec_clause_layers_persistence_by_granularity():
         "缺落盘分层（方针级 → 规格「角色方向」/ 逐条明细 → 故事板元素）"
 
 
-# ---------- ③ 委派任务书契约（事故 2222/Q5 立，5555/Q5 由三段改两段） ----------
+# ---------- ③ 委派任务书契约（事故 2222/Q5 立，5555/Q5 三段改两段，
+#               4444/Q3 批5 由「两段」改为「原则上不用写」） ----------
 
 def _policy() -> str:
     from src.video_agent.core.subagent import subagent_policy
     return subagent_policy()
 
 
-def test_task_brief_is_two_parts():
-    """任务书两段式：①目标（执行所选 Skill 本章节）＋②只有子代理用得上、它读不到的东西。
+def test_task_brief_is_optional_supplement():
+    """任务书由「只写两段」改为「原则上不用写，只补子代理读不到的东西」。
 
-    2026-09-21 批C（事故 5555/Q5）由三段改两段：**删「②下游用途」**。
-    删除依据（5555 实跑取证）：子代理 `history=[]`、阶段章节已由
-    `planner._launch_subagent` 全量注入——它**真的不需要**知道下游用途；
-    而该段实测被用作复述章节内容的入口（任务书①把 `SKILL.md:16` 原文
-    「提取角色、场景、关键道具，识别剧本类型」整句抄了一遍）。
-    2026-09-21 批E（事故 4444/Q5）：段②判据口径由「尚未落入规格文档的新决定」
-    改为「只有这个子代理用得上、而它自己读不到的东西」——旧口径相对
-    **规格文档这一个载体**定义，导致规格尚未创建时按字面**必须**把语言偏好
-    写进剧本分析任务书（剧本分析子代理用它不着）。
+    2026-09-22 批5（事故 4444/Q3，用户裁决「直接就是执行对应章节任务就行了；
+    主代理只加子代理看不到的内容」）：**把劝告下降成结构**。
+    历史证据链：批2（加「不要复述」）→ 批C（三段改两段）→ 批E（改判据口径）
+    三轮 prose 修复后，4444 实跑任务书仍有「已登记的 9 个 keyElement 分组
+    （5 角色/3 场景/1 道具）…制片规格（16:9、约 5 分钟…）请自行读取」——
+    全是子代理一眼可见的项目状态。根因：task 当时**必填**，模型必须填坑，
+    复述是结构必然而非违纪（G3：不靠加一句话让模型配合）。
+    故本批把槽位本身降为选填（`RunSubagentInput.task = ""`），带 stage 时
+    目标由平台按阶段生成（`build_subagent_task`）。
     """
     policy = _policy()
-    assert "任务书只写两段" in policy, "缺任务书两段式契约"
-    assert "一句目标" in policy, "缺第①段：一句目标"
+    assert "任务书原则上**不用写**" in policy, "缺「任务书原则上不用写」契约"
+    assert "目标由系统按阶段生成" in policy, "缺「带 stage 时目标由平台生成」"
     assert "用得上" in policy and "读不到" in policy, \
-        "缺第②段新口径：只有这个子代理用得上、而它自己读不到的东西"
-    # 用户 #6 已否决的「框太死」方向：不得回退成复述既有内容
-    assert "子代理自己读得到" in policy, \
-        "缺「子代理自己读得到」的正向读取授权认知（用户 #6）"
+        "缺补充槽判据：只有这个子代理用得上、而它自己读不到的东西"
+    assert "不存在" not in policy or "自己都拿得到" in policy, \
+        "缺正向读取授权认知（子代理自己拿得到）"
 
 
 def test_task_brief_drops_stale_spec_relative_criterion():
-    """反向钉：段②不得回潮成「尚未落入规格文档的新决定」（4444/Q5 直接病根）。
+    """反向钉：判据不得回潮成「尚未落入规格文档的新决定」（4444/Q5 直接病根）。
 
     旧口径把判据锚在**规格文档**上，与「子代理要不要」无关：4444 派
     script_analyze 时规格尚未创建，语言偏好按字面必须附上，模型只能照章办事
@@ -251,36 +251,35 @@ def test_task_brief_drops_stale_spec_relative_criterion():
     """
     policy = _policy()
     assert "尚未落入规格文档的新决定" not in policy, (
-        "段②回潮成「尚未落入规格文档的新决定」——该口径相对规格文档定义，"
+        "判据回潮成「尚未落入规格文档的新决定」——该口径相对规格文档定义，"
         "与子代理相关性无关（4444/Q5）")
-    assert "没有就整段不写" in policy, (
-        "缺「没有就整段不写」——该槽位若是必须存在的，模型只能写占位句填坑")
+    assert "整个 task 留空" in policy, (
+        "缺「没有就整个 task 留空」——槽位若仍显得必须存在，模型只能写占位句")
 
 
 def test_task_brief_bans_placeholder_sentence():
-    """段②禁止占位句（4444/Q6 实证）。
+    """补充槽禁止占位句（4444/Q6 实证）。
 
     模型自己决定过「只写①」（seq50 思考原文），最终仍写下
-    「本阶段无新增未落盘决定。」——因为段② 是一个必须交代的槽位。
+    「本阶段无新增未落盘决定。」——因为当时那是一个必须交代的槽位。
     """
     policy = _policy()
     assert "占位句" in policy, "缺「不要写占位句填坑」"
 
 
 def test_task_brief_bans_restating_spec_params_and_downstream():
-    """段①不得复述规格参数现值/源文档出处/章节自带的下游依赖（4444/Q6）。
+    """不得复述规格参数现值/源文档出处/章节自带的下游依赖（4444/Q6）。
 
     实跑取证（key_elements 任务书原文）：「制片规格已写入「制片规格.md」
     （16:9、约 4 分钟、电影级写实科幻冷调、中文台词+中文提示词、角色按原著
     气质写实设计），剧本为已上传的《三体简短版.md》」——括号内是规格内容
     第二份复述；同句还有「供后续镜头设计与设定图生成使用」= 批C 已删的
-    「下游用途」换了位置回来（Skill 自己的依赖图仍在供料，批E 只能从
-    判据侧收窄）。
+    「下游用途」换了位置回来。
     """
     policy = _policy()
-    assert "规格参数的现值与源文档出处都不必转告" in policy, \
-        "缺「不复述规格参数现值/源文档出处」"
-    assert "下游依赖关系" in policy, "缺「不必交代章节自带的下游依赖关系」"
+    assert "一律不复述" in policy, "缺「一律不复述」"
+    assert "会过期的第二份事实源" in policy, \
+        "缺因果说明（复述 = 会过期的第二份事实源）"
 
 
 def test_task_brief_drops_downstream_use():
@@ -294,6 +293,8 @@ def test_task_brief_drops_downstream_use():
         "回潮成三段式「下游用途」——5555/Q5 已删除（子代理不需要知道，"
         "且该段被用作复述章节内容的入口）")
     assert "任务书三段" not in policy, "回潮成三段式表述"
+    assert "任务书只写两段" not in policy, (
+        "回潮成两段式——批5 已降为「原则上不用写」（4444/Q3）")
 
 
 def test_task_brief_examples_do_not_leak_internal_terms():
@@ -314,16 +315,23 @@ def test_task_brief_examples_do_not_leak_internal_terms():
 
 
 def test_task_brief_points_at_section_as_the_basis():
-    """①段必须把「执行所选 Skill 的本阶段章节」写成执行依据（章节即规范）。
+    """执行依据必须落在「所选 Skill 的本阶段章节」（章节即规范）。
 
-    这是删掉复述后的**代替品**：不再由父代理转述规范，而是明确指向
-    已在子代理手里的章节全文（唯一表述源，P1）。
+    批5 后这层含义**下沉到平台生成的目标行**（`build_subagent_task`：
+    「执行所选 Skill 的「X」章节」），不再依赖主代理在 task 里手写——
+    这正是「把劝告下降成结构」。
+    批7（D-7）：目标行**去掉了**「按该章节规范完成本阶段全部产出」——
+    那句与 Skill <planner> 的暂停散文直接矛盾，流程控制源回归 Skill 散文。
     """
+    from src.video_agent.core.subagent import build_subagent_task
+
     policy = _policy()
-    assert "执行所选 Skill 的本阶段章节" in policy, \
-        "缺「执行依据＝所选 Skill 的本阶段章节」"
-    assert "不要复述章节内容" in policy, \
-        "缺「不要复述章节内容」——不写这句，模型会继续把章节抄进任务书"
+    assert "Skill 章节内容子代理自己都拿得到" in policy, \
+        "缺「章节已随委派注入」事实"
+    # 结构侧兑现：目标行由平台生成且逐字指向该章节
+    generated = build_subagent_task("", stage="script_analyze")
+    assert "执行所选 Skill 的「素材分析」章节" in generated
+    assert "全部产出" not in generated, "平台目标行不得与 Skill 暂停散文打架"
 
 
 def test_task_brief_states_why_not_just_forbids():
@@ -334,9 +342,9 @@ def test_task_brief_states_why_not_just_forbids():
     又把同样内容列一遍（第二份事实源）。
     """
     policy = _policy()
-    assert "复述只会和章节打架" in policy, \
+    assert "你复述只会和章节打架" in policy, \
         "缺因果说明「你复述只会和章节打架」（防退化成纯禁令）"
-    assert "章节里都已经写全" in policy, "缺范围/规范/交付物归章节的事实说明"
+    assert "会过期的第二份事实源" in policy, "缺第二份事实源的因果说明"
 
 
 def test_task_brief_carries_spec_write_principle_reference():
@@ -350,24 +358,39 @@ def test_task_brief_carries_spec_write_principle_reference():
     assert "未确认的不得写成既定规格" in policy, "缺未确认不得写成规格"
 
 
-def test_task_field_description_matches_policy():
-    """工具 schema 的 task 描述与策略段同向（不产生第二份契约）。
+def test_task_field_is_optional_supplement():
+    """工具 schema 的 task 描述与策略段同向，且**默认空 = 选填**。
 
-    工具描述只留可照抄的字段用法，两段式完整表述与"为什么"唯一源 = SUBAGENT_POLICY。
-    2026-09-21 批E（事故 4444/Q5）同批改口径：描述不得再复述「尚未落入规格
-    文档的新决定」（旧口径锚在规格文档上，见 test_task_brief_drops_stale_...）。
+    批5 的结构落点：`task: str = Field("")`——调用方没有"必须填目标"的坑，
+    复述通道从结构上关闭（此前 `Field(...)` 必填 ⇒ 模型必须填坑）。
+    描述只留可照抄的字段用法，"为什么"唯一源 = SUBAGENT_POLICY。
     """
     from src.video_agent.tools.document_tools import RunSubagentInput
 
-    desc = RunSubagentInput.model_fields["task"].description
-    assert "①一句目标" in desc, "task 字段描述未承载①段（与策略段不同向）"
+    field = RunSubagentInput.model_fields["task"]
+    assert field.default == "", "task 默认值非空——批5 要求选填（Q3 结构落点）"
+    assert not field.is_required(), "task 仍是必填——模型必须填坑，复述通道没关"
+
+    desc = field.description
+    assert "选填补充" in desc, "task 字段描述未声明选填语义"
+    assert "用得上" in desc and "读不到" in desc, "task 字段缺补充槽判据"
     assert "下游用途" not in desc, "task 字段回潮成三段式（含下游用途）"
     assert "尚未落入规格文档的新决定" not in desc, \
-        "task 字段回潮成旧口径「尚未落入规格文档的新决定」（4444/Q5）"
-    assert "用得上" in desc and "读不到" in desc, "task 字段缺②段新口径"
-    assert "执行所选 Skill 的本阶段章节" in desc, \
-        "task 字段缺「执行依据＝所选 Skill 本章节」"
-    assert "不用复述" in desc, "task 字段缺「既有内容不用复述」事实"
+        "task 字段回潮成旧口径（4444/Q5）"
+    assert "由系统按阶段生成" in desc, "task 字段缺「目标由平台生成」事实"
+    assert "不用写" in desc, "task 字段缺「既有内容不用写」事实"
+
+
+def test_task_field_omittable_at_runtime():
+    """端到端：省略 task 也能构造（Pydantic 不报缺字段），且能走完装配。"""
+    from src.video_agent.core.subagent import build_subagent_task
+    from src.video_agent.tools.document_tools import RunSubagentInput
+
+    params = RunSubagentInput(stage="storyboard_design")
+    assert params.task == ""
+    task = build_subagent_task(params.task, stage=params.stage)
+    assert "执行所选 Skill 的「故事板设计」章节" in task
+    assert "===== 本次委派目标 =====" in task
 
 
 # ---------- ④ 规格落盘时机（事故 4444/Q2②，批E） ----------

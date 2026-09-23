@@ -38,7 +38,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PLANNER_SRC = PROJECT_ROOT / "src" / "video_agent" / "core" / "planner.py"
 TURN_EXECUTOR_SRC = PROJECT_ROOT / "src" / "video_agent" / "core" / "turn_executor.py"
 
-_STAGE = "storyboard_key_elements"
+# 2026-09-22 批6（Q5）：故事板三阶段在委派面合并为 storyboard_design
+_STAGE = "storyboard_design"
 
 
 @pytest.fixture(autouse=True)
@@ -143,7 +144,11 @@ def test_subagent_tagged_frames_include_reasoning():
 # ---------- 阶段隔离不回归 ----------
 
 def test_child_deny_set_unchanged_by_streaming():
-    """批G 不改工具面：子级 deny 集（含 run_subagent 防递归）逐字不变。"""
+    """批G 不改工具面：子级 deny 集（含 run_subagent 防递归）逐字不变。
+
+    2026-09-22 批6（Q5）：阶段名随故事板三合一改为 storyboard_design；
+    本钉语义不变（streaming 通道不得动工具面）。
+    """
     deny = sub.child_deny_set(_STAGE)
     assert "run_subagent" in deny, "结构防递归被破坏"
     assert "workflow_pause" in deny, "子级不该持有确认工具"

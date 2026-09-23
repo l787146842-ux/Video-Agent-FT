@@ -25,7 +25,9 @@ from src.video_agent.utils import prompts as prompts_mod
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUBAGENT_MD = PROJECT_ROOT / "prompts" / "planner" / "subagent.md"
 
-_STAGE = "storyboard_key_elements"
+# 2026-09-22 批6（Q5）：故事板三阶段在委派面合并为 storyboard_design，
+# 旧名 storyboard_key_elements 不再是可委派阶段（resolve_stage 返回空）。
+_STAGE = "storyboard_design"
 
 
 @pytest.fixture(autouse=True)
@@ -187,11 +189,17 @@ def test_stage_display_label_maps_enum_to_label():
 
     2026-09-21 批I（事故 4444/Q6①）：标签口径改为**英文 tag 直译**
     （「关键元素拆解」→「关键元素」），与前端 skill-structure 对齐。
+    2026-09-22 批6（Q5）：故事板三阶段合并 → storyboard_design =「故事板设计」。
     """
-    assert sub.stage_display_label(_STAGE) == "关键元素"
+    assert sub.stage_display_label(_STAGE) == "故事板设计"
     assert sub.stage_display_label("script_analyze") == "素材分析"
     assert sub.stage_display_label("") == ""
     assert sub.stage_display_label("not_a_stage") == ""
+    # 旧原子阶段已退出委派面 ⇒ 展示标签同样回落空串（不再是可委派阶段）
+    for legacy in ("storyboard_key_elements", "storyboard_shots",
+                   "storyboard_audio"):
+        assert sub.stage_display_label(legacy) == "", (
+            f"{legacy} 仍可解析出展示标签——批6 已合并（Q5）")
 
 
 def test_delegated_stage_fills_parent_stage_label():
@@ -212,7 +220,7 @@ def test_delegated_stage_fills_parent_stage_label():
 
     runner = FCToolRunner(tool_manager=_TM())
     # 委派由 planner 注入的 launcher 拦截执行（此处只验阶段标签回填）
-    async def _fake_launch(task, kind="", stage="", on_event=None):
+    async def _fake_launch(task, kind="", stage="", current_step="", on_event=None):
         return "（子代理摘要）"
 
     runner.subagent_launcher = _fake_launch
@@ -232,7 +240,9 @@ def test_delegated_stage_fills_parent_stage_label():
     ])
     res = asyncio.run(runner.execute(resp))
     confirmation = res[1]
-    assert "关键元素" in confirmation, (
+    # 2026-09-22 批6（Q5）：阶段名随故事板三合一改为 storyboard_design，
+    # 标签随之变为「故事板设计」；本钉语义不变（阶段回填不得回落「本阶段」）。
+    assert "故事板设计" in confirmation, (
         f"暂停卡未带真实阶段标签（实得：{confirmation!r}）——"
         f"run_subagent 的阶段未回填父级 last_stage_label（5555/Q3）")
     assert "本阶段" not in confirmation, "仍回落系统模板的「本阶段」"
@@ -256,7 +266,7 @@ def test_generic_delegation_keeps_fallback_label():
 
     runner = FCToolRunner(tool_manager=_TM())
 
-    async def _fake_launch(task, kind="", stage="", on_event=None):
+    async def _fake_launch(task, kind="", stage="", current_step="", on_event=None):
         return "（子代理摘要）"
 
     runner.subagent_launcher = _fake_launch

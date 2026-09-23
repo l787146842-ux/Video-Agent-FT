@@ -69,7 +69,7 @@ describe('TurnLedgerCard settled 相位', () => {
     expect(container.querySelector('.tl-panel-elapsed')?.textContent).toContain('2.4s');
   });
 
-  it('msg.confirm 挂阶段完成卡；已回应标注已移除（批K 迁到用户气泡）', () => {
+  it('msg.confirm 不再挂阶段完成卡（批7/Q1 整卡删除）；题面唯一出口 = ConfirmActions', () => {
     const msg = {
       sender: 'agent',
       text: '',
@@ -85,18 +85,21 @@ describe('TurnLedgerCard settled 相位', () => {
         answeredValue="确认，继续"
       />
     ));
-    expect(container.querySelector('.stage-card')?.textContent).toContain('阶段完成');
-    // answered/expired 生命周期徽标透传 StageCard
-    expect(container.querySelector('.stage-card-badge-stale')).toBeTruthy();
+    // 2026-09-22 批7（Q1，用户裁决）：StageCard 整卡删除——事故是同一句题面
+    // 被 StageCard 与 ConfirmActions 各画一遍（判重只在 active+带选项 时让位，
+    // answered/expired 一律照画；用户截图1 红框那张正是 answered 态）。
+    // 题面归 ConfirmActions 独家；本卡只留时间线。
+    expect(container.querySelector('.stage-card')).toBeNull();
+    expect(container.querySelector('.stage-card-badge-stale')).toBeNull();
     // 2026-09-21 批K（用户要求）：本卡不再挂「已回应选项对勾区」——
     // 问答回执改在用户气泡内逐问呈现（见 PauseQaBlock / UserBubble）。
-    // 移除理由：该区把整排选项重画后用**文字**匹配打勾，多问题时会混在一起、
-    // 同名选项互相串；批J 落盘的问题级 answers 已可按 id 精确配对。
     expect(container.querySelector('.answered-options')).toBeNull();
-    // DOM 顺序：阶段卡 → 时间线（旧的中间「已回应标注」已不在链上）
+    // 本卡只剩时间线（阶段卡退场后无前序件）
     const order = Array.from(container.querySelectorAll('.stage-card, .agent-timeline'))
       .map((el) => el.classList[0]);
-    expect(order).toEqual(['stage-card', 'agent-timeline']);
+    expect(order).toEqual(['agent-timeline']);
+    // 题面文本不再出现在 agent 侧（用户气泡内的回执才承载问答）
+    expect(container.textContent).not.toContain('请确认规格');
   });
 
   it('无 confirm 的消息不渲染阶段卡与标注，仅时间线', () => {
@@ -127,7 +130,7 @@ describe('批次B：账本翻转淡入（settled 新挂载 120ms opacity 淡入�
     delete (window as { matchMedia?: unknown }).matchMedia;
   });
 
-  it('settled 新挂载：阶段卡/时间线两件根均挂 ledger-fade-in（批K 已回应标注迁出）', () => {
+  it('settled 新挂载：时间线根挂 ledger-fade-in（批7 阶段卡退场，淡入归时间线）', () => {
     mockMatchMedia(false);
     const msg = {
       sender: 'agent',
@@ -143,7 +146,8 @@ describe('批次B：账本翻转淡入（settled 新挂载 120ms opacity 淡入�
         answeredValue="确认，继续"
       />
     ));
-    expect(container.querySelector('.stage-card.ledger-fade-in')).toBeTruthy();
+    // 批7（Q1）：StageCard 已删除，settled 面唯一挂淡入类的根 = 时间线
+    expect(container.querySelector('.stage-card.ledger-fade-in')).toBeNull();
     expect(container.querySelector('.agent-timeline.ledger-fade-in')).toBeTruthy();
     // 已回应标注不再属于本卡（批K 迁到用户气泡）
     expect(container.querySelector('.answered-options')).toBeNull();
@@ -174,8 +178,8 @@ describe('批次B：账本翻转淡入（settled 新挂载 120ms opacity 淡入�
         answeredValue="确认，继续"
       />
     ));
-    // 两件照常渲染，仅淡入类缺席
-    expect(container.querySelector('.stage-card')).toBeTruthy();
+    // 时间线照常渲染，仅淡入类缺席（批7 后阶段卡已不在本卡）
+    expect(container.querySelector('.stage-card')).toBeNull();
     expect(container.querySelector('.agent-timeline')).toBeTruthy();
     expect(container.querySelector('.ledger-fade-in')).toBeNull();
     expect(window.matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
