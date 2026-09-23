@@ -38,6 +38,15 @@ _DRAFT_FIELDS_HINT = (
     # 只能自发用 tag/desc 表达而平台不消费 —— 本句即那条缺失的正面契约。
     f"音频卡用 audioType 声明种类（{'/'.join(ops.AUDIO_TYPES)}；"
     "voice = 角色音色卡，即 Skill 明文的 key_element_audio）。"
+    # 2026-09-23 批11（事故 4444/P1-5）：mediaType 与 audioType 是**两个维度**，
+    # 此前只交代了 audioType，模型以为声明了就够 ⇒ 只填 audioType 不填 mediaType，
+    # 而 mediaType 缺省回落 image ⇒ 「音频语义 + 图像类型」自相矛盾卡，
+    # 在故事板设计阶段被阶段媒体闸整单拒收 5 次（4444 实证 seq108/seq118 对照）。
+    # 平台已能从 audioType 推导 mediaType（infer_media_type），本句把两者的
+    # 配套关系写明（缺失时按 audioType 推导，显式声明更清晰）。
+    "**mediaType 与 audioType 配套**：音频卡两个都标（只标 audioType 时"
+    "系统按它推导出 mediaType=audio）；图像卡 mediaType=image；"
+    "分镜视频卡 mediaType=video。"
     # 2026-09-23 批10（事故 4444/P1-4）：**归属类目**这一级此前缺失——
     # 模型有 audioType 字段、也知道它是「角色音色卡」，却不知道**该挂进哪个类目**；
     # 4444 实跑 6 张 voice 卡全落 audioItems（独立 Audio_voice-* 组），

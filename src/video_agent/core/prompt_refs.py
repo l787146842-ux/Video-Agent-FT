@@ -13,7 +13,11 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
+from src.video_agent.state.models import (
+    CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS,
+    # 2026-09-23 批11（事故 4444/P1-5）：mediaType 缺省取值唯一推导入口
+    infer_media_type,
+)
 from src.video_agent.state.storyboard_ops import strip_type_prefix
 
 # 引用记号匹配（两式同义，2026-09-07 外部标杆 记号兼容裁决）：
@@ -37,8 +41,13 @@ _KIND_LABEL = {"image": "参考图", "video": "参考视频", "audio": "参考�
 
 
 def media_of_draft(d: Dict[str, Any]) -> Tuple[str, str]:
-    """取草稿的主媒体 (url, kind)：按 mediaType 优先，其次按已有字段兜底"""
-    kind = (d.get("mediaType") or "image").lower()
+    """取草稿的主媒体 (url, kind)：按 mediaType 优先，其次按已有字段兜底。
+
+    2026-09-23 批11（事故 4444/P1-5）：mediaType 的缺省取值改走
+    `models.infer_media_type` 唯一入口——未填 mediaType 但填了 audioType
+    的音频卡此前被本处读成 image，与构建工厂/闸机是同一处口径漂移。
+    """
+    kind = infer_media_type(d)
     if kind == "video":
         url = d.get("videoUrl") or d.get("imgUrl") or ""
         return url, "video"

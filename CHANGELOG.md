@@ -36,6 +36,18 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-23 · 批11 草稿 mediaType 唯一推导（事故 4444/P1-5，含对批10 报告的勘误）
+- **触发**：用户追问「模型为什么想顺手把角色设定图也画了？故事板设计章节里根本没有出图和写提示词的说明」——追问成立，**复核后发现批10 报告在此处结论错误**。
+- **事实（逐条取证 `conv-1790159633-e7d76b40`）**：那 5 次被拒的调用**全部是音频卡**（`group_type='audio'`，`audioType` = `bgm`×3 / `voice`×2），**模型从未申请建过任何图像卡**；该子代理全程建卡类型分布 = `audio` + 空值，**`image` 计数 0**（19 张图卡是子代理 5 在 `write_media_prompt` 阶段建的，属**正确阶段**）。被拒真因 = **只填 `audioType`、未填 `mediaType`**（seq108）；补上 `mediaType='audio'` 后同批全部通过（seq118）。
+- **批10 报告错在哪（勘误已写入报告原文）**：拒收文案写「收到 `'image'`」，我直接把那个词读成了模型的意图。但 `image` 是**平台自己的默认值**（`DRAFT_DEFAULT_FIELDS["mediaType"]="image"`）——模型压根没发过这个词。**闸机拿平台默认值当模型意图回喂，我则把这个回喂当成了事实**（同 4444/Q2① 的认知偏差形态：把平台自己产生的东西当成模型的意图）。原文「这是三件事打包后才出现的新撞面」结论**作废**——合并前分阶段委派时子代理同样会只填 `audioType`，**与阶段合并无关**。该报告 §P1-2 已加勘误块、总表已订正、并新增 P1-5 条目。
+- **真实缺陷（P1-5）**：`mediaType` 与 `audioType` 是**两个维度**，而平台**明明能从 `audioType` 唯一推导 `mediaType`**（`AUDIO_TYPES` 词表 + `key_element_audio` 契约本就在手），却选择回落 `image` ⇒ 落库「音频语义 + 图像类型」自相矛盾卡，在故事板设计阶段被整单拒收。**代价 = 一次纯浪费的往返（5 个调用全废）。**
+- **根因**：`mediaType` 的缺省取值在**三处各写一遍 `or "image"`**（`models.build_draft_dict` 写口 / `fc_gates.card_media_gate` 闸机读口 / `prompt_refs.media_of_draft` 引用读口）——同一口径三份抄写，正是漂移温床。
+- **修法（单一事实源，非补丁）**：新增 `models.infer_media_type(data)` 作**唯一推导入口**——① 显式 `mediaType` 优先（含显式 `image`，**本层不越权改写入参**）；② 未给但给了 `audioType` ⇒ `audio`（`AUDIO_TYPE_TO_MEDIA`，含未登记种类的保守推导）；③ 都没有 ⇒ `image`（**历史默认，零行为变化**）。三处消费面全部改引该实现；同批导出 `MEDIA_TYPES` 媒体闭集。**闸机与工厂从此同口径**——这正是本次事故的缺口。
+- **schema 契约补齐**：`_DRAFT_FIELDS_HINT` 此前只交代了 `audioType`（模型以为声明了种类就够），现补「**`mediaType` 与 `audioType` 配套**：音频卡两个都标；图像卡 `mediaType=image`；分镜视频卡 `mediaType=video`」。
+- **回归钉**：新增 `tests/unit/test_media_type_inference.py`（**21 条**，四组：推导规则本身 / 工厂同口径 / **闸机同口径** / `prompt_refs` 同口径 + 源码级防回潮）。**关键钉**是 `test_gate_and_factory_agree`（断言「闸机放行 ⟺ 工厂落库类型在允许集内」——两处各写一遍才会漂移）与 `test_audio_card_without_media_type_passes`（事故原形直钉）。**突变验证已做**：把闸机回退为 `or "image"` 后 **3 条钉立即变红**（非空转）。
+- **既有断言订正**：`test_production_prune.py::test_card_media_gate_rejects_image_card_in_storyboard_design` 原文「mediaType 缺省 → 回落 image，故同样拒收」**漏了 audioType 推导这一支**，改写为「缺省且**无 audioType** → 仍拒」，并新增两条「只填 audioType 必须放行」。
+- **验证**：`acceptance --quick` **15/15 全绿**；`gen_api_types --check` PASS；后端全量 `2639 passed / 42 failed`（42 条全为债务 D-22 既有红，**新增失败 0**）；端到端复现（真实 `invoke_tool` 链路）：只填 `audioType` 的卡 `success=True` 且落库 `mediaType='audio'`，而真图卡仍被拒。
+
 ### 2026-09-23 · UI 目测累积项全部闭合（用户确认「UI 我目测过了，没问题了」）
 - **背景**：本仓历年 UI 改动按宪法 §3.1「构建后须经用户目测确认」形成的**待目测累积清单**，自 09-21 一路挂到 09-23 共三批 12 项，均已构建通过但未获用户目测回执。用户本轮目测后明确确认通过，三批一次闭合。
 - **闭合范围（逐项）**：

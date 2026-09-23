@@ -31,6 +31,9 @@ from src.video_agent.state.models import (
     ALL_CATEGORIES_TUPLE,
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
+    # 2026-09-23 批11（事故 4444/P1-5）：mediaType 缺省取值的唯一推导入口
+    # （与 build_draft_dict 同引一实现，防两处各写一遍 `or "image"` 再次漂移）
+    infer_media_type as ops_infer_media_type,
 )
 from src.video_agent.utils.prompts import render_prompt_section
 
@@ -420,9 +423,13 @@ def card_media_gate(
     else:
         return None
 
-    # mediaType 缺省时工具的构建工厂回落 "image"（DRAFT_DEFAULT_FIELDS），
-    # 故本闸按同一口径取值——不能因字段缺省就误判为"合法"。
-    media = str(draft.get("mediaType") or "image").strip().lower()
+    # mediaType 的**缺省取值**走唯一推导入口（models.infer_media_type）：
+    # 未填 mediaType 但填了 audioType ⇒ 'audio'（不再是 image）。
+    # 2026-09-23 批11（事故 4444/P1-5）：此前本处与构建工厂各写一遍 `or "image"`，
+    # 于是「子代理建音频卡只填 audioType」被闸机读成 image ⇒ 整单拒收，
+    # 且回喂文案声称「收到 'image'」——那是**平台自己的默认值**，模型从未发过。
+    # 两处同引单一实现后，闸机判的就是**该卡真实会落库的那个类型**。
+    media = ops_infer_media_type(draft)
     if media in allowed or ctx.gate_override:
         return None
     return (

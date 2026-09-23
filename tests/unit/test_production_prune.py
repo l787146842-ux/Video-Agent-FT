@@ -294,9 +294,21 @@ def test_card_media_gate_rejects_image_card_in_storyboard_design():
                            {"draft": {"mediaType": "audio"}}) is None
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"mediaType": "video"}}) is None
-    # mediaType 缺省 → 工具构建工厂回落 image，故同样拒收（不能误判为合法）
+    # mediaType 缺省且**无 audioType** → 构建工厂回落 image，故同样拒收
+    # （2026-09-23 批11 订正：原文案写「缺省 → 回落 image」，漏了 audioType
+    #  推导这一支；只填 audioType 的音频卡现在推导为 audio，见下方断言）
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"label": "x"}}) is not None
+    # 2026-09-23 批11（事故 4444/P1-5）：**只填 audioType 的音频卡必须放行**。
+    # 事故原形：子代理建音频卡只填 audioType='bgm'/'voice'（以为声明了种类就够），
+    # mediaType 缺省回落 image ⇒ 在故事板设计阶段被整单拒收 5 次，
+    # 且回喂文案声称「收到 'image'」——那是平台自己的默认值，模型从未发过。
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"audioType": "voice"}}) is None, \
+        "只填 audioType 的音频卡被误判为 image（4444/P1-5 回归）"
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"audioType": "bgm"}}) is None, \
+        "只填 audioType=bgm 的音频卡被误判为 image（4444/P1-5 回归）"
     # 不带卡建组 = 纯结构动作（元素登记要用），放行
     assert card_media_gate(ctx, "storyboard_create_group",
                            {"group_type": "keyElement", "title": "程心"}) is None

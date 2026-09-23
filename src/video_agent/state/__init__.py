@@ -15,6 +15,8 @@ from .models import (
     ProjectState, KeyElementGroup, ShotGroup, AudioGroup,
     # 工厂
     build_draft_dict, DRAFT_DEFAULT_FIELDS,
+    # 媒体类型闭集与唯一推导入口（2026-09-23 批11，事故 4444/P1-5）
+    MEDIA_TYPES, AUDIO_TYPE_TO_MEDIA, infer_media_type,
 )
 from .models_pipeline import (
     AssetType, AssetStatus, AudioCategory,
@@ -31,6 +33,7 @@ __all__ = [
     "ProjectStatus",
     "ProjectState", "KeyElementGroup", "ShotGroup", "AudioGroup",
     "build_draft_dict", "DRAFT_DEFAULT_FIELDS",
+    "MEDIA_TYPES", "AUDIO_TYPE_TO_MEDIA", "infer_media_type",
     "AssetType", "AssetStatus", "AudioCategory",
     "TimelineStatus", "TaskType", "TaskStatus", "ErrorLevel",
     "AssetState", "Clip", "Track", "TimelineState",

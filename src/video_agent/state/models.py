@@ -249,10 +249,64 @@ class ProjectState(BaseModel):
 # Draft 构建工厂（消除 4 处重复）
 # =======================
 
+# 媒体类型合法闭集（canonical 拼写；唯一事实源，模型可见面与闸机同引此表）
+MEDIA_TYPES = ("image", "video", "audio")
+
+# audioType → mediaType 的**唯一推导**（2026-09-23 批11，事故 4444/P1-5）。
+#
+# 事故取证：子代理建音频卡时只填了 `audioType='bgm'/'voice'`（它以为声明了
+# 「这是音频卡」就够），未填 `mediaType`；而 `mediaType` 的默认值是 `image`
+# ⇒ 落库变成**音频语义 + 图像类型**的自相矛盾卡。若此时正好在
+# `storyboard_design` 阶段（允许集 {audio, video}），阶段媒体闸按「缺省即
+# image」判定 → **整单拒收 5 次**，且回喂文案说「收到 'image'」——
+# 那是**平台自己的默认值**，模型从未发过这个词（4444 实证 seq108 被拒、seq118
+# 补上 mediaType='audio' 后同批全部通过）。
+#
+# 修法（根因而非补丁）：`mediaType` 的取值**可从 `audioType` 唯一确定**时
+# 就据以推导，不再回落 image——「填了 audioType 就说明这是音频卡」是平台
+# 本就持有的事实（AUDIO_TYPES 词表 + key_element_audio 契约），
+# 没有理由把它当"缺省"。
+#
+# 边界：只在**显式未填 mediaType** 时推导；显式填了 image 的音频语义卡
+# 不在此处改写（那是模型明确声明，是否合法交闸机判定，本层不越权改写入参）。
+# 双向都不猜：audioType 为空 ⇒ 维持原 image 默认（零行为变化）。
+AUDIO_TYPE_TO_MEDIA = {
+    "voice": "audio",
+    "bgm": "audio",
+    "narration": "audio",
+    "sfx": "audio",
+    "dialogue": "audio",
+    "foley": "audio",
+}
+
+
+def infer_media_type(data: Dict[str, Any]) -> str:
+    """推导草稿的 mediaType（唯一的「缺省取值」入口）。
+
+    规则（按序，先显式后推导，绝不覆盖显式声明）：
+      ① 显式给了非空 mediaType ⇒ 原样返回（含显式 'image'）；
+      ② 未给但给了非空 audioType ⇒ 'audio'（见 AUDIO_TYPE_TO_MEDIA）；
+      ③ 都没有 ⇒ 'image'（历史默认，零行为变化）。
+
+    这是**单一事实源**：`build_draft_dict`（写口）与
+    `fc_gates.card_media_gate`（闸机读口）必须同引本函数——
+    此前两处各写一遍 `or "image"`，正是本次「闸机拿平台默认值当模型意图」的成因。
+    """
+    explicit = str((data or {}).get("mediaType") or "").strip().lower()
+    if explicit:
+        return explicit
+    at = str((data or {}).get("audioType") or "").strip().lower()
+    if at:
+        return AUDIO_TYPE_TO_MEDIA.get(at, "audio")
+    return "image"
+
+
 # Draft 字典的默认字段值
 DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "label": "Agent 草稿",
     "tag": "Agent",
+    # mediaType 不走静态默认：由 infer_media_type 按 audioType 推导（见上）。
+    # 本键保留以维持 DRAFT_DEFAULT_FIELDS 的字段全集契约（构建时被显式覆盖）。
     "mediaType": "image",
     "genType": "",
     "imgUrl": "",
@@ -300,5 +354,7 @@ def build_draft_dict(data: Optional[Dict[str, Any]] = None, *, draft_id: str = "
         value = data.get(field_name)
         # refAssets 需要拷贝列表避免共享引用
         result[field_name] = value if value is not None else (list(default) if isinstance(default, list) else default)
+    # mediaType 统一经唯一推导入口（写口与闸机读口共用同一口径，见 infer_media_type）
+    result["mediaType"] = infer_media_type(data)
     return result
 
