@@ -74,6 +74,12 @@ GATES: List[Tuple[str, List[str]]] = [
     # 只留正面契约，命中禁令句/流程纪律句/他层阶段名单即 FAIL
     # （阶段名单唯一源 = core/subagent.py::PIPELINE_STAGE_KINDS）。
     ("tool_descriptions", [sys.executable, "scripts/check_tool_descriptions.py"]),
+    # 2026-09-23 批9 P-2（用户裁决「补 lint 防漂移」）：能力面 >= 委派面一致性闸。
+    # 批6 三阶段合并把 3 个原子阶段从委派面退役，能力面仍留 7 个名字，
+    # 两边漂移 8 处且无门禁拦——直接后果是 4 个 Skill 章节永远无法注入
+    # （<video_assembler> 影响 16/16 Skill）。本闸钉「委派面 ⊆ 能力面」+
+    # 「能力面仅多出的名字须登记豁免」+「Skill 章节 tag 100% 被映射表覆盖」。
+    ("stage_face_consistency", [sys.executable, "scripts/check_stage_face_consistency.py"]),
 ]
 # ===== Phase 2: SUITES — 测试四件套（生成覆盖率产物供 RATCHETS 消费） =====
 SUITES: List[Tuple[str, List[str]]] = [

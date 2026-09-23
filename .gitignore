@@ -48,6 +48,14 @@ Thumbs.db
 # 会话诊断脚本（本地排障用，移出跟踪保留本地；任务 #12 批次2）
 diag-session.mjs
 
+# 会话级临时取证/探针目录（本地排障用：dump/probe 脚本与其输出，
+# 属「会话临时产物」同 *.diff 口径——可再生、不入库）
+.tmp_probe/
+
+# AgentTeams 运行时状态（团队会话 inbox/ledger，进程私有；
+# 交付结论请落 reports/，本目录只作运行时承载）
+.agent-teams/
+
 # 历史参考/旧版备份（不入库）
 .ref_old/
 .zz_risk_backup/

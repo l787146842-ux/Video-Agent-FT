@@ -46,6 +46,17 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "write_media_prompt": ("prompt_draft",),
     "audio_generate": ("generation",),
     "video_assembler": ("assembly",),
+    # 2026-09-22 批6（Q5，用户裁决）：**合并委派阶段**（只在委派面使用）。
+    # 故事板设计三章天然是一件事——`stage_probes.CANONICAL_STAGES` 早就把
+    # (storyboard_key_elements, storyboard_shots, storyboard_audio) 合成一个
+    # `structure` 节点，Skill 自身的 <planner> 也是**一个步骤**管三件事，
+    # 实跑里子代理本来也是 ke → shots → audio 连着做完的。此前却分三趟派人
+    # （三张卡、三次等待），属"流程说一件事、派人却分三趟"。
+    # 三章合计约 1786 字，一次注入即可。`section_for` 天生支持多章节拼接
+    # （tuple 逐项取 sections 再 join），故注入侧零改动。
+    # 注意：上面三个**旧能力名逐字保留**——它们仍喂着 available_tools/
+    # scan_skills lint/音频闸/stage_probes（能力面），只是不再出现在委派枚举里。
+    "storyboard_design": ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
 }
 
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
@@ -65,6 +76,8 @@ STAGE_LABELS: Dict[str, str] = {
     "storyboard_key_elements": "关键元素",
     "storyboard_shots": "分镜",
     "storyboard_audio": "音频层",
+    # 2026-09-22 批6（Q5）：合并委派阶段的展示名（三章一章做完，一张卡）。
+    "storyboard_design": "故事板设计",
     "write_media_prompt": "提示词编写",
     "audio_generate": "音频生成",
     "video_assembler": "组装导出",

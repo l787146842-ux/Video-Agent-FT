@@ -15,8 +15,8 @@ attributes on BaseTool subclasses, flagging three pollution classes:
        工具描述不复述（P1 单一事实源）。
 
   3. 他层阶段名单 (cross-layer stage roster): 单条 description 内出现
-     ≥2 个 PIPELINE_STAGE_KINDS 成员（script_analyze / storyboard_key_elements /
-     storyboard_shots / storyboard_audio / write_media_prompt）
+     ≥2 个 PIPELINE_STAGE_KINDS 成员（script_analyze / storyboard_design /
+     write_media_prompt）
      → 阶段名单唯一源 = core/subagent.py::PIPELINE_STAGE_KINDS，
        工具描述枚举即复述（ run_subagent 硬编码阶段名单事故，2026-09-15 铺满批）。
 
@@ -37,11 +37,12 @@ SCAN_DIR = ROOT / "src" / "video_agent" / "tools"
 
 # 阶段名单唯一源（与 core/subagent.py::PIPELINE_STAGE_KINDS 同步；
 # 此处内联字面量以避免 gate 脚本反向依赖生产代码——gate 自包含）。
+# 2026-09-22 批6（Q5）：故事板三阶段在**委派面**合并为 storyboard_design。
+# 三个旧能力名已不在 PIPELINE_STAGE_KINDS 内（它们降为能力面用词），
+# 故本集不再收录——否则工具描述复述旧名单不会被拦（闸机失效）。
 PIPELINE_STAGE_KINDS: Set[str] = {
     "script_analyze",
-    "storyboard_key_elements",
-    "storyboard_shots",
-    "storyboard_audio",
+    "storyboard_design",
     "write_media_prompt",
 }
 
@@ -93,13 +94,29 @@ def _check_description(text: str) -> List[str]:
     return reasons
 
 
-def _extract_class_descriptions(tree: ast.Module) -> List[Tuple[int, str, str]]:
+# 豁免登记（只减不增；每条须附理由与来源）——2026-09-23：
+# 用户裁决「完全照抄 dsh todo_write」，而 dsh 原句含 `do not batch completions`
+# （中文照翻即「不要攒着批量标」）。用户明示选「乙」：中文照翻 + 给本工具登记豁免。
+# 该否定句是 dsh 范式的**语义组成部分**（「做完一件立刻标完成」的反面表述），
+# 删软即背离「完全照抄」；故按豁免登记保留原文，不再软化。
+# 登记范围严格限工具名：只有工具名命中该表才豁免，其余工具照旧受闸。
+_DELEGATED_PROHIBITION_EXEMPT_TOOLS: Set[str] = {
+    "todo_write",  # 来源：dsh packages/todo/tool-todo/src/index.ts:61-63
+}
+
+
+def _exempt_from_prohibition(tool_name: str) -> bool:
+    """该工具是否豁免**禁令句**检查（阶段名单与流程纪律句不豁免）。"""
+    return tool_name in _DELEGATED_PROHIBITION_EXEMPT_TOOLS
+
+
+def _extract_class_descriptions(tree: ast.Module) -> List[Tuple[int, str, str, str]]:
     """Yield (lineno, class_name, description_text) for BaseTool subclasses.
 
     只扫 class 级 `description = (...)` 赋值（工具 schema 元数据）；
     Field(description=...) 等入参级描述不在本闸范围（属另一层契约）。
     """
-    results: List[Tuple[int, str, str]] = []
+    results: List[Tuple[int, str, str, str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
@@ -112,6 +129,19 @@ def _extract_class_descriptions(tree: ast.Module) -> List[Tuple[int, str, str]]:
                 base_names.add(b.attr)
         if "BaseTool" not in base_names:
             continue
+        # 先取 class 级 `name = "..."`（豁免登记按工具名匹配）
+        tool_name = ""
+        for stmt in node.body:
+            if not isinstance(stmt, ast.Assign):
+                continue
+            for target in stmt.targets:
+                if isinstance(target, ast.Name) and target.id == "name":
+                    try:
+                        nv = ast.literal_eval(stmt.value)
+                    except (ValueError, SyntaxError):
+                        continue
+                    if isinstance(nv, str):
+                        tool_name = nv
         for stmt in node.body:
             if not isinstance(stmt, ast.Assign):
                 continue
@@ -123,7 +153,7 @@ def _extract_class_descriptions(tree: ast.Module) -> List[Tuple[int, str, str]]:
                         # 非字面量（如函数调用拼接）→ 跳过，不假装校验
                         continue
                     if isinstance(value, str):
-                        results.append((stmt.lineno, node.name, value))
+                        results.append((stmt.lineno, node.name, value, tool_name))
     return results
 
 
@@ -143,8 +173,11 @@ def _scan_file(path: pathlib.Path) -> List[Tuple[int, str, List[str]]]:
                  [f"syntax error: {e}"])]
 
     violations: List[Tuple[int, str, List[str]]] = []
-    for lineno, class_name, text in _extract_class_descriptions(tree):
+    for lineno, class_name, text, tool_name in _extract_class_descriptions(tree):
         reasons = _check_description(text)
+        # 豁免只作用于**禁令句**（阶段名单/流程纪律句不豁免）
+        if reasons and _exempt_from_prohibition(tool_name):
+            reasons = [r for r in reasons if not r.startswith("prohibition:")]
         if reasons:
             violations.append((lineno, class_name, reasons))
     return violations
