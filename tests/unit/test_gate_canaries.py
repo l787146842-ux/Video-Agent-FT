@@ -29,6 +29,8 @@ _EXPECTED_GATE_NAMES = [
     "skill_anchor_lint",
     # 2026-09-15 铺满批（dsh 对齐）：工具描述卫生闸
     "tool_descriptions",
+    # 2026-09-23 批9 P-2（用户裁决「补 lint 防漂移」）：能力面≥委派面一致性
+    "stage_face_consistency",
 ]
 
 # I-4 修复：覆盖率关卡从 GATES 移到 RATCHETS（后置断言，读 SUITES 本轮新鲜产物）

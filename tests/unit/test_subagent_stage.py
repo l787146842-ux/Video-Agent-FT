@@ -71,20 +71,62 @@ def _fake_child(captured: dict):
 # ---------- 纯契约 ----------
 
 def test_resolve_stage_enum_and_fallback():
-    # 2026-09-19 主代理纯编排批：委派集恢复故事板三阶段
+    # 2026-09-22 批6（Q5，用户裁决）：故事板三阶段在**委派面**合并为
+    # storyboard_design（关键元素+分镜+音频一次派完，不再分三趟）。
     assert resolve_stage("script_analyze") == "script_analyze"
     assert resolve_stage("write_media_prompt") == "write_media_prompt"
-    assert resolve_stage("storyboard_shots") == "storyboard_shots"
-    assert resolve_stage("storyboard_key_elements") == "storyboard_key_elements"
-    assert resolve_stage("storyboard_audio") == "storyboard_audio"
-    assert resolve_stage(" storyboard_shots ") == "storyboard_shots"
+    assert resolve_stage("storyboard_design") == "storyboard_design"
+    assert resolve_stage(" storyboard_design ") == "storyboard_design"
+    assert PIPELINE_STAGE_KINDS == frozenset({
+        "script_analyze", "storyboard_design", "write_media_prompt",
+    })
+    # 三个旧原子阶段从**委派面**退役（模型没有猜错空间，2222/Q3b 教训）：
+    # 它们仍是能力名（喂 available_tools/lint/音频闸），但不可再作为委派 stage。
+    for legacy in ("storyboard_shots", "storyboard_key_elements",
+                   "storyboard_audio"):
+        assert resolve_stage(legacy) == "", (
+            f"{legacy} 仍在委派面——批6 已合并为 storyboard_design（Q5）")
     # 未知/空 → 回落通用（不阻断委派）
     assert resolve_stage("不存在") == ""
     assert resolve_stage("") == ""
-    assert PIPELINE_STAGE_KINDS == frozenset({
-        "script_analyze", "storyboard_key_elements", "storyboard_shots",
-        "storyboard_audio", "write_media_prompt",
-    })
+
+
+def test_merged_stage_injects_all_three_chapters():
+    """批6（Q5）：合并阶段的章节注入 = 三章并集（section_for 多章节拼接）。
+
+    这是「一次派活干完三件事」的物理前提：子代理拿到方法规范的全套。
+    同时钉死**能力面**（registry）未动——三个旧能力名仍解析得到章节
+    （它们还喂着 lint/音频闸/stage_probes）。
+    """
+    from src.video_agent.skill_runtime.registry import CAPABILITY_TOOL_STAGES
+    assert CAPABILITY_TOOL_STAGES["storyboard_design"] == (
+        "storyboard_ke", "storyboard_shot", "storyboard_audio")
+    # 能力面三条旧映射逐字保留（不在委派面 ≠ 从能力面删除）
+    assert CAPABILITY_TOOL_STAGES["storyboard_key_elements"] == ("storyboard_ke",)
+    assert CAPABILITY_TOOL_STAGES["storyboard_shots"] == ("storyboard_shot",)
+    assert CAPABILITY_TOOL_STAGES["storyboard_audio"] == ("storyboard_audio",)
+    # 合并阶段的工具集 = 三原子阶段并集 ⇒ 一次委派内三件事都落得了账
+    # 2026-09-23 批2（Q3）：并入 delete_draft（建错卡可撤销）。
+    # 2026-09-23 批10（事故 4444/P1-1）：并入 patch_group（改引用不必删光重建）。
+    merged = stage_tools("storyboard_design")
+    assert merged == frozenset({
+        "storyboard_create_group", "storyboard_delete_group",
+        "storyboard_delete_draft", "storyboard_patch_group",
+        "storyboard_add_draft", "storyboard_patch_draft"})
+
+
+def test_merged_stage_card_media_covers_audio_and_video():
+    """批6（Q5）：建卡媒体白名单随合并拓宽为 {audio, video}，image 仍拒。
+
+    - audio ← 关键元素阶段的角色音色卡（key_element_audio）；
+    - video ← 分镜阶段的 shot 卡（实跑取证：26 次 create_group 全 shot+video）；
+    - image 仍归 write_media_prompt（用户 2026-09-21 裁决不变）。
+    """
+    from src.video_agent.core.subagent import stage_card_media
+    assert stage_card_media("storyboard_design") == frozenset({"audio", "video"})
+    assert "image" not in stage_card_media("storyboard_design"), (
+        "image 卡归提示词撰写阶段（2026-09-21 用户裁决），合并不放开跨阶段产物")
+    assert stage_card_media("write_media_prompt") == frozenset()  # 未登记=不受限
 
 
 def test_stage_deny_drops_read_skill_only():
@@ -111,20 +153,18 @@ def test_stage_deny_drops_read_skill_only():
     assert "storyboard_patch_draft" not in child_deny_set("write_media_prompt")
     # 未声明的则收走：write_media_prompt 不建组（提示词写进既有草稿卡）
     assert "storyboard_create_group" in child_deny_set("write_media_prompt")
-    # 2026-09-21 批0（事故 2222/Q5）：非本阶段的专业写入工具结构性不可见。
-    # 2026-09-21 批0 回归修复：key_elements **保留 add_draft**——角色音色卡
-    # （key_element_audio）就是该阶段的产出（Skill 明文；8 个 Skill 的该章节
-    # 含音色字样；proj-1789754393 实证该阶段建过 8 张 mediaType=audio 卡）。
-    # 仍收走的是 patch_draft（改既有卡字段=提示词撰写阶段的活）。
-    ke_deny = child_deny_set("storyboard_key_elements")
-    assert "storyboard_add_draft" not in ke_deny
-    assert "storyboard_patch_draft" in ke_deny
-    # 反之：声明了它们的阶段不得 deny（否则该阶段断链）
-    assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
-    assert "storyboard_patch_draft" not in child_deny_set("storyboard_shots")
+    # 2026-09-22 批6（Q5）：合并阶段持有三原子阶段工具并集 ⇒ 建组/建卡/改卡
+    # 三件事在一次委派内全拿得到（此前分三趟派，工具面也分三份）。
+    # 2026-09-23 批2（Q3）：delete_draft 一并授予（建错卡可撤销）。
+    # 2026-09-23 批10（事故 4444/P1-1）：patch_group 一并授予（改引用不必删光重建）。
+    merged_deny = child_deny_set("storyboard_design")
+    for t in ("storyboard_create_group", "storyboard_delete_group",
+              "storyboard_delete_draft", "storyboard_patch_group",
+              "storyboard_add_draft", "storyboard_patch_draft"):
+        assert t not in merged_deny, f"合并阶段断链：{t} 被 deny"
     # 交互类工具（面向用户动作）无任何阶段认领 → 带 stage 一律 deny
-    assert "storyboard_confirm_draft" in child_deny_set("storyboard_shots")
-    assert "storyboard_media_to_chat" in child_deny_set("storyboard_shots")
+    assert "storyboard_confirm_draft" in merged_deny
+    assert "storyboard_media_to_chat" in merged_deny
 
 
 def test_build_subagent_task_stage_header():
@@ -141,19 +181,69 @@ def test_build_subagent_task_stage_header():
     assert "消化进你自己的产出内容" not in msg
     # 旧事实错误子句退役（工作台状态实为经读工具按需获取）
     assert "你能看到与主代理相同的工作台状态" not in msg
-    # L24-27 汇报格式四行逐字保留（唯一源，不得被定位语改写波及）
-    assert "完成后用以下格式汇报：" in msg
+    # 2026-09-22 批5（Q3，用户裁决）：四行汇报格式**退役**——它与
+    # structured_output 打卡四槽（created/modified/removed/unfinished）是
+    # 同一契约的第二份事实源（P1），且实跑证明子代理既打卡又在正文复述一遍。
+    # 完工汇报的唯一家 = prompts/shared/structured_output.md::BRIEF（随任务下发）。
+    assert "完成后用以下格式汇报：" not in msg, \
+        "四行汇报格式复活——完工汇报唯一家是 structured_output BRIEF（Q3 批5）"
     for line in ("已创建：[类别] N 组（ID 列表）",
                  "已修改：[类别] M 处",
                  "已移除：[类别] K 处",
                  "未完成：[事项清单]（无则写空）"):
-        assert line in msg, f"汇报格式行被改动：{line}"
+        assert line not in msg, f"重复契约行复活：{line}"
     assert msg.rstrip().endswith("拆解剧本为分镜")
     # 通用形态零变化：无阶段标注行
     plain = build_subagent_task("拆解剧本为分镜")
     assert "本次委派阶段" not in plain
     assert "被委派的子代理" in plain            # 固定范围声明仍在
     assert "章节即产出规范的全部依据" not in plain
+
+
+def test_staged_empty_task_gets_platform_goal():
+    """2026-09-22 批5（Q3）：带 stage 且 task 空 → 目标行由平台生成。
+
+    这是「把劝告下降成结构」的落点：调用方没有槽位可填 ⇒ 复述通道关闭
+    （此前 task 必填，模型必须填坑，复述成了结构必然）。
+    """
+    msg = build_subagent_task("", stage="script_analyze")
+    assert "===== 本次委派目标 =====" in msg
+    assert "执行所选 Skill 的「素材分析」章节" in msg
+    # 2026-09-23 批7（D-7）：平台目标行**不再**写「完成本阶段全部产出」——
+    # 那句与 Skill <planner> 的「每阶段完成后暂停、绝不一口气输出全部步骤」
+    # 直接矛盾（散文说逐步、平台说做完全部），是 2222 越步的结构诱因。
+    # 流程控制源回归 Skill 散文；步骤节奏由主代理 current_step 下发。
+    assert "全部产出" not in msg, "平台目标行不得与 Skill 暂停散文打架"
+    # 平台目标行确实在目标区（不是落在声明里）
+    assert msg.split("===== 本次委派目标 =====")[-1].strip().startswith(
+        "执行所选 Skill 的「素材分析」章节")
+
+
+def test_current_step_annotation_rendered():
+    """批7（D-7）：主代理下发的「本次步骤」必须出现在任务书里。"""
+    msg = build_subagent_task(
+        "", stage="write_media_prompt", current_step="第 4 步：为角色写图像提示词")
+    assert "本次步骤：第 4 步：为角色写图像提示词" in msg
+
+
+def test_current_step_absent_renders_no_empty_line():
+    """未下发步骤时不出空标注行（不留「本次步骤：」空壳）。"""
+    msg = build_subagent_task("", stage="write_media_prompt")
+    assert "本次步骤" not in msg
+
+
+def test_staged_supplement_still_accepted():
+    """补充信息仍可用：task 非空时拼在平台目标行之后（只该写子代理读不到的）。"""
+    msg = build_subagent_task("用户新确认：画幅 16:9、中文台词", stage="script_analyze")
+    tail = msg.split("===== 本次委派目标 =====")[-1]
+    assert "用户新确认：画幅 16:9、中文台词" in tail
+
+
+def test_generic_delegation_without_task_still_builds():
+    """通用委派（无 stage）：task 空也不得崩，且不凭空造目标行。"""
+    msg = build_subagent_task("", stage="")
+    assert "===== 本次委派目标 =====" in msg
+    assert "本次委派阶段" not in msg
 
 
 # ---------- _launch_subagent 装配 ----------
