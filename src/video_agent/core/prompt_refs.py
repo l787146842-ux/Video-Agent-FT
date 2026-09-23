@@ -14,12 +14,24 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
+from src.video_agent.state.storyboard_ops import strip_type_prefix
 
 # 引用记号匹配（两式同义，2026-09-07 外部标杆 记号兼容裁决）：
-# 1) 半角 @ 或全角 ＠ + 非空白/非@字符（平台原生，前端 PromptEditor 序列化产物）；
+# 1) 半角 @ 或全角 ＠ + 名称（平台原生，前端 PromptEditor 序列化产物）；
 # 2) <<<image_名称>>>（外部标杆 Skill 模板方言）——抄自 外部标杆 的 Skill 原样可用，
 #    命中与 @ 同轨处理，未命中同 @ 去记号留名称。
-_MENTION_RE = re.compile(r"<<<\s*image_([^<>]+?)\s*>>>|[@＠]([^\s@＠]+)")
+#
+# 2026-09-23 批3（Q4/Q6，用户裁决「引用记号必须能工作」）：修三条独立根因——
+#   R1 方括号被吞：原排除类不含 [ ]，`@[程心]` 捕获出 `[程心]` → 查 map 必落空。
+#      现将可选的 [ ] 包络排除在捕获组外（@[名] 与 @名 等价）。
+#   R2 转义下划线：Skill 模板原文是 `<<<image\_场景>>>`（Markdown 转义，字符码 92
+#      反斜杠），原正则要求裸 `image_` → 连匹配都不成立、整段原样进入生成请求。
+#      现容许 `image` 与 `_` 之间存在可选反斜杠。
+#   两条都不改变「未命中即去记号留文字」的既有语义。
+_MENTION_RE = re.compile(
+    r"<<<\s*image\\?_([^<>]+?)\s*>>>"
+    r"|[@＠]\[?([^\s@＠\[\]]+)\]?"
+)
 
 _KIND_LABEL = {"image": "参考图", "video": "参考视频", "audio": "参考音频"}
 
@@ -45,9 +57,16 @@ def build_storyboard_media_map(state: Dict[str, Any]) -> Dict[str, Dict[str, str
     """构建 名称 → {url, kind} 映射（与前端 PromptEditor 命名规则对齐）。
 
     命名来源（后写不覆盖先写，保证关键元素标题优先）：
-    - 关键元素：分组 title（如 Element_月球）
+    - 关键元素：分组 title（如 Element_月球）**及其剥前缀裸名**（月球）
     - 所有草稿：label
     - URL 文件名（兜底，与前端 refAssetName 的文件名规则一致）
+
+    2026-09-23 批3 R3（Q4/Q6）：写口 `normalize_group_title` **无条件补类型前缀**
+    （`Element_程心`），而模型在提示词里写的是**裸名**（`<<<image_程心>>>`）——
+    实跑全量 110 次引用中带前缀者 0 次，即**110 次引用命中 0 次**。
+    平台在别处（`scan_bare_name_mentions`、前端 `desc-ref-utils`）**早就做了裸名归一**，
+    唯独本引用链漏了，属口径漂移而非设计。故此处为关键元素标题补登裸名别名，
+    与其余各层口径对齐（前缀名仍保留，向后兼容既有带前缀写法）。
     """
     media_map: Dict[str, Dict[str, str]] = {}
 
@@ -68,7 +87,12 @@ def build_storyboard_media_map(state: Dict[str, Any]) -> Dict[str, Dict[str, str
                     kind = {"imgUrl": "image", "videoUrl": "video", "audioUrl": "audio"}[field]
                     # 关键元素用分组标题命名（对齐前端 refAssetName）
                     if cat == CAT_KEY_ELEMENTS:
-                        put(g.get("title", ""), url, kind)
+                        title = g.get("title", "")
+                        put(title, url, kind)
+                        # R3：裸名别名（模型实际写法），与显示层/提及层同口径
+                        bare = strip_type_prefix(title)
+                        if bare != title:
+                            put(bare, url, kind)
                     put(d.get("label", ""), url, kind)
                     fname = Path(str(url).split("?")[0].split("#")[0]).name
                     put(fname, url, kind)

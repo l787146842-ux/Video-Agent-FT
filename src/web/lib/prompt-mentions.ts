@@ -6,11 +6,33 @@
  * 2. @名称 命中的素材若不在参考列表且未满上限则自动纳入；
  * 3. @名称 重写为位置标记（如 [参考图2：Element_月球]），
  *    让多模态模型精确知道第 N 张参考图对应提示词中的哪个元素。
+ *
+ * 2026-09-23 批3（Q4/Q6）：与后端同批修三条根因 + 补方言识别——
+ *   R1 方括号：原 `[^\s@＠]+` 会把 `@[程心]` 的方括号吞进名字 → 现排除 `[ ]` 并容许可选包络；
+ *   R2 转义下划线：Skill 模板原文 `<<<image\_场景>>>`（反斜杠转义）此前**前端完全不认**该方言；
+ *   R3 裸名：媒体映射补登分组标题的剥前缀裸名（模型实际写法）。
  */
 import { state } from '@/stores/studio';
 import type { AnyGroup, MediaType } from '@/types';
 
-const MENTION_RE = /[@＠]([^\s@＠]+)/g;
+/** 分组标题容器类型前缀（与后端 storyboard_ops._GROUP_TITLE_PREFIX 同契约镜像） */
+const GROUP_TITLE_PREFIXES = ['Element_', 'Shot_', 'Audio_'];
+
+/** 剥容器类型前缀取裸名（与后端 strip_type_prefix 同契约） */
+export function stripTypePrefix(title: string): string {
+  const t = (title || '').trim();
+  for (const p of GROUP_TITLE_PREFIXES) {
+    if (t.startsWith(p)) return t.slice(p.length);
+  }
+  return t;
+}
+
+/**
+ * 引用记号（与后端 _MENTION_RE 对齐，两式同义）：
+ * 1) `<<<image_名称>>>`（Skill 模板方言；容许 `image\_名称` 的 Markdown 转义形态）；
+ * 2) `@名称` / `＠名称`，容许可选的 `[ ]` 包络（`@[程心]` 与 `@程心` 等价）。
+ */
+const MENTION_RE = /<<<\s*image\\?_([^<>]+?)\s*>>>|[@＠]\[?([^\s@＠[\]]+)\]?/g;
 const KIND_LABEL: Record<MediaType, string> = {
   image: '参考图', video: '参考视频', audio: '参考音频',
 };
@@ -46,7 +68,12 @@ export function storyboardMediaMap(): Record<string, MediaRef> {
         ];
         for (const [url, kind] of entries) {
           if (!url) continue;
-          if (isKeyElement) put(g.title, url, kind);
+          if (isKeyElement) {
+            put(g.title, url, kind);
+            // R3：裸名别名（模型实际写法；与后端 build_storyboard_media_map 同口径）
+            const bare = stripTypePrefix(g.title);
+            if (bare !== (g.title || '').trim()) put(bare, url, kind);
+          }
           put(d.label || '', url, kind);
           put(fileNameOf(url), url, kind);
         }
@@ -124,9 +151,10 @@ export function resolvePromptForGeneration(
   const map = storyboardMediaMap();
   const refs: string[] = (baseRefs || []).filter(Boolean).slice(0, maxRefs);
 
-  const resolved = (prompt || '').replace(MENTION_RE, (_m, name: string) => {
+  const resolved = (prompt || '').replace(MENTION_RE, (_m, g1: string, g2: string) => {
+    const name = (g1 || g2 || '').trim();
     const info = map[name];
-    if (!info) return name; // 未命中：去掉 @，保留文字
+    if (!info) return name; // 未命中：去掉记号，保留文字
     let idx = refs.indexOf(info.url);
     if (idx < 0) {
       if (refs.length >= maxRefs) return name; // 超限：无法随请求发送

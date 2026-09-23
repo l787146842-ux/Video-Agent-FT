@@ -273,6 +273,10 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "imageResolution": "",
     "duration": "",
     "timbre": "",
+    # 2026-09-23 批5（用户 D-1/D-2/D-3 裁决）：音频归属语义字段。
+    # 空串 = 未声明（不强制、不判错）；取值词表单一事实源 =
+    # storyboard_ops.AUDIO_TYPES（voice = Skill 明文的 key_element_audio 角色音色卡）。
+    "audioType": "",
     "refAssets": [],
 }
 

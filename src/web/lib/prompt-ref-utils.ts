@@ -120,7 +120,13 @@ export function makeChip(name: string, info: { url: string; type: MediaKind }): 
   return span;
 }
 
-/** 纯文本 → DOM（把匹配参考素材的 @名称 渲染为缩略块） */
+/** 纯文本 → DOM（把匹配参考素材的 @名称 / <<<image_名称>>> 渲染为缩略块）
+ *
+ * 2026-09-23 批3（Q6②，用户反馈「提示词全是文字、没有图块」）：
+ * 此前本函数**只认 `@名称`**，对 Skill 模板方言 `<<<image_名称>>>` 零匹配——
+ * 而实跑数据里 15/15 张提示词卡都带该记号（共 43 个 token），
+ * 故「全是文字」的真因在**前端不渲染**，不在模型没写。
+ * 现两式同轨渲染为同一 chip；未命中 refMap 的记号保持原样文字。 */
 export function renderPromptToDOM(
   el: HTMLElement,
   text: string,
@@ -133,18 +139,28 @@ export function renderPromptToDOM(
     el.textContent = text;
     return;
   }
-  const re = new RegExp(`[@＠](${names.map(escapeRe).join('|')})`, 'g');
+  const alt = names.map(escapeRe).join('|');
+  // 两式同轨：`<<<image_名称>>>`（容 Markdown 转义 `image\_名称`）与 `@名称`（容 `[ ]` 包络）
+  const re = new RegExp(
+    `<<<\\s*image\\\\?_(${alt})\\s*>>>|[@＠]\\[?(${alt})\\]?`,
+    'g',
+  );
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
-    el.appendChild(makeChip(m[1], refMap[m[1]]));
+    const name = m[1] || m[2];
+    el.appendChild(makeChip(name, refMap[name]));
     last = m.index + m[0].length;
   }
   if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
 }
 
-/** DOM → 纯文本（缩略块还原为 @名称，供存储与发送给模型） */
+/** DOM → 纯文本（缩略块还原为 @名称，供存储与发送给模型）
+ *
+ * 注（批3）：来自 `<<<image_名称>>>` 方言的 chip 在此**归一为 `@名称`**
+ * （平台原生方言）。这是有意的方言收敛：后端 `_MENTION_RE` 两式同轨解析，
+ * 故归一不丢引用；且避免同一提示词内两种记号并存。 */
 export function serializeDOMToText(root: HTMLElement): string {
   let out = '';
   let firstBlock = true;
