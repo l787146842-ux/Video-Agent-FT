@@ -400,6 +400,30 @@ class GateChainResult:
     error: Optional[str] = None
 
 
+def _draft_of(args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """取内联草稿并**与工具同口径**宽容拆包（字符串自动 json.loads 一次）。
+
+    2026-09-23 批12（事故 4444/E-1）：本函数是「同类调用路径统一」的落实——
+    `card_media_gate` 原来只给 `create_group` 做了 str 拆包，`add_draft` 走
+    `if not isinstance(draft, dict): return None`（**静默放行**），而工具侧
+    `ops.coerce_draft_payload` 对**两个入口都宽容**字符串。后果 = **fail-open**：
+    模型把 draft 写成 JSON 字符串即可绕过阶段媒体闸（工具照常执行）。
+    4444 实证：该子代理**14 次**把 draft 传成字符串（`create_group` 侧被正常拦下，
+    证明模型确实高频这么传），`add_draft` 侧则是裸奔的。
+
+    返回 None = 「本闸不判」（不带卡 / 形状非法交工具自身校验，本闸不越权）。
+    """
+    draft = args.get("draft")
+    if draft is None or draft == "":
+        return None                      # 不带卡：纯结构动作，放行
+    if isinstance(draft, str):
+        try:
+            draft = json.loads(draft)
+        except Exception:
+            return None                  # 解析失败交工具自身（coerce 有其口径）
+    return draft if isinstance(draft, dict) else None
+
+
 def card_media_gate(
     ctx: GateContext, name: str, args: Dict[str, Any],
 ) -> Optional[str]:
@@ -419,28 +443,18 @@ def card_media_gate(
       - `storyboard_add_draft`：draft.mediaType 必须 ∈ 允许集；
       - `storyboard_create_group`：**仅当携带内联 draft 时**才判（不带卡建组
         是纯结构动作，元素登记/创建分组都要用它，不受本闸约束）。
+    两入口的**取参口径统一走 `_draft_of`**（批12/E-1：此前 add_draft 不做
+    字符串拆包 ⇒ 可被字符串形态绕过）。
     `gate_override`（用户显式同意）可放行，与同链其它闸同口径。
     """
     allowed = getattr(ctx, "stage_card_media", None)
     if not allowed:
         return None                      # 未登记阶段/通用委派：不启用限定
-    if name == "storyboard_add_draft":
-        draft = args.get("draft")
-        if not isinstance(draft, dict):
-            return None                  # 形状非法交工具自身校验，本闸不越权
-    elif name == "storyboard_create_group":
-        draft = args.get("draft")
-        if draft is None or draft == "":
-            return None                  # 不带卡的建组：纯结构动作，放行
-        if isinstance(draft, str):
-            try:
-                draft = json.loads(draft)
-            except Exception:
-                return None              # 解析失败交工具自身（coerce 有其口径）
-        if not isinstance(draft, dict):
-            return None
-    else:
+    if name not in ("storyboard_add_draft", "storyboard_create_group"):
         return None
+    draft = _draft_of(args)
+    if draft is None:
+        return None                      # 不带卡 / 形状非法 ⇒ 本闸不判
 
     # mediaType 的**缺省取值**走唯一推导入口（models.infer_media_type）：
     # 未填 mediaType 但填了 audioType ⇒ 'audio'（不再是 image）。

@@ -318,7 +318,62 @@ def test_card_media_gate_rejects_image_card_in_storyboard_design():
                             "draft": {"mediaType": "image"}}) is not None
     assert card_media_gate(ctx, "storyboard_create_group",
                            {"group_type": "shot",
-                            "draft": {"mediaType": "video"}}) is None
+                           "draft": {"mediaType": "video"}}) is None
+
+
+def test_card_media_gate_string_draft_cannot_bypass():
+    """**E-1 回归钉**（2026-09-23 批12，事故 4444）：字符串形态 draft 不得绕过。
+
+    工具侧 `ops.coerce_draft_payload` **明确宽容** draft 传成 JSON 字符串
+    （8888 实证：模型高频这么传）。原闸机只给 `create_group` 做了 str 拆包，
+    `add_draft` 走 `if not isinstance(draft, dict): return None`
+    ⇒ **fail-open**：模型把 draft 写成字符串即可绕过阶段媒体闸（工具照常执行）。
+
+    4444 实证：该子代理 **14 次**把 draft 传成字符串（`create_group` 侧被正常
+    拦下，证明模型确实高频这么传），`add_draft` 侧则裸奔。
+    本钉要求**两入口、两形态，判定完全一致**。
+    """
+    import json as _json
+
+    from src.video_agent.core.fc_gates import GateContext, card_media_gate
+
+    ctx = GateContext(stage_card_media=frozenset({"audio", "video"}),
+                      stage_label="故事板设计")
+    obj = {"mediaType": "image", "label": "越权图卡"}
+    as_str = _json.dumps(obj, ensure_ascii=False)
+
+    for name in ("storyboard_add_draft", "storyboard_create_group"):
+        r_obj = card_media_gate(ctx, name,
+                                {"group_type": "keyElement", "draft": obj})
+        r_str = card_media_gate(ctx, name,
+                                {"group_type": "keyElement", "draft": as_str})
+        assert r_obj is not None, f"{name} 对象形态应被拒"
+        assert r_str is not None, (
+            f"{name} 字符串形态绕过了阶段媒体闸（E-1 回潮，fail-open）")
+        assert bool(r_obj) == bool(r_str), f"{name} 两形态判定不一致"
+
+    # 合法卡同样两形态一致放行
+    ok_obj = {"mediaType": "audio", "audioType": "voice"}
+    for name in ("storyboard_add_draft", "storyboard_create_group"):
+        assert card_media_gate(ctx, name,
+                               {"group_type": "keyElement", "draft": ok_obj}) is None
+        assert card_media_gate(
+            ctx, name,
+            {"group_type": "keyElement",
+             "draft": _json.dumps(ok_obj, ensure_ascii=False)}) is None
+
+
+def test_card_media_gate_shared_draft_reader_single_source():
+    """**同源钉**：两入口必须共用 `_draft_of`（防再次各写一遍口径）。"""
+    import inspect
+
+    from src.video_agent.core import fc_gates
+
+    src = inspect.getsource(fc_gates.card_media_gate)
+    assert "_draft_of" in src, "取参未走统一入口（E-1 回潮）"
+    # 且不得再有分支式重复拆包
+    assert "isinstance(draft, str)" not in src, \
+        "闸机内重现分支式 str 拆包（应统一走 _draft_of）"
 
 
 def test_card_media_gate_no_limit_when_undeclared():
