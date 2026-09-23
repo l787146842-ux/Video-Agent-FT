@@ -28,6 +28,9 @@ def describe_action(
         return "拆解分镜分组（只建结构）"
     if name in ("storyboard_audio",):
         return "拆解音频层分组（只建结构）"
+    if name in ("storyboard_design",):
+        # 2026-09-22 批6（Q5）：合并委派阶段（关键元素+分镜+音频一次做完）
+        return "拆解故事板（关键元素/分镜/音频层一次落账）"
     if name in ("write_media_prompt",):
         return "按 Skill 提示词写法分批编写草稿提示词"
     if name in ("audio_generate",):
@@ -57,8 +60,14 @@ def describe_action(
         if fields:
             return f"更新草稿「{target}」（{'/'.join(fields[:3])}）"
         return f"确认草稿「{target}」"
-    if name in ("update_group", "patch_group"):
-        return f"更新分组「{title or action.get('group_id', '')}」"
+    if name in ("update_group", "patch_group", "storyboard_patch_group"):
+        # 保持「动词+对象+「名称」」同形（聚合正则 _TITLE_RE 依赖该形状）；
+        # 有 patch 时附字段名，与前一行「更新草稿（字段）」同口径对齐。
+        # 2026-09-23 批10（事故 4444/P1-1）：显式登记工具名 storyboard_patch_group
+        # （此前仅文本轨死文案 update_group/patch_group 在表内，FC 轨工具名落空）。
+        _fields = list(patch.keys()) if patch else []
+        _tail = f"（{'/'.join(_fields[:3])}）" if _fields else ""
+        return f"更新分组「{title or action.get('group_id', '')}」{_tail}"
     if name == "add_draft":
         return f"新增草稿「{label or '未命名'}」"
     if name in ("delete_draft", "remove_draft"):

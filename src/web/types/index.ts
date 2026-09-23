@@ -546,7 +546,9 @@ export type Conversation = ConversationMeta;
 export interface SubagentThread {
   conversation_id: string;
   title: string;
-  /** 任务摘要（scope.label，截断后的委派文本） */
+  /** 展示名（scope.label）：带阶段委派 = 阶段展示名（STAGE_LABELS，如「分镜」，
+   *  与 live actor 卡同源）；通用委派 = 任务摘要前段。
+   *  2026-09-22 批1（Q2）：此前一律存任务文本，刷新后卡名变任务书（两处不同源）。 */
   label: string;
   parent_conversation: string;
   /** running=事件流未闭合；completed=已落 turn/end 且 reason=done；
@@ -565,6 +567,11 @@ export interface SubagentRecordMessage {
   ts?: number;
   reasoning_content?: string;
   actionLog?: string[];
+  /** 该步「思考+生成」耗时（ms；2026-09-22 批4 Q4.2，后端按结算锚点算） */
+  elapsed_ms?: number;
+  /** 在途步标记（2026-09-22 批4 Q4.1）：该步尚无完整 assistant/message 让位，
+   *  内容来自步内增量（assistant/partial），仍在长出——前端挂实时态样式 */
+  streaming?: boolean;
 }
 
 export interface ServerStateSnapshot {

@@ -258,7 +258,10 @@ _PLATFORM_TOOL_STAGE: Dict[str, str] = {
     "storyboard_create_group": "structure",
     "storyboard_add_draft": "structure",
     "storyboard_patch_draft": "structure",
+    # 2026-09-23 批10（事故 4444/P1-1）：改分组同属结构阶段内的故事板操作
+    "storyboard_patch_group": "structure",
     "storyboard_delete_group": "structure",
+    "storyboard_delete_draft": "structure",
     "storyboard_confirm_draft": "structure",
     "storyboard_media_to_chat": "structure",
     "read_draft": "structure",

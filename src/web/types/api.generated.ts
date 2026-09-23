@@ -934,9 +934,11 @@ export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
   storyboard_add_draft: 'expand',
   storyboard_confirm_draft: 'output',
   storyboard_create_group: 'expand',
+  storyboard_delete_draft: 'output',
   storyboard_delete_group: 'output',
   storyboard_media_to_chat: 'output',
   storyboard_patch_draft: 'expand',
+  storyboard_patch_group: 'expand',
   view_storyboard_media: 'output',
   workflow_pause: 'expand',
 };
@@ -972,9 +974,11 @@ export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> 
   storyboard_add_draft: 'none',
   storyboard_confirm_draft: 'none',
   storyboard_create_group: 'none',
+  storyboard_delete_draft: 'none',
   storyboard_delete_group: 'none',
   storyboard_media_to_chat: 'none',
   storyboard_patch_draft: 'none',
+  storyboard_patch_group: 'none',
   view_storyboard_media: 'none',
   workflow_pause: 'none',
 };

@@ -90,9 +90,19 @@ STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({
 # 落地再登记（fail-loud 校验要求 _STAGE_TOOLS 非空）。
 # 2026-09-19 主代理纯编排批：恢复故事板三阶段（key_elements/shots/audio），
 # 委派集 = 素材分析 + 故事板设计三阶段 + 提示词撰写。
+# 2026-09-22 批6（Q5，用户裁决「关键元素+分镜+音频派给同一个子代理，不要分开派」）：
+# 故事板三阶段**合并为一个委派阶段** `storyboard_design`（展示名「故事板设计」）。
+# 依据：平台自己的建模早就把它们当一件事——`stage_probes.CANONICAL_STAGES`
+# 把三者合成一个 `structure` 节点，Skill 的 <planner> 也是**一个步骤**管三件事，
+# 实跑里子代理本就是 ke → shots → audio 连着做完的；只有委派面在分三趟派人
+# （三张卡、三次等待），属"流程说一件事、派人却分三趟"。
+# 三个旧名**仍保留在 PIPELINE_CAPABILITY_TOOLS / CAPABILITY_TOOL_STAGES**
+# （能力面：喂 available_tools / scan_skills lint / 音频闸 / stage_probes），
+# 只是从**委派面**退役——委派面收窄后模型没有猜错空间（2222/Q3b 教训：
+# 枚举动态下发 + fail-loud 拒收，不留"考完试才给答案"）。
 PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
     "script_analyze",
-    "storyboard_key_elements", "storyboard_shots", "storyboard_audio",
+    "storyboard_design",
     "write_media_prompt",
 })
 
@@ -111,15 +121,16 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
     # 研究员群像）。本表原本只列 create_group——批0 之前该表零约束力（无人消费），
     # 所以从未暴露；批0 把它接进执行路径后，这个纸面遗漏变成了「该阶段建不出
     # 音色卡」的真回归（b1f8fc0 引入、本条修复）。
-    "storyboard_key_elements": frozenset(
+    # 2026-09-22 批6：合并阶段工具集 = 三个原子阶段工具集的**并集**，逐项列出
+    # （不写表达式，便于肉眼核对与装载期校验）；patch_draft 来自 shots 阶段，
+    # 合并后一次委派内三件事都能落账。
+    "storyboard_design": frozenset(
         {"storyboard_create_group", "storyboard_delete_group",
-         "storyboard_add_draft"}),
-    "storyboard_shots": frozenset(
-        {"storyboard_create_group", "storyboard_delete_group",
+         "storyboard_delete_draft",
+         # 2026-09-23 批10（事故 4444/P1-1）：改分组工具——模型补 sceneRefs
+         # 不再需要「删光整类目再重建」（4444 为此删 22 建 22、耗时 261.6s）
+         "storyboard_patch_group",
          "storyboard_add_draft", "storyboard_patch_draft"}),
-    "storyboard_audio": frozenset(
-        {"storyboard_create_group", "storyboard_delete_group",
-         "storyboard_add_draft"}),
     "write_media_prompt": frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
@@ -135,6 +146,11 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
 MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
     "script_analysis_report",
     "storyboard_create_group", "storyboard_delete_group",
+    "storyboard_delete_draft",
+    # 2026-09-23 批10（事故 4444/P1-1）：改分组同属「故事板结构写入」，
+    # 与 create/delete_group 同档 deny（主代理纯编排，结构写入经委派）。
+    # ⚠️ 必须与 _STAGE_TOOLS 同批改，否则下方 fail-loud 校验 import 期即 raise。
+    "storyboard_patch_group",
     "storyboard_add_draft", "storyboard_patch_draft",
 })
 
@@ -154,8 +170,17 @@ MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
 # ⚠️ 与 3333 事故的分界（必须保持）：限定走**明确拒收 + 回喂原因**，
 # 绝不静默剥离字段——`fc_tool_runner` 记载 2026-09-12 曾有「无阶段感知静默剥离
 # add_draft 内联 prompt」的闸机，造成**假成功空提示词卡**，被用户裁决删除。
+#
+# 2026-09-22 批6（Q5）：键随故事板三阶段合并改为 `storyboard_design`，
+# 允许集 = 三个原子阶段产出的并集 `{audio, video}`：
+#   - audio ← key_elements 的角色音色卡（key_element_audio）；
+#   - video ← shots 的分镜组卡（实跑取证 proj-1790073823 该阶段 26 次
+#     create_group 全为 group_type=shot + mediaType=video）。
+# **image 仍被拒**——用户 2026-09-21 裁决不变：角色/场景/道具的图像卡与提示词
+# 同归 `write_media_prompt` 阶段（图像卡含壳全部归提示词阶段）。合并只拓宽了
+# 「同一件事的三种产物」，没有放开跨阶段产物。
 STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
-    "storyboard_key_elements": frozenset({"audio"}),
+    "storyboard_design": frozenset({"audio", "video"}),
 }
 
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
@@ -324,8 +349,8 @@ def subagent_policy() -> str:
 
 
 def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
-                        stage: str = "") -> str:
-    """子级任务文本 = 固定权限范围声明 + 阶段标注（带 stage 时）+ 一句目标。
+                        stage: str = "", current_step: str = "") -> str:
+    """子级任务文本 = 固定权限范围声明 + 阶段标注（带 stage 时）+ 本次委派目标。
 
     2026-09-15 1111 批（对齐 flova 精简）：任务书**只承载目标**。范围/源文档/
     产出规范一律不复述——工作台状态经读工具按需获取，源文档/Skill 自己用
@@ -337,14 +362,47 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
     （取 registry.STAGE_LABELS，不带解释性括号——2026-09-16 P1-D/R3：括号内
     「章节即产出规范的全部依据」曾诱导子代理照抄章节骨架），章节正文由
     planner 装配层精准注入。
+
+    2026-09-22 批5（事故 4444/Q3，用户裁决）：带 stage 且 task 为空时，
+    **目标行由平台按阶段生成**（`{执行该章节} = 目标`）——调用方没有槽位可填，
+    复述通道从结构上关闭（此前 task 必填 ⇒ 模型必须填坑 ⇒ 必然把子代理自己
+    读得到的项目状态/规格现值抄进去；prose 修复已失败三轮）。task 非空时仍
+    作为**补充**拼在平台目标行之后（只该写子代理读不到的东西，措辞归
+    RunSubagentInput.task 描述）。
+
+    2026-09-23 批7（D-7 用户裁决：**只下发当前步，不拆平台阶段**）：
+    原平台目标行写「按该章节规范完成本阶段**全部**产出」——而 Skill 的
+    `<planner>` 散文明确要求「每个阶段完成后必须暂停…**绝不一口气输出全部
+    步骤**」。两者**直接矛盾**：散文说逐步，平台说做完全部。模型夹在中间，
+    2222 实跑即一次性写完全部 47 张卡（越步）。
+    用户边界：执行模式 = **AI 自判、Skill 散文作流程控制**，平台不写死暂停点。
+    ⇒ 修法两件（都不加暂停闸）：
+      ① 删掉平台那句「全部产出」——不与 Skill 散文打架（**唯一流程控制源回归
+         Skill 散文**）；
+      ② 新增 `current_step` 参数：主代理把「本次做第几步」写进任务书
+         （主代理手里有 `<planner>`，子代理看不到——这是让主代理**把 Skill
+         已写的散文用起来**，不是平台硬编码步骤）。
     """
     clean = str(task or "").strip()
     ctx = subagent_delegation_context()
     header = ""
     if ctx:
         header += f"{ctx}\n\n"
+    # 2026-09-23 批7（D-7）：本次步骤标注——主代理把「做第几步」下发进来。
+    # 事实性一行（不夹步骤内容，内容仍归 Skill 散文），让子代理知道
+    # 「本次只做这一步」；为空则整行不出（不带空标注）。
+    _step = str(current_step or "").strip()
+    step_line = f"本次步骤：{_step}" if _step else ""
     resolved = resolve_stage(stage)
+    goal = clean
     if resolved:
         label = STAGE_LABELS.get(resolved, resolved)
         header += f"本次委派阶段：{label}\n\n"
-    return f"{header}===== 本次委派目标 =====\n{clean}"
+        if not goal:
+            # 2026-09-23 批7：去掉与 Skill 暂停散文矛盾的「全部产出」。
+            # 只陈述事实（执行哪个章节），步骤节奏由 Skill 散文与主代理
+            # 下发的 current_step 共同决定。
+            goal = f"执行所选 Skill 的「{label}」章节。"
+    if step_line:
+        header += f"{step_line}\n\n"
+    return f"{header}===== 本次委派目标 =====\n{goal}"

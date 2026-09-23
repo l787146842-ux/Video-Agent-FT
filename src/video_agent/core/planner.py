@@ -75,7 +75,11 @@ from src.video_agent.state import conversation_ops
 # 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
 _STUDIO_STATE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
-    "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
+    "storyboard_delete_group", "storyboard_delete_draft",
+    # 2026-09-23 批10（事故 4444/P1-1）：改分组同属工作台状态工具，
+    # 工作台上下文关闭时必须一并裁掉（否则下发一个点不动工作台的 schema）
+    "storyboard_patch_group",
+    "storyboard_confirm_draft", "storyboard_media_to_chat",
     "view_storyboard_media",
     "read_draft", "document_write", "read_uploaded_doc", "read_project_doc",
     "read_state_group",
@@ -408,7 +412,7 @@ class Planner:
 
     async def _launch_subagent(
         self, task: str, parent_ctx: "PlannerContext", kind: str = "",
-        stage: str = "", on_event=None,
+        stage: str = "", current_step: str = "", on_event=None,
     ) -> str:
         """正宗子代理（one-shot）：模型经 FC `run_subagent` 发起 → 在隔离上下文里
         复用同一 `run_agent_loop`（经子 Planner）连续跑完 → 只回摘要。
@@ -431,13 +435,25 @@ class Planner:
         resolved_kind = subagent_mod.resolve_subagent_kind(kind)
         # meta 记阶段（左栏子线程记录可辨）：带 stage 时 subagent_kind 位记 stage:名
         meta_kind = f"stage:{resolved_stage}" if resolved_stage else resolved_kind
+        # 子线程展示名（2026-09-22 批1，Q2）：**必须与 live actor 卡同源**。
+        # 带 stage 时存阶段展示名（STAGE_LABELS，与下方 sub_meta["label"] 同一
+        # 取值）；只有通用委派（无阶段）才回落任务摘要前段。
+        # 此前一律存任务文本 ⇒ 同一个子代理有两套名字：干活时 actor 卡显示
+        # 「分镜」（来自 SSE meta），刷新后读 scope.label 变成「目标：按所选
+        # Skill 的 storyboard_shots 章节规范，将剧…」（任务书前 40 字）——
+        # 刷新即丢名字的根因。任务书原文不丢：子级任务已作为隐藏线程首条
+        # user/message 落流（见下方 append_user_message），只读记录里读得到。
+        child_label = (
+            STAGE_LABELS.get(resolved_stage, resolved_stage) if resolved_stage
+            else (lambda t: t[:_SUBAGENT_LABEL_MAX - 1] + "\u2026"
+                  if len(t) > _SUBAGENT_LABEL_MAX else t)((task or "")))
         try:
             parent_cid = str(getattr(parent_ctx, "session_conversation_id", "") or "")
             conv = conversation_ops.create_scoped_conversation(
                 self.state_manager,
                 {"kind": "subagent", "parent_conversation": parent_cid,
                  "subagent_kind": meta_kind,
-                 "label": (lambda t: t[:_SUBAGENT_LABEL_MAX - 1] + "\u2026" if len(t) > _SUBAGENT_LABEL_MAX else t)((task or ""))},
+                 "label": child_label},
                 title="子代理")
             child_cid = str((conv or {}).get("id") or "")
         except Exception as _e:  # 子会话创建失败不阻断委派（降级为不落流）
@@ -505,7 +521,8 @@ class Planner:
         )
         # 构建子级任务文本（通用：固定范围声明 + 幂等锚 + 任务书；
         # 带 stage：另加一行阶段标注）
-        base_task = subagent_mod.build_subagent_task(task, stage=resolved_stage)
+        base_task = subagent_mod.build_subagent_task(
+            task, stage=resolved_stage, current_step=current_step)
         # K6 批（2026-09-16 对齐 dsh scoped prompt section）：打卡指令随委派
         # 任务下发（唯一源 = shared/structured_output.md::BRIEF；subagent.md
         # 逐字锁零触碰）——子代理收尾必须 structured_output 打卡一次。
@@ -741,8 +758,10 @@ class Planner:
         # 子级（depth≥1）置 None ⇒ 子级无法再委派（防递归）。随请求实例隔离，不跨请求泄漏。
         if settings.subagent_enabled and not getattr(context, "subagent_depth", 0):
             self._fc_runner.subagent_launcher = (
-                lambda task, kind="", stage="", on_event=None:
-                    self._launch_subagent(task, context, kind, stage, on_event=on_event))
+                lambda task, kind="", stage="", current_step="", on_event=None:
+                    self._launch_subagent(task, context, kind, stage,
+                                          current_step=current_step,
+                                          on_event=on_event))
         else:
             self._fc_runner.subagent_launcher = None
 
