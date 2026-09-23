@@ -59,6 +59,34 @@ from src.video_agent.utils.json_rescue import rescue_tool_arguments
 # 并发执行（对齐 dsh 有界并行池思路，上限保守取 4）
 PARALLEL_POOL_LIMIT = 4
 
+# 展示侧失败文案上限（2026-09-23 批1，Q9）：
+# **仅用于 SSE 事件 / trace 时间线 / 用户可见 warnings 三条展示路径**，
+# 不作用于回喂模型的正文（回喂正文一律不设固定上限，见
+# fc_feedback.compose_failure_feedback 批1 注释）。
+# 口径对齐 dsh「按去向分流」：模型读的那份完整、存档/展示的那份才设限，
+# 且必须带省略标记（由 tool_args_preview.truncate_text 统一追加
+# 「…（已截断，共 N 字）」）。数值沿用原硬编码的 120，纯保 UX 不回归。
+_DISPLAY_ERR_LIMIT = 120
+
+
+def _call_fingerprint(name: str, args: Any) -> str:
+    """工具调用指纹（工具名 + 入参），用于「同参重试」判定。
+
+    2026-09-23 批10（事故 4444/P1-3）：旧实现按**工具名**累计失败次数，
+    于是同一批里第 2..N 个成员各自收到「该工具已连续失败 2 次」——
+    而它们各是一次**不同的调用**（4444 实证：同批 5 个 shot 的 sceneRefs
+    问题各不相同，却都被念了同一句）。提示语的语义是「**同参**重试大概率
+    仍失败」，故计数键必须是入参而非工具名。
+
+    入参序列化失败（含不可 JSON 化对象）时回落工具名——宁可退化成旧口径，
+    也不因记账本身抛错打断执行路径（记账不得影响主流程）。
+    """
+    try:
+        payload = json.dumps(args, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        payload = repr(args)
+    return f"{name}\x00{payload}"
+
 
 class FCExecuteResult(NamedTuple):
     """execute() 结构化返回（杜绝位置解包：字段名即契约）。
@@ -165,8 +193,12 @@ class FCToolRunner:
         self.gate_override: Any = False
         # 本批闸机警告（随 execute 返回/时间线可见）
         self.gate_warnings: List[str] = []
-        # 本轮同工具失败计数（结构化回喂升级用）
-        self._tool_fail_counts: Dict[str, int] = {}
+        # 本轮**逐调用**失败计数（键 = 工具名 + 入参指纹）：只有「同一入参
+        # 重复提交」才算「同参重试」（2026-09-23 批10，事故 4444/P1-3；
+        # 与 `_gate_repeat` 的 (kind+签名) 计数同构）
+        self._call_fail_counts: Dict[str, int] = {}
+        # 本轮同工具失败**总**次数（时间线「累计失败 N 次」展示用，Q22 语义不变）
+        self._tool_fail_totals: Dict[str, int] = {}
         # 本轮花钱生成（costly）工具失败登记（Q22 裁决 2026-09-01：
         # 轮末机械附重试选项卡，不依赖模型自觉上报）；跨批累积，
         # planner 每轮 handle_message 起始清空
@@ -328,6 +360,8 @@ class FCToolRunner:
             summary = await launcher(
                 str((args or {}).get("task") or ""),
                 stage=str((args or {}).get("stage") or ""),
+                # 2026-09-23 批7（D-7）：本次步骤标注透传（主代理下发「做第几步」）。
+                current_step=str((args or {}).get("current_step") or ""),
                 # 2026-09-15 1111 批：把本轮 SSE on_event 透传给子循环，
                 # 子级增量事件（state_refresh/timeline/tool）进父流实时可见。
                 on_event=getattr(self, "_subagent_on_event", None))
@@ -803,22 +837,36 @@ class FCToolRunner:
             # 规格写入不再被向导拒收，失败即普通失败（红×））
             # 止损计数可观测（Q22）：同工具累计失败次数随时间线条目可见，
             # 亦随结构化回喂供模型止损决策（二次升级见 compose_failure_feedback）
-            self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
-            _fail_n = self._tool_fail_counts[name]
+            #
+            # 2026-09-23 批10（事故 4444/P1-3）：**逐调用**计数，不是按工具名累计。
+            # 旧实现按 name 累计 ⇒ 同批第 2..N 个成员各自收到「该工具已连续失败 2 次」，
+            # 而它们**各是一次不同的调用**（4444 实证：同批 5 个 shot 的
+            # sceneRefs 问题各不相同，却都被念了同一句「已失败 2 次」）。
+            # 改用「入参指纹」作键：**同一入参重复提交**才是「同参重试」，
+            # 提示语才成立（与 `_gate_repeat` 的 (kind+签名) 计数同构）。
+            # 展示用的 item 级次数另存 `_tool_fail_totals`（时间线「累计失败 N 次」
+            # 语义不变，Q22 既有断言不翻）。
+            _fp = _call_fingerprint(name, args)
+            self._call_fail_counts[_fp] = self._call_fail_counts.get(_fp, 0) + 1
+            _fail_n = self._call_fail_counts[_fp]
+            self._tool_fail_totals[name] = self._tool_fail_totals.get(name, 0) + 1
+            _total_n = self._tool_fail_totals[name]
             if on_event is not None:
                 _finished_ev = {
                     "type": SSE_TOOL_FINISHED,
                     "id": c.tool_event_id,
                     "ok": False,
                     "elapsed_ms": round(_tool_ms, 1),
-                    "result_summary": str(result.error or "执行失败")[:120],
+                    "result_summary": tool_args_preview.truncate_text(
+                        str(result.error or "执行失败"), _DISPLAY_ERR_LIMIT),
                 }
                 await on_event(_finished_ev)
             tracer.record_action(
-                name=name, summary=f"{c.start_summary}（累计失败 {_fail_n} 次）",
+                name=name, summary=f"{c.start_summary}（累计失败 {_total_n} 次）",
                 elapsed_ms=_tool_ms, ok=False,
                 stage=stage_label_for_tool(name),
-                result_summary=str(result.error or "执行失败")[:120],
+                result_summary=tool_args_preview.truncate_text(
+                    str(result.error or "执行失败"), _DISPLAY_ERR_LIMIT),
                 args=c.args_preview,
             )
             # 花钱生成失败不静默（Q22）：用户可见警告（随 gate_warnings
@@ -827,7 +875,7 @@ class FCToolRunner:
             if callable(_is_costly) and _is_costly(name):
                 _cf_msg = (
                     f"花钱生成失败：{c.start_summary} —— "
-                    f"{str(result.error or '执行失败')[:120]}。"
+                    f"{tool_args_preview.truncate_text(str(result.error or '执行失败'), _DISPLAY_ERR_LIMIT)}。"
                     "可点「重试」重新执行，或调整提示词/模型后再试"
                 )
                 if _cf_msg not in self.gate_warnings:
