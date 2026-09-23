@@ -1,0 +1,126 @@
+============================================================================================
+合成注入 imgUrl 后：build_storyboard_media_map 的键（前 30 个）
+============================================================================================
+  键总数 = 37
+    'Element_AA' -> {'url': '/workspace/assets/fake-ke-2.png', 'kind': 'image'}
+    'Element_全息信息屏' -> {'url': '/workspace/assets/fake-ke-17.png', 'kind': 'image'}
+    'Element_启示号实验舱' -> {'url': '/workspace/assets/fake-ke-13.png', 'kind': 'image'}
+    'Element_启示号控制舱' -> {'url': '/workspace/assets/fake-ke-11.png', 'kind': 'image'}
+    'Element_太阳系外缘深空' -> {'url': '/workspace/assets/fake-ke-12.png', 'kind': 'image'}
+    'Element_无人太空艇' -> {'url': '/workspace/assets/fake-ke-15.png', 'kind': 'image'}
+    'Element_星环号球形舱' -> {'url': '/workspace/assets/fake-ke-9.png', 'kind': 'image'}
+    'Element_曹彬' -> {'url': '/workspace/assets/fake-ke-3.png', 'kind': 'image'}
+    'Element_木星轨道外景' -> {'url': '/workspace/assets/fake-ke-10.png', 'kind': 'image'}
+    'Element_机械臂与密封抓斗' -> {'url': '/workspace/assets/fake-ke-16.png', 'kind': 'image'}
+    'Element_瓦西里' -> {'url': '/workspace/assets/fake-ke-4.png', 'kind': 'image'}
+    'Element_白Ice' -> {'url': '/workspace/assets/fake-ke-5.png', 'kind': 'image'}
+    'Element_白色薄膜（白纸片）' -> {'url': '/workspace/assets/fake-ke-14.png', 'kind': 'image'}
+    'Element_研究员' -> {'url': '/workspace/assets/fake-ke-8.png', 'kind': 'image'}
+    'Element_程心' -> {'url': '/workspace/assets/fake-ke-1.png', 'kind': 'image'}
+    'Element_观测员' -> {'url': '/workspace/assets/fake-ke-7.png', 'kind': 'image'}
+    'Element_领航员' -> {'url': '/workspace/assets/fake-ke-6.png', 'kind': 'image'}
+    'fake-ke-1.png' -> {'url': '/workspace/assets/fake-ke-1.png', 'kind': 'image'}
+    'fake-ke-10.png' -> {'url': '/workspace/assets/fake-ke-10.png', 'kind': 'image'}
+    'fake-ke-11.png' -> {'url': '/workspace/assets/fake-ke-11.png', 'kind': 'image'}
+    'fake-ke-12.png' -> {'url': '/workspace/assets/fake-ke-12.png', 'kind': 'image'}
+    'fake-ke-13.png' -> {'url': '/workspace/assets/fake-ke-13.png', 'kind': 'image'}
+    'fake-ke-14.png' -> {'url': '/workspace/assets/fake-ke-14.png', 'kind': 'image'}
+    'fake-ke-15.png' -> {'url': '/workspace/assets/fake-ke-15.png', 'kind': 'image'}
+    'fake-ke-16.png' -> {'url': '/workspace/assets/fake-ke-16.png', 'kind': 'image'}
+    'fake-ke-17.png' -> {'url': '/workspace/assets/fake-ke-17.png', 'kind': 'image'}
+    'fake-ke-2.png' -> {'url': '/workspace/assets/fake-ke-2.png', 'kind': 'image'}
+    'fake-ke-3.png' -> {'url': '/workspace/assets/fake-ke-3.png', 'kind': 'image'}
+    'fake-ke-4.png' -> {'url': '/workspace/assets/fake-ke-4.png', 'kind': 'image'}
+    'fake-ke-5.png' -> {'url': '/workspace/assets/fake-ke-5.png', 'kind': 'image'}
+  ⚠️ 观察：键只有 'Element_<元素>' / 草稿 label / 文件名——**没有裸名键**
+
+============================================================================================
+决定性实验 1：resolve_scene_refs —— 裸名 vs 带前缀，能否挂到元素概念图
+============================================================================================
+  sceneRefs=['程心'                    ] -> 挂出 0 张参考图  ❌落空
+  sceneRefs=['Element_程心'            ] -> 挂出 1 张参考图  ✅命中
+  sceneRefs=['星环号球形舱'                ] -> 挂出 0 张参考图  ❌落空
+  sceneRefs=['Element_星环号球形舱'        ] -> 挂出 1 张参考图  ✅命中
+
+  实跑 3333 全部 15 镜逐条：
+    51 条 sceneRefs：命中 2 条 / 落空 49 条
+
+  逐条明细（只列命中与个别落空）：
+    S 1 ref='星环号球形舱'                   -> ❌落空
+    S 1 ref='程心'                       -> ❌落空
+    S 1 ref='AA'                       -> ❌落空
+    S 2 ref='星环号球形舱'                   -> ❌落空
+    S 2 ref='曹彬'                       -> ❌落空
+    S 2 ref='AA'                       -> ❌落空
+    S 2 ref='程心'                       -> ❌落空
+    S 3 ref='星环号球形舱'                   -> ❌落空
+    S 3 ref='程心'                       -> ❌落空
+    S 3 ref='曹彬'                       -> ❌落空
+    S 3 ref='Element_程心'               -> ✅命中
+    S 4 ref='木星轨道外景'                   -> ❌落空
+    S 4 ref='曹彬'                       -> ❌落空
+    S 5 ref='太阳系外缘深空'                  -> ❌落空
+    S 5 ref='启示号控制舱'                   -> ❌落空
+    S 5 ref='领航员'                      -> ❌落空
+    S 6 ref='启示号控制舱'                   -> ❌落空
+    S 6 ref='瓦西里'                      -> ❌落空
+    S 6 ref='白Ice'                     -> ❌落空
+    S 7 ref='启示号控制舱'                   -> ❌落空
+    S 7 ref='领航员'                      -> ❌落空
+    S 7 ref='瓦西里'                      -> ❌落空
+    S 8 ref='启示号控制舱'                   -> ❌落空
+    S 8 ref='观测员'                      -> ❌落空
+    S 8 ref='瓦西里'                      -> ❌落空
+    S 9 ref='太阳系外缘深空'                  -> ❌落空
+    S 9 ref='启示号控制舱'                   -> ❌落空
+    S 9 ref='白Ice'                     -> ❌落空
+    S 9 ref='无人太空艇'                    -> ❌落空
+    S 9 ref='白色薄膜（白纸片）'                -> ❌落空
+    S10 ref='启示号实验舱'                   -> ❌落空
+    S10 ref='白色薄膜（白纸片）'                -> ❌落空
+    S10 ref='机械臂与密封抓斗'                 -> ❌落空
+    S11 ref='启示号实验舱'                   -> ❌落空
+    S11 ref='白色薄膜（白纸片）'                -> ❌落空
+    S11 ref='无人太空艇'                    -> ❌落空
+    S12 ref='启示号实验舱'                   -> ❌落空
+    S12 ref='研究员'                      -> ❌落空
+    S12 ref='瓦西里'                      -> ❌落空
+    S12 ref='白色薄膜（白纸片）'                -> ❌落空
+    S13 ref='启示号实验舱'                   -> ❌落空
+    S13 ref='瓦西里'                      -> ❌落空
+    S13 ref='白Ice'                     -> ❌落空
+    S13 ref='白色薄膜（白纸片）'                -> ❌落空
+    S14 ref='启示号实验舱'                   -> ❌落空
+    S14 ref='白色薄膜（白纸片）'                -> ❌落空
+    S14 ref='Element_研究员'              -> ✅命中
+    S15 ref='启示号实验舱'                   -> ❌落空
+    S15 ref='研究员'                      -> ❌落空
+    S15 ref='白Ice'                     -> ❌落空
+    S15 ref='白色薄膜（白纸片）'                -> ❌落空
+
+============================================================================================
+决定性实验 2：resolve_prompt_mentions —— 视频/分镜表格图里的引用记号
+============================================================================================
+  【视频卡 S1（<<<image_星环号球形舱>>> 形态）】
+     原文   : '<<<image_星环号球形舱>>> 与 <<<image_程心>>> 与 <<<image_AA>>>'
+     重写后 : '星环号球形舱 与 程心 与 AA'
+     标记   : []
+     最终 refs = 0 条
+
+  【分镜表格图 S1（@星环号球形舱 / @程心 形态）】
+     原文   : '- Image 1: Character sheet for @程心 — replicate exactly\n- Image 2: Location sheet for @星环号球形舱 — replicate exactly'
+     重写后 : '- Image 1: Character sheet for 程心 — replicate exactly\n- Image 2: Location sheet for 星环号球形舱 — replicate exactly'
+     标记   : []
+     最终 refs = 0 条
+
+  【对照：带前缀的 @ 形态】
+     原文   : 'for @Element_程心 and @Element_星环号球形舱'
+     重写后 : 'for [参考图1：Element_程心] and [参考图2：Element_星环号球形舱]'
+     标记   : ['[参考图1：Element_程心]', '[参考图2：Element_星环号球形舱]']
+     最终 refs = 2 条
+
+  实跑 3333 全部 15 张视频卡（<<<image_...>>> 形态）：
+    token 总数=43  成功解析为[参考图N]=0  被丢弃=43
+
+  实跑 3333 全部 15 张分镜表格图（@<裸名> 形态）：
+    @token 总数=30  成功解析=0  被降级为裸文字=30

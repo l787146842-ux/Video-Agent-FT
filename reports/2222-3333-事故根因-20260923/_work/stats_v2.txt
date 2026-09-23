@@ -1,0 +1,124 @@
+================================================================================================================
+[2222/SUB] conv-1790091588-478443ae.jsonl  段(步)=4 轮=0 总工具调用=3 平均调用/步=0.75 总推理字数=3250 会话墙钟=29.1s
+  前 5 大推理步 = [(1, 2499, 1), (2, 490, 1), (0, 261, 1), (3, 0, 0)]  占全部推理 1.0
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0 None  23:39:51     261      2     1    0     0.0      5.0   None  read_uploaded_doc
+     1 None  23:39:56    2499      2     1    1    14.4      4.1  816.3  script_analysis_report
+     2 None  23:40:15     490     40     1    1     0.0      2.8   None  structured_output
+     3 None  23:40:18       0    572     0    1     0.0     None   None  
+================================================================================================================
+[2222/SUB] conv-1790091784-91e4b9b5.jsonl  段(步)=26 轮=0 总工具调用=59 平均调用/步=2.27 总推理字数=26681 会话墙钟=292.4s
+  前 5 大推理步 = [(1, 12867, 3), (8, 3871, 3), (4, 3518, 3), (24, 1929, 1), (19, 1880, 1)]  占全部推理 0.902
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0 None  23:43:08     507      0     2    0     0.0      5.0   None  read_uploaded_doc,read_project_doc
+     1 None  23:43:13   12867    156     3    2    37.8      1.9  477.0  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     2 None  23:43:53      53     36     1    3     0.0      8.0   None  read_state_group
+     3 None  23:44:01     237     26     3    1     0.0      5.0   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+     4 None  23:44:06    3518    154     3    3    15.1      8.3 1484.0  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+     5 None  23:44:29      51     40     2    3     0.0     10.0   None  storyboard_add_draft,storyboard_add_draft
+     6 None  23:44:39       0     40     4    2     0.0      4.5   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     7 None  23:44:43       0     28     1    4     0.0      5.0   None  storyboard_add_draft
+     8 None  23:44:48    3871    130     3    1    23.0      8.4 1242.0  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     9 None  23:45:20      66     31     3    3     0.0      9.5   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    10 None  23:45:29       0     27     3    3     0.0      7.2   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    11 None  23:45:37       0     33     2    3     0.0      9.3   None  storyboard_create_group,storyboard_create_group
+    12 None  23:45:46      46     40     3    2     0.0     11.3   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    13 None  23:45:57       0     29     3    3     0.0      8.0   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    14 None  23:46:05       0     30     2    3     0.0      5.0   None  storyboard_create_group,storyboard_create_group
+    15 None  23:46:10     536     36     3    2     5.9      9.3 6259.5  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    16 None  23:46:25       0     30     3    3     0.0     11.9   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    17 None  23:46:37       0     29     2    3     0.0      7.9   None  storyboard_create_group,storyboard_create_group
+    18 None  23:46:45       0     31     2    2     0.0      5.1   None  storyboard_create_group,storyboard_create_group
+    19 None  23:46:50    1880     99     1    2     9.6      8.0 4322.0  storyboard_create_group
+    20 None  23:47:08       0      0     2    1     0.0      6.1   None  storyboard_add_draft,storyboard_add_draft
+    21 None  23:47:14     289     33     2    2     0.0      4.7   None  storyboard_add_draft,read_state_group
+    22 None  23:47:19     123     42     2    2     0.0      5.1   None  read_state_group,read_state_group
+    23 None  23:47:24     708    186     3    2     4.7      5.0 10100.6  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    24 None  23:47:34    1929    609     1    3    15.1      5.0 3311.9  structured_output
+    25 None  23:47:54       0   1016     0    1     2.8     None 18156.1  
+================================================================================================================
+[2222/MAIN] conv-main.jsonl  段(步)=5 轮=3 总工具调用=5 平均调用/步=1.0 总推理字数=7274 会话墙钟=530.8s
+  前 5 大推理步 = [(0, 2214, 1), (3, 2126, 1), (2, 1803, 1), (1, 815, 1), (4, 316, 1)]  占全部推理 1.0
+  -- 轮 1: 23:39:06→23:39:17 墙钟=11.3s 含步=1
+  -- 轮 2: 23:39:43→23:40:28 墙钟=44.5s 含步=2
+  -- 轮 3: 23:42:52→23:47:57 墙钟=304.8s 含步=2
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0   1  23:39:11    2214     56     1    0     6.2     31.4 1908.2  workflow_pause
+     1   2  23:39:48     815     84     1    1     0.0     34.2   None  run_subagent
+     2   2  23:40:23    1803    129     1    1     5.1    149.1 2907.3  workflow_pause
+     3   3  23:42:57    2126     54     1    1     4.1      3.3 3994.9  document_write
+     4   3  23:43:04     316     58     1    1     0.0     None   None  run_subagent
+================================================================================================================
+[3333/SUB] conv-1790092468-8b1cb0ee.jsonl  段(步)=4 轮=0 总工具调用=3 平均调用/步=0.75 总推理字数=3071 会话墙钟=31.9s
+  前 5 大推理步 = [(1, 2486, 1), (0, 364, 1), (2, 172, 1), (3, 49, 0)]  占全部推理 1.0
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0 None  23:54:32     364      0     1    0     0.0      6.3   None  read_uploaded_doc
+     1 None  23:54:39    2486     99     1    1    14.8      2.6  809.3  script_analysis_report
+     2 None  23:54:56     172     43     1    1     0.0      4.3   None  structured_output
+     3 None  23:55:00      49    640     0    1     0.0     None   None  
+================================================================================================================
+[3333/SUB] conv-1790092619-648c1d30.jsonl  段(步)=15 轮=0 总工具调用=49 平均调用/步=3.27 总推理字数=43117 会话墙钟=282.1s
+  前 5 大推理步 = [(1, 40473, 5), (13, 1264, 1), (0, 1135, 2), (9, 114, 3), (12, 79, 3)]  占全部推理 0.999
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0 None  23:57:02    1135      2     2    0     0.0      5.0   None  read_uploaded_doc,read_project_doc
+     1 None  23:57:07   40473    122     5    2   154.6      9.4  203.3  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     2 None  23:59:51      52     38     5    5     0.0      9.7   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     3 None  00:00:01       0     22     5    5     0.0      9.1   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     4 None  00:00:10       0     28     4    5     0.0      9.6   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     5 None  00:00:19       0     20     3    4     0.0      9.4   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     6 None  00:00:29       0     20     3    3     0.0      9.1   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     7 None  00:00:38       0     23     3    3     0.0     12.3   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     8 None  00:00:50       0     22     4    3     0.0      6.2   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+     9 None  00:00:56     114     47     3    4     0.0      7.1   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    10 None  00:01:03       0     56     5    3     0.0      5.2   None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    11 None  00:01:08       0     52     3    5     2.7      4.7 16095.9  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    12 None  00:01:16      79     36     3    3     0.0      5.0   None  read_state_group,read_state_group,read_state_group
+    13 None  00:01:21    1264     51     1    3    12.1      5.0 3991.6  structured_output
+    14 None  00:01:38       0    854     0    1     3.0     None 16353.7  
+================================================================================================================
+[3333/SUB] conv-1790093184-0d8cb72a.jsonl  段(步)=14 轮=0 总工具调用=53 平均调用/步=3.79 总推理字数=64983 会话墙钟=242.4s
+  前 5 大推理步 = [(0, 60395, 3), (11, 1274, 2), (1, 908, 4), (12, 845, 1), (8, 634, 5)]  占全部推理 0.986
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0 None  00:06:30   60395      0     3    0   124.4      8.7  288.8  read_project_doc,read_state_group,read_state_group
+     1 None  00:08:43     908    104     4    3     0.0      5.4   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     2 None  00:08:48      50     47     4    4     0.0      9.5   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     3 None  00:08:57     201     30     5    4     0.0      6.1   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     4 None  00:09:04     165     27     4    5     0.0     12.0   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     5 None  00:09:16     373     65     5    4     0.0     11.3   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     6 None  00:09:27      30     33     5    5     0.0     11.4   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     7 None  00:09:38      31     35     5    5     0.0     12.7   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     8 None  00:09:51     634     57     5    5     0.0     10.8   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+     9 None  00:10:02      38     33     5    5     0.0     10.1   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    10 None  00:10:12      39     45     5    5     0.0      4.3   None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    11 None  00:10:16    1274     46     2    5     0.0      5.9   None  read_state_group,read_state_group
+    12 None  00:10:22     845    107     1    2     0.0      4.9   None  structured_output
+    13 None  00:10:27       0    773     0    1     0.0     None   None  
+================================================================================================================
+[3333/MAIN] conv-main.jsonl  段(步)=11 轮=4 总工具调用=11 平均调用/步=1.0 总推理字数=12233 会话墙钟=1165.1s
+  前 5 大推理步 = [(6, 2606, 0), (3, 2422, 1), (2, 1912, 1), (1, 1546, 1), (8, 1387, 3)]  占全部推理 0.807
+  -- 轮 1: 23:51:15→23:51:31 墙钟=16.0s 含步=2
+  -- 轮 2: 23:54:17→23:55:12 墙钟=55.8s 含步=2
+  -- 轮 3: 23:56:50→00:01:41 墙钟=291.0s 含步=2
+  -- 轮 4: 00:06:12→00:10:40 墙钟=267.6s 含步=5
+     段   轮         起  reason   text calls  res     生成s     步间隔s  tok/s  工具
+     0   1  23:51:20     747     51     1    0     1.2      5.0 8851.7  read_uploaded_doc
+     1   1  23:51:26    1546    220     1    1     4.6    171.6 2823.3  workflow_pause
+     2   2  23:54:22    1912     51     1    1     6.2     36.9 2297.3  run_subagent
+     3   2  23:55:05    2422    134     1    1     6.9    102.8 2423.9  workflow_pause
+     4   3  23:56:55     879     66     1    1     0.4      3.2 44352.5  document_write
+     5   3  23:56:59     273     69     1    1     0.0    558.6   None  run_subagent
+     6   4  00:06:17    2606     90     0    1     5.0      2.1 5619.8  
+     7   4  00:06:24      62     17     1    0     0.0    247.5   None  run_subagent
+     8   4  00:10:32    1387     67     3    1     1.6      2.7 18661.9  read_draft,read_draft,read_draft
+     9   4  00:10:36     319     82     0    3     0.0      3.5   None  
+    10   4  00:10:40      80      2     1    0     0.0     None   None  workflow_pause
+================================================================================================================
+SUMMARY
+ proj  role                               file    步    轮    调用    均/步      推理字数     最大步     墙钟s   top5占比
+ 2222   SUB     conv-1790091588-478443ae.jsonl    4    0     3   0.75      3250    2499    29.1      1.0
+ 2222   SUB     conv-1790091784-91e4b9b5.jsonl   26    0    59   2.27     26681   12867   292.4    0.902
+ 2222  MAIN                    conv-main.jsonl    5    3     5    1.0      7274    2214   530.8      1.0
+ 3333   SUB     conv-1790092468-8b1cb0ee.jsonl    4    0     3   0.75      3071    2486    31.9      1.0
+ 3333   SUB     conv-1790092619-648c1d30.jsonl   15    0    49   3.27     43117   40473   282.1    0.999
+ 3333   SUB     conv-1790093184-0d8cb72a.jsonl   14    0    53   3.79     64983   60395   242.4    0.986
+ 3333  MAIN                    conv-main.jsonl   11    4    11    1.0     12233    2606  1165.1    0.807

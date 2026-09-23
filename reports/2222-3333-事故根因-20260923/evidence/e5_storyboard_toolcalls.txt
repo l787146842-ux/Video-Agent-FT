@@ -1,0 +1,100 @@
+[conv-1790092619-64 seq=42] storyboard_create_group type=keyElement title='程心'
+[conv-1790092619-64 seq=42] storyboard_create_group type=keyElement title='AA'
+[conv-1790092619-64 seq=42] storyboard_create_group type=keyElement title='曹彬'
+[conv-1790092619-64 seq=42] storyboard_create_group type=keyElement title='瓦西里'
+[conv-1790092619-64 seq=42] storyboard_create_group type=keyElement title='白Ice'
+[conv-1790092619-64 seq=51] storyboard_create_group type=keyElement title='领航员'
+[conv-1790092619-64 seq=51] storyboard_create_group type=keyElement title='观测员'
+[conv-1790092619-64 seq=51] storyboard_create_group type=keyElement title='研究员'
+[conv-1790092619-64 seq=51] storyboard_create_group type=keyElement title='星环号球形舱'
+[conv-1790092619-64 seq=51] storyboard_create_group type=keyElement title='木星轨道外景'
+[conv-1790092619-64 seq=59] storyboard_create_group type=keyElement title='启示号控制舱'
+[conv-1790092619-64 seq=59] storyboard_create_group type=keyElement title='太阳系外缘深空'
+[conv-1790092619-64 seq=59] storyboard_create_group type=keyElement title='启示号实验舱'
+[conv-1790092619-64 seq=59] storyboard_create_group type=keyElement title='白色薄膜（白纸片）'
+[conv-1790092619-64 seq=59] storyboard_create_group type=keyElement title='无人太空艇'
+[conv-1790092619-64 seq=67] storyboard_create_group type=keyElement title='机械臂与密封抓斗'
+[conv-1790092619-64 seq=67] storyboard_create_group type=keyElement title='全息信息屏'
+[conv-1790092619-64 seq=67] storyboard_create_group type=shot title='程心与AA在失重舱室中苏醒，窗外木星云带缓慢旋转'
+[conv-1790092619-64 seq=67] storyboard_create_group type=shot title='信息窗口弹出，曹彬苍老的面容现身，AA质问掩体'
+[conv-1790092619-64 seq=74] storyboard_create_group type=shot title='程心追问打击，曹彬确认并说出白色薄片'
+[conv-1790092619-64 seq=74] storyboard_create_group type=shot title='木星外景与太空城，曹彬宣告掩体没用了'
+[conv-1790092619-64 seq=74] storyboard_create_group type=shot title='一年前深空，引力波定位细线穿过奥尔特云，目标减速'
+[conv-1790092619-64 seq=80] storyboard_create_group type=shot title='瓦西里与白Ice审视未知飞船轨迹，它把另一个东西扔进来了'
+[conv-1790092619-64 seq=80] storyboard_create_group type=shot title='黑屏抵近，屏幕上只有恒定引力波，瓦西里令继续'
+[conv-1790092619-64 seq=80] storyboard_create_group type=shot title='观测员发现可见光目标，深空前方出现一个白点'
+[conv-1790092619-64 seq=86] storyboard_create_group type=shot title='太空艇抵近，全息展开白色长方形，白Ice盯住白光'
+[conv-1790092619-64 seq=86] storyboard_create_group type=shot title='机械臂伸向薄膜，抓斗合拢又退回，臂身直接穿过'
+[conv-1790092619-64 seq=86] storyboard_create_group type=shot title='太空艇缓慢撞向薄膜，白色小片穿艇而过不偏不移'
+[conv-1790092619-64 seq=92] storyboard_create_group type=shot title='灯光调暗，研究员报告电磁波全穿透与质量近零'
+[conv-1790092619-64 seq=92] storyboard_create_group type=shot title='瓦西里手掌穿膜抽出，白Ice说还没碰到它真正存在的地方'
+[conv-1790092619-64 seq=92] storyboard_create_group type=shot title='二十多小时流逝，监测曲线上白光一点点下降'
+[conv-1790092619-64 seq=92] storyboard_create_group type=shot title='有人穿薄膜拍照引笑声，白Ice关掉图像记录：离它远点'
+[conv-1790092619-64 seq=100] storyboard_create_group type=audio title='BGM-场一 木星末日（压迫）'
+[conv-1790092619-64 seq=100] storyboard_create_group type=audio title='BGM-场二 深空诡谲'
+[conv-1790092619-64 seq=100] storyboard_create_group type=audio title='BGM-场三 实验幽冷'
+[conv-1790092619-64 seq=106] storyboard_create_group type=audio title='声-程心'
+[conv-1790092619-64 seq=106] storyboard_create_group type=audio title='声-AA'
+[conv-1790092619-64 seq=106] storyboard_create_group type=audio title='声-曹彬'
+[conv-1790092619-64 seq=106] storyboard_create_group type=audio title='声-瓦西里'
+[conv-1790092619-64 seq=106] storyboard_create_group type=audio title='声-白Ice'
+[conv-1790092619-64 seq=115] storyboard_create_group type=audio title='声-领航员'
+[conv-1790092619-64 seq=115] storyboard_create_group type=audio title='声-观测员'
+[conv-1790092619-64 seq=115] storyboard_create_group type=audio title='声-研究员'
+[conv-1790092619-64 seq=122] read_state_group
+[conv-1790092619-64 seq=122] read_state_group
+[conv-1790092619-64 seq=122] read_state_group
+[conv-1790093184-0d seq=36] read_state_group
+[conv-1790093184-0d seq=36] read_state_group
+[conv-1790093184-0d seq=43] storyboard_add_draft
+[conv-1790093184-0d seq=43] storyboard_add_draft
+[conv-1790093184-0d seq=43] storyboard_add_draft
+[conv-1790093184-0d seq=43] storyboard_add_draft
+[conv-1790093184-0d seq=51] storyboard_add_draft
+[conv-1790093184-0d seq=51] storyboard_add_draft
+[conv-1790093184-0d seq=51] storyboard_add_draft
+[conv-1790093184-0d seq=51] storyboard_add_draft
+[conv-1790093184-0d seq=59] storyboard_add_draft
+[conv-1790093184-0d seq=59] storyboard_add_draft
+[conv-1790093184-0d seq=59] storyboard_add_draft
+[conv-1790093184-0d seq=59] storyboard_add_draft
+[conv-1790093184-0d seq=59] storyboard_add_draft
+[conv-1790093184-0d seq=68] storyboard_add_draft
+[conv-1790093184-0d seq=68] storyboard_add_draft
+[conv-1790093184-0d seq=68] storyboard_add_draft
+[conv-1790093184-0d seq=68] storyboard_add_draft
+[conv-1790093184-0d seq=76] storyboard_add_draft
+[conv-1790093184-0d seq=76] storyboard_add_draft
+[conv-1790093184-0d seq=76] storyboard_add_draft
+[conv-1790093184-0d seq=76] storyboard_add_draft
+[conv-1790093184-0d seq=76] storyboard_add_draft
+[conv-1790093184-0d seq=85] storyboard_add_draft
+[conv-1790093184-0d seq=85] storyboard_add_draft
+[conv-1790093184-0d seq=85] storyboard_add_draft
+[conv-1790093184-0d seq=85] storyboard_add_draft
+[conv-1790093184-0d seq=85] storyboard_add_draft
+[conv-1790093184-0d seq=94] storyboard_add_draft
+[conv-1790093184-0d seq=94] storyboard_add_draft
+[conv-1790093184-0d seq=94] storyboard_add_draft
+[conv-1790093184-0d seq=94] storyboard_add_draft
+[conv-1790093184-0d seq=94] storyboard_add_draft
+[conv-1790093184-0d seq=103] storyboard_add_draft
+[conv-1790093184-0d seq=103] storyboard_add_draft
+[conv-1790093184-0d seq=103] storyboard_add_draft
+[conv-1790093184-0d seq=103] storyboard_add_draft
+[conv-1790093184-0d seq=103] storyboard_add_draft
+[conv-1790093184-0d seq=112] storyboard_add_draft
+[conv-1790093184-0d seq=112] storyboard_add_draft
+[conv-1790093184-0d seq=112] storyboard_add_draft
+[conv-1790093184-0d seq=112] storyboard_add_draft
+[conv-1790093184-0d seq=112] storyboard_add_draft
+[conv-1790093184-0d seq=121] storyboard_add_draft
+[conv-1790093184-0d seq=121] storyboard_add_draft
+[conv-1790093184-0d seq=121] storyboard_add_draft
+[conv-1790093184-0d seq=121] storyboard_add_draft
+[conv-1790093184-0d seq=121] storyboard_add_draft
+[conv-1790093184-0d seq=130] read_state_group
+[conv-1790093184-0d seq=130] read_state_group
+[conv-main.jsonl seq=66] read_draft
+[conv-main.jsonl seq=66] read_draft
+[conv-main.jsonl seq=66] read_draft

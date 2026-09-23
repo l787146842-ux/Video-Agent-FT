@@ -1,0 +1,339 @@
+==========================================================================================
+seq=12 REASONING (len=2000)
+) — could fold into scene description
+6. 宇宙服手套 (EVA glove)
+
+Key elements audio: 角色声音特征 registered as key_element_audio bound to character. The section says: "角色的声音特征（音色/语气/情绪基调）单独登记为 key_element_audio，与角色元素绑定". So I should create audio groups for character voices. Hmm — but audio_layer in the storyboard flow also includes BGM/旁白 via audio groups. Let me check: key_element_audio is registered as separate audio elements bound to characters. And audio_layer design (BGM, narration) is separate.
+
+For the audio groups, group_type is "audio". The skill's audio_layer section (storyboard_audio) says BGM at least one track, narration if any. Character voice could be registered as audio items too. Since the injected section mentions key_element_audio bound to characters, I'll create audio groups for character voices (程心, AA, 曹彬, 瓦西里, 白Ice, 领航员, 观测员/研究员) — that's a lot. Alternatively create audio groups for BGM tracks + narration + key character voices.
+
+Hmm, let me think about scope. The delegation is "故事板设计" stage only. Image/video generation is later stages (delegated separately, not my job). So I only create the storyboard structure: keyElement groups, shot groups, audio groups.
+
+Let me plan the storyboard groups:
+
+**keyElement groups** (group_type=keyElement):
+1. 角色-程心 (character)
+2. 角色-AA (character)
+3. 角色-曹彬 (character, hologram)
+4. 角色-瓦西里 (character)
+5. 角色-白Ice (character)
+6. 角色-领航员 (character, supporting)
+7. 角色-观测员 (character, supporting) — hmm, or combine with 研究员. Let me register 观测员 separately (he has a line + action) and 研究员 separately (has two lines).
+8. 场景-星环号球形舱 (scene)
+9. 场景-木星轨道太空 (scene, exterior with 太空城)
+10. 场景-启示号控制舱 (scene)
+11. 场景-太阳系外缘深空 (scene, exterior)
+12. 场景-启示号实验舱 (scene)
+13. 道具-白色薄膜白纸片 (prop)
+14. 道具-无人太空艇 (prop)
+15. 道具-机械臂密封抓斗 (prop)
+16. 道具-引力波定位全息屏 (prop)
+
+That's 16 key elements. Reasonable.
+
+**shot groups** (group_type=shot): Break the script into shots. Max 15s per shot, 2-6 internal cuts per shot, ≤3 characters per shot, spatial consistency per
+==========================================================================================
+seq=16 REASONING (len=1522)
+ Shot 12 has 6 cuts, borderline ok. Maybe split shot 12 into two: one for 暗室+研究员报告, one for 瓦西里伸手+白Ice台词.
+
+Let me finalize shot list (~15 shots):
+
+场一 (星环号): Shots 1-4
+场二 (启示号控制舱/深空): Shots 5-9
+场三 (实验舱): Shots 10-15
+
+Shot list:
+1. Shot: 程心AA苏醒，失重舱室，窗外木星云带 — 12s
+2. Shot: 信息窗口弹出曹彬，AA沙哑问话 — 13s
+3. Shot: 打击确认对话（程心/曹彬）— 14s
+4. Shot: 木星外景太空城，曹彬"掩体没用了" — 12s
+5. Shot: 太阳系外缘深空，引力波定位，领航员报减速 — 10s
+6. Shot: 瓦西里与白Ice分析未知飞船轨迹 — 14s
+7. Shot: 黑屏抵近，领航员"目标就在前方"，瓦西里"继续" — 12s
+8. Shot: 观测员发现白点 — 10s
+9. Shot: 太空艇抵近，全息展开白纸片 — 14s
+10. Shot: 机械臂与抓斗，薄膜穿抓斗 — 13s
+11. Shot: 太空艇穿膜无阻碍 — 8s
+12. Shot: 暗室实验，研究员报告穿透现象 — 12s
+13. Shot: 瓦西里伸手穿膜，白Ice台词 — 12s
+14. Shot: 时间流逝，监测曲线下降 — 8s
+15. Shot: 拍照玩笑，白Ice关图像"离它远点" — 13s
+
+Total: 12+13+14+12+10+14+12+10+14+13+8+12+12+8+13 = 177s. Hmm that's a lot but ok (目标 120s以上，超一点没问题? 其实 177s 挺长的，但脚本内容这么多，合理). Actually maybe I should keep total closer to 120-150s. Let me trim: it's fine, more content than minimum. The spec says "目标时长：120 秒以上" so 150-180s is acceptable. I'll keep ~160s.
+
+Hmm, let me reconsider — durations per shot: I need to be reasonable. Let me not overthink; durations are design values.
+
+**audio_layer groups** (group_type=audio):
+- BGM 1: 场一 末日焦虑 (压迫低音) — covering shots 1-4
+- BGM 2: 场二 深空静谧悬疑 — covering shots 5-9
+- BGM 3: 场三 实验冰冷+渐紧 — covering shots 10-15
+- 旁白? The script has no narration. Skip narration. But character voice key_element_audio: register voices for main characters. The injected section says character voice registered as key_element_audio bound to character element. So
+==========================================================================================
+seq=17 REASONING (len=1905)
+ I'll create audio groups for character voices: 程心, AA, 曹彬, 瓦西里, 白Ice, 领航员, 观测员, 研究员 — that's 8 more audio items. Plus 3 BGM. Total 11 audio items. Hmm.
+
+Wait, maybe character voices should be part of audio group type but tagged. Let me create audio groups:
+- Audio: BGM-场一 木星末日 (covering shot 1-4)
+- Audio: BGM-场二 深空诡谲 (covering shot 5-9)
+- Audio: BGM-场三 实验幽冷 (covering shot 10-15)
+- Audio: 声-程心 (voice: 温润平静、克制、中低音女性)
+- Audio: 声-AA (voice: 沙哑、急促、年轻女性)
+- Audio: 声-曹彬 (voice: 苍老、疲惫、干涩男声)
+- Audio: 声-瓦西里 (voice: 低沉沉稳、俄式腔调? 用中文，浑厚男声)
+- Audio: 声-白Ice (voice: 冷静、中性偏冷、女科学家)
+- Audio: 声-领航员 (voice: 年轻、平稳报告腔)
+- Audio: 声-观测员 (voice: 惊讶、短促男声)
+- Audio: 声-研究员 (voice: 平直、实验室汇报腔)
+
+That's 11 audio items — that's a lot of tool calls but fine in batches.
+
+Hmm wait — actually, is registering each character voice necessary? The injected section says "角色的声音特征（音色/语气/情绪基调）单独登记为 key_element_audio，与角色元素绑定，用于视频生成时的音频条件。" So yes, it's part of storyboard design. I'll do it.
+
+Actually, let me reconsider scope. key_element_audio — how to register? Probably as audio group type with label like "声-程音". I'll create audio groups for each character voice + BGM tracks.
+
+Let me now think about tool calls structure.
+
+Batch 1: Create keyElement groups for characters (程心, AA, 曹彬, 瓦西里, 白Ice) — 5 groups via storyboard_create_group.
+
+Actually I could also attach a draft to each group (设定图草稿 comes later at image stage; here group desc is the design). The create_group for keyElement takes desc. The skill says key element descriptions go in group desc. Let me write rich descs.
+
+Wait, but desc tokens [元素名] resolve refs. For character groups, desc should include appearance etc.
+
+Batch 2: Create keyElement groups for supporting characters (领航员, 观测员, 研究员) + scenes (星环号球形舱, 木星轨道外景) — 5 groups.
+
+Batch 3: Create scene groups (启示号控制舱, 太阳系外缘深空, 启示号实验舱) + prop groups (白色薄膜, 无人太空艇) — 5 groups.
+
+Batch 4: Create prop groups (机械臂抓斗, 引力波全
+==========================================================================================
+seq=19 REASONING (len=2002)
+ desc specifying track and coverage. I'll create audio groups for BGM ×3 + character voices ×8 = 11 audio groups. Hmm, that's a lot. Alternatively, character voices could be noted in character group descs (sound feature) AND separately as key_element_audio. The injected section explicitly says 单独登记为 key_element_audio. So separate audio groups it is.
+
+Let me reduce: character voices for the 5 main characters (程心, AA, 曹彬, 瓦西里, 白Ice) as audio groups; supporting characters (领航员/观测员/研究员) voices can be noted in their character descs... but the rule says all roles' voice features registered as key_element_audio. To be safe and complete, I'll register all 8 voices. It's a few extra tool calls, fine.
+
+Total groups: 17 keyElement + 15 shot + 11 audio = 43 groups. That's a lot of tool calls but batches of 3-5. ~10-12 batches. That's the job; proceed.
+
+Hmm, actually let me reconsider the number of shots. 15 shots might be fine. But let me double check shot count vs 120s target: 177s total. Actually that's ~3 minutes. For a 短剧 (short drama) 120s+, fine.
+
+Wait, but is 120s+ the total or per episode? Spec says 目标时长 120 秒以上. OK.
+
+Let me also reconsider: should each shot have scene_refs? Yes, referencing the scene element. The desc can use [元素名] tokens to auto-resolve refs. I'll use tokens like [星环号球形舱] in descs.
+
+Also "shot 类型必填 summary" — include summary like "含3个内切镜（约12s）".
+
+Also duration field for shot groups.
+
+Now, about scene_refs for shot groups: I can pass scene_refs explicitly or rely on token parsing. I'll use [元素名] tokens in desc — system auto-resolves. But to be safe I'll also pass scene_refs array. Actually the create_group signature has scene_refs param. Let me pass explicit scene_refs listing the scene element + characters involved.
+
+Hmm, but characters in shot desc as tokens would also resolve to refs, which is good (references key elements).
+
+Let me now write the descs. This is the bulk. Per injected section, each shot desc must start with a 空间锚点卡 (spatial anchor card
+==========================================================================================
+seq=20 REASONING (len=1262)
+) with fixed format:
+
+【空间锚点 / 场景名】
+固定参照物：...
+人物当前状态：
+· 角色A：[位置 + 朝向]
+· 角色B：[位置 + 朝向]
+光影基调：...
+
+Then scene ref, actions+dialogue in time order, and 分镜语法三件套 (景别+机位+运镜) per internal cut.
+
+Let me draft all this carefully. Given batch discipline, I'll write descs as I go, batch by batch.
+
+Let me also decide group titles:
+- Characters: "程心", "AA", "曹彬", "瓦西里", "白Ice", "领航员", "观测员", "研究员" — platform adds Element_ prefix for keyElement type.
+
+Actually, wait: the title is 裸名 and platform appends prefix by group type. For keyElement: Element_. Fine.
+
+- Scenes: "星环号球形舱", "木星轨道外景", "启示号控制舱", "太阳系外缘深空", "启示号实验舱"
+- Props: "白色薄膜（白纸片）", "无人太空艇", "机械臂与密封抓斗", "全息信息屏"
+
+Shots: title = one-sentence description of the shot content, no shot numbers in title (顺序由列表序号承担). So titles like "程心与AA在失重舱室中苏醒，窗外木星云带缓慢旋转".
+
+Audio groups: title like "BGM-场一 末日压迫", "声-程心" etc.
+
+Now let me write content.
+
+**Characters:**
+
+程心 (Cheng Xin):
+- 年龄/性别: 约30岁 女性
+- 外貌: 面容清秀温润，眉眼平静，肤色白皙（冬眠后略显苍白）
+- 发型: 深色中长发，冬眠后微乱、束起或披散
+- 服装: 白色贴身冬眠服/舱内连体制服，无装饰，NASA级材质
+- 标志性细节: 目光沉静、话少；苏醒后手扶舱壁缓慢适应失重
+- 声音: 温润克制、低缓女性音色，情绪内敛
+
+AA (艾AA):
+- 约28岁 女性
+- 外貌: 圆脸/五官灵动，眼神锐利直接
+- 发型: 短发或利落束发
+- 服装: 同款舱内制服
+- 标志性细节: 动作急躁，抓舱壁扶手，声音沙哑
+- 声音: 沙哑、急促、略高女性音色
+
+曹彬:
+- 老年 男性（老得几乎陌生）
+- 外貌: 布满皱纹、眼窝深陷，胡茬花白，神情疲惫
+- 发型: 花白稀疏短发
+- 服装: 预警中心制服/深
+==========================================================================================
+seq=23 REASONING (len=2000)
+锚点卡, scene, actions/dialogue, 三件套):
+
+I'll write these in the batch tool calls. Let me now plan tool call batches (3-5 per batch):
+
+Batch A: 5 character groups (程心, AA, 曹彬, 瓦西里, 白Ice)
+Batch B: 3 supporting character groups (领航员, 观测员, 研究员) + 2 scenes (星环号球形舱, 木星轨道外景) — 5 calls
+Batch C: 3 scenes (启示号控制舱, 太阳系外缘深空, 启示号实验舱) + 2 props (白色薄膜, 无人太空艇) — 5 calls
+Batch D: 2 props (机械臂与密封抓斗, 全息信息屏) + 3 shots (shot1-3) — 5 calls... hmm shots have long descs. Let me do 3 shots per batch: 
+  Batch D: props ×2 + shot 1 — 3 calls
+  Batch E: shots 2-4 — 4 calls
+  Batch F: shots 5-7 — 3 calls
+  Batch G: shots 8-10 — 3 calls
+  Batch H: shots 11-13 — 3 calls
+  Batch I: shots 14-15 — 2 calls + maybe audio BGM ×1? Let me do shots 14-15 (2 calls).
+  Batch J: audio BGM ×3 (场一/场二/场三) — 3 calls
+  Batch K: audio voices 程心/AA/曹彬 — 3 calls
+  Batch L: audio voices 瓦西里/白Ice/领航员 — 3 calls
+  Batch M: audio voices 观测员/研究员 — 2 calls + self-check? 
+
+Hmm, audio groups: do I need them as separate groups or drafts? Audio layer: "BGM：全剧至少规划一条背景音乐轨" — register as audio groups with desc. I'll create audio groups with desc describing the track and coverage shots.
+
+That's a LOT of tool calls (~40). This is fine — the skill requires it, and batch discipline keeps responses small.
+
+Wait — actually, should I reconsider? The keyElement_audio for characters: "单独登记为 key_element_audio，与角色元素绑定" — create audio-type groups titled "声-程心" etc. with desc = voice features + bound character + dialogue lines. That's what I planned.
+
+OK. Also — do shot groups need drafts? Looking at create_group: it has optional draft param. For shots, maybe attach a draft with the desc? The draft card for shot will later hold the video prompt. For now, keep groups only; drafts added in later stages (image/video prompt writing is a delegated stage with its own tools). Actually wait — the current delegation is "故事板设计" which includes... hmm. Let me re-read the injected section: it covers key_element design, shot list breakdown, audio_layer design
+==========================================================================================
+seq=29 REASONING (len=1420)
+ shot 1-4; 低音持续音+木星昏黄氛围，不安的慢速脉冲，压抑压迫；灰蓝冷调与昏黄对照
+2. BGM-场二 深空诡谲: 覆盖 shot 5-9; 极简电子氛围，深空静谧+悬疑，低频嗡鸣，偶发尖锐泛音
+3. BGM-场三 实验幽冷: 覆盖 shot 10-15; 冰冷实验室氛围，克制的节奏，随"离它远点"骤停
+
+Character voices (key_element_audio):
+- 声-程心: 温润克制低缓女声，平静内敛；绑定角色 程心
+- 声-AA: 沙哑急促女声，略高、带情绪张力；绑定 AA
+- 声-曹彬: 苍老干涩男声，缓慢压抑；绑定 曹彬
+- 声-瓦西里: 低沉浑厚男声，命令式沉稳；绑定 瓦西里
+- 声-白Ice: 冷静中性偏低女声，平缓；绑定 白Ice
+- 声-领航员: 年轻平稳男声，报告腔；绑定 领航员
+- 声-观测员: 中等男声，短促惊讶；绑定 观测员
+- 声-研究员: 平直实验室汇报腔男声；绑定 研究员
+
+OK. Now execute in batches. Let me start Batch A: 5 character groups.
+
+For keyElement groups, desc should be the design. scene_refs not needed for characters (or could reference nothing). I'll write descs.
+
+Note: 平台按组类型幂等补类型前缀 Element_/Shot_/Audio_ for titles. So title "程心" becomes "Element_程心". References via [程心] token in descs will resolve.
+
+Let me be careful with the desc length — keep reasonably detailed but not bloated.
+
+Batch A calls (5 storyboard_create_group, group_type=keyElement):
+1. 程心
+2. AA
+3. 曹彬
+4. 瓦西里
+5. 白Ice
+
+Then Batch B: 领航员, 观测员, 研究员, 星环号球形舱, 木星轨道外景 (5 calls)
+Batch C: 启示号控制舱, 太阳系外缘深空, 启示号实验舱, 白色薄膜（白纸片）, 无人太空艇 (5 calls)
+Batch D: 机械臂与密封抓斗, 全息信息屏 (2 calls) + maybe start shots. I'll do 2 props + shot 1 + shot 2? Keep to 3-4 per batch to keep desc quality. Let me do props (2) + shot 1 (1) = 3 calls.
+
+Actually shot descs are long; 2-3 shots per batch is wise. Let me do:
+Batch D: 机械臂与密封抓斗, 全息信息屏, Shot1, Shot2 (4 calls)
+Batch E: Shot3, Shot4, Shot5 (3 calls)
+Batch F: Shot
+==========================================================================================
+seq=30 REASONING (len=1525)
+6, Shot7, Shot8 (3 calls)
+Batch G: Shot9, Shot10, Shot11 (3 calls)
+Batch H: Shot12, Shot13, Shot14, Shot15 (4 calls)
+Batch I: BGM×3 (3 calls)
+Batch J: 声-程心, 声-AA, 声-曹彬 (3 calls)
+Batch K: 声-瓦西里, 声-白Ice, 声-领航员 (3 calls)
+Batch L: 声-观测员, 声-研究员 (2 calls)
+Then structured_output.
+
+Total ~30 calls. OK.
+
+For shot groups: title = one-sentence description (no shot numbers). summary required. duration field. desc = full design with 空间锚点卡. scene_refs = [scene title] etc. I'll pass scene_refs explicitly too: for shots, refs = scene + characters present + props. Actually simpler: rely on [tokens] in desc + pass scene_refs with the scene element titles. Let me pass scene_refs explicitly listing scene + characters to be safe.
+
+Hmm, but scene_refs expects "引用的关键元素标题数组" — the element titles (like "星环号球形舱"). OK.
+
+Let me write everything now. Batch A first.
+
+One concern: group titles for keyElement — should I prefix "角色-" etc? The instruction: 标题用裸名. So "程心", "AA", "曹彬" etc. The platform adds Element_ prefix. For distinguishing, the desc can say type. Fine.
+
+Also for 白Ice — name with capital I (白Ice per script). Use exactly 白Ice.
+
+Now descs. Keep each ~150-250 chars. Let me write.
+
+程心 desc:
+"类型：主要角色 character（女性主角）。年龄约30岁，女性，面容清秀温润，冬眠初醒后肤色略显苍白，目光沉静克制。发型：深色中长发，初醒时微乱披散。服装：白色贴身冬眠服/舱内连体制服（NASA级哑光材质，无装饰）。标志性细节：动作缓慢克制，苏醒后扶舱壁适应失重；话少，语气平淡却字字关键。剧情状态：仅场一出现（星环号球形舱）。声音特征见 audio 组『声-程心』。"
+
+AA desc:
+"类型：主要角色 character（女性，程心的同伴）。年龄约28岁，圆脸五官灵动，眼神锐利直接。发型：利落深色短发。服装：与程心同款舱内制服。标志性细节：行动急躁，抓舱壁扶手稳定身形，声音沙哑；对危机的反应比程心外露。仅场一出现（星环号球形舱）。声音特征见 audio 
+==========================================================================================
+seq=31 REASONING (len=1115)
+组『声-AA』。"
+
+曹彬:
+"类型：主要角色 character（以全息信息窗口形式出现）。老年男性，约70岁，老得几乎陌生：满脸皱纹、眼窝深陷、花白胡茬，神情疲惫压抑。发型：花白稀疏短发。服装：预警中心制服（深灰）。标志性细节：始终在全息窗口中；身后预警中心信息窗口一层压一层，工作人员静立不奔逃。仅场一出现。声音特征见 audio 组『声-曹彬』。"
+
+瓦西里:
+"类型：主要角色 character（启示号指挥）。约45岁男性，面容刚硬、颧骨高、皮肤粗糙，眼神沉稳。发型：灰棕短寸。服装：深灰控制舱制服（俄式风格）。标志性细节：站姿笔直；实验舱中戴宇宙服手套果断伸入薄膜。场二、场三出现。声音特征见 audio 组『声-瓦西里』。"
+
+白Ice:
+"类型：主要角色 character（女科学家）。约35岁女性，冷静清瘦，眼神专注近于冷峻。发型：浅色短发。服装：白色科研制服。标志性细节：盯着白光一动不动；实验舱中猛地关掉图像记录，声音冷淡。场二、场三出现。声音特征见 audio 组『声-白Ice』。"
+
+Batch B:
+领航员:
+"类型：次要角色 character（启示号领航员）。约30岁男性，年轻端正，精神集中。服装：控制舱制服。标志性细节：报告数据时目光不离屏幕。场二出现，台词：『目标已减速。当前速度约为光速千分之一。』『目标就在前方。』声音特征见 audio 组『声-领航员』。"
+
+观测员:
+"类型：次要角色 character（启示号观测员）。约35岁男性，面容普通，戴观测目镜。服装：控制舱制服。标志性细节：在黑暗中突然抬头报出发现。场二出现，台词：『可见光发现目标。一个白点。』声音特征见 audio 组『声-观测员』。"
+
+研究员:
+"类型：次要角色 character（启示号实验舱研究员，可含两名同组人员）。30~40岁男性，神情专注。服装：实验舱白色防护服。标志性细节：汇报数据平直不带情绪。场三出现，台词：『所有频段电磁波都穿透。无反射，无衍射。磁场无效。』『引力测不到。质量可能接近零。』声音特征见 audio 组『声-研究员』。"
+
+星环号球形舱:
+"类型：关键场景 scene（场一主场景）。空间结构：失重球形舱室，白色哑光内壁，无上下之分，舱壁右侧有大型舷窗。固定参照物：右侧舷窗（窗外木星云带可见）；舱室中央结构柱位于画面左侧。材质/光源/色温：内壁白色哑光，舱内冷白柔光约6500K；窗外木星昏黄光晕约2800K透入，黄白两色对照。氛围词：失重漂浮、末日前的静默压抑、黄光缓慢旋转的压迫感。是 shot 1-4 的空间锚点。"
+
+木星轨道外景:
+"类型：关键场景 scene
+==========================================================================================
+seq=40 REASONING (len=1108)
+静默）。"
+
+BGM-场三 实验幽冷
+desc: "BGM 轨（覆盖 shot 10-15，实验舱段）。类型：冰冷实验室氛围。基调：克制节拍＋金属质感音色，随『离它远点』后骤停，以静默收尾。"
+
+声-程心: "key_element_audio，绑定角色『程心』。音色：温润克制、低缓女声。语气：平淡内敛、字字关键。情绪基调：冷静、压抑的哀伤。场一台词：『打击来了？』『光粒距离太阳还有多远？』"
+
+声-AA: "key_element_audio，绑定角色『AA』。音色：沙哑、偏高的年轻女声。语气：急促、直白。情绪基调：紧张、焦灼。场一台词：『为什么木星城还没躲进掩体？』"
+
+声-曹彬: "key_element_audio，绑定角色『曹彬』。音色：苍老干涩、缓慢的男声。语气：疲惫压抑、有停顿。情绪基调：末日确认后的沉重。场一台词：『已经确认。』『不是光粒。我们看到的是一个小东西。小得像一张白色薄片。』『掩体没用了。』"
+
+声-瓦西里: "key_element_audio，绑定角色『瓦西里』。音色：低沉浑厚男声（俄式腔调中文）。语气：命令式、沉稳。情绪基调：镇定、果断。场二台词：『它把另一个东西扔进来了。』『继续。』场三台词：『它什么也不做。』"
+
+声-白Ice: "key_element_audio，绑定角色『白Ice』。音色：冷静中性、偏低女声。语气：平缓、不带情绪。情绪基调：冷峻、警觉。场二台词：『它没有打太阳。』场三台词：『也可能是我们还没碰到它真正存在的地方。』『离它远点。』"
+
+声-领航员: "key_element_audio，绑定角色『领航员』。音色：年轻平稳男声。语气：报告腔、清晰。情绪基调：职业性冷静。场二台词：『目标已减速。当前速度约为光速千分之一。』『目标就在前方。』"
+
+声-观测员: "key_element_audio，绑定角色『观测员』。音色：中等男声。语气：短促、惊讶。情绪基调：发现时的震动。场二台词：『可见光发现目标。一个白点。』"
+
+声-研究员: "key_element_audio，绑定角色『研究员』（甲乙共用一组）。音色：平直实验室汇报腔男声。语气：无起伏、技术性。情绪基调：就事论事。场三台词：『所有频段电磁波都穿透。无反射，无衍射。磁场无效。』『引力测不到。质量可能接近零。』"
+
+OK. Now let me start executing. Batch A: 5 character groups.
+
+I'll write idempotency keys? Not necessary; leave empty.
+
+Let me go.
+==========================================================================================
+seq=98 REASONING (len=114)
+Shot 1-15 已全部建组完成（15 shots）。现在设计 audio_layer：BGM ×3（分场景覆盖）+ 角色声纹 key_element_audio（8 个角色）。
+
+先建 BGM 3 条 + 部分声纹，分批发。

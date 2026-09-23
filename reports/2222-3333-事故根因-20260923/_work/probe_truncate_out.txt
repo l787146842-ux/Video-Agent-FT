@@ -1,0 +1,22 @@
+闸机完整拒收文案（card_media_gate 返回，allowed={audio,video}）:
+  len = 229
+  全文 = "storyboard_add_draft 被拒收：本阶段（故事板设计）新建草稿卡只允许 mediaType=audio/video，收到 'image'。本次调用未执行、工作台保持原样。本阶段（故事板设计）产出关键元素分组、角色音色卡（key_element_audio，mediaType=audio）与分镜卡（mediaType=video）；角色/场景/道具的图像卡与提示词属提示词撰写阶段，请在委派 write_media_prompt 阶段时创建。"
+
+compose_failure_feedback 取 raw = error_text[:120]：
+  len(raw) = 120
+  截断后 = "storyboard_add_draft 被拒收：本阶段（故事板设计）新建草稿卡只允许 mediaType=audio/video，收到 'image'。本次调用未执行、工作台保持原样。本阶段（故事板设计）产出关键元素分组、角色音色卡（ke"
+  被截掉的余量 = 'y_element_audio，mediaType=audio）与分镜卡（mediaType=video）；角色/场景/道具的图像卡与提示词属提示词撰写阶段，请在委派 write_media_prompt 阶段时创建。'
+
+2026-09-22 实跑 seq=31 工具结果里模型看到的原文：
+  len = 120
+  repr = "storyboard_add_draft 被拒收：本阶段（故事板设计）新建草稿卡只允许 mediaType=audio/video，收到 'image'。本次调用未执行、工作台保持原样。本阶段（故事板设计）产出关键元素分组、角色音色卡（ke"
+
+截断前缀 == 实跑原文？ True
+实跑原文是否以截断结果开头？ True
+
+关键字 'write_media_prompt' 是否落在 [:120] 内？ False
+关键字 '图像卡' 是否落在 [:120] 内？ False
+关键字 '提示词撰写阶段' 是否落在 [:120] 内？ False
+
+整条回喂（compose_failure_feedback 输出，fail_count=1, kind='other'）：
+  [other] storyboard_add_draft 被拒收：本阶段（故事板设计）新建草稿卡只允许 mediaType=audio/video，收到 'image'。本次调用未执行、工作台保持原样。本阶段（故事板设计）产出关键元素分组、角色音色卡（ke（既有工作台状态未被本次失败改动）。建议：<FAILURE_HINT>

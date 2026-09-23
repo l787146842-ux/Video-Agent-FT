@@ -1,0 +1,119 @@
+==============================================================================================================
+PROJECT 2222 (proj-1790091531-97d20b2d)
+--------------------------------------------------------------------------------------------------------------
+[2222/SUB] conv-1790091588-478443ae.jsonl  steps=4 turns=0 calls=3 avg/step=0.75 reason_total=3250 wall=29.1s
+ step  reason   text calls  res   wall comp_tok  tools
+    1     261      2     1    1    5.0     7806  read_uploaded_doc
+    2    2499      2     1    1   18.4    11755  script_analysis_report
+    3     490     40     1    1    2.8    12401  structured_output
+    4       0    572     0    0    0.0    12946  
+--------------------------------------------------------------------------------------------------------------
+[2222/SUB] conv-1790091784-91e4b9b5.jsonl  steps=26 turns=0 calls=59 avg/step=2.27 reason_total=26681 wall=292.4s
+ step  reason   text calls  res   wall comp_tok  tools
+    1     507      0     2    2    5.0     9235  read_uploaded_doc,read_project_doc
+    2   12867    156     3    3   39.7    18029  storyboard_create_group,storyboard_create_group,storyboard_create_group
+    3      53     36     1    1    8.0    18362  read_state_group
+    4     237     26     3    3    5.0    19844  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    5    3518    154     3    3   23.4    22409  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    6      51     40     2    2   10.0    23133  storyboard_add_draft,storyboard_add_draft
+    7       0     40     4    4    4.5    24311  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    8       0     28     1    1    5.0    24811  storyboard_add_draft
+    9    3871    130     3    3   31.3    28565  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   10      66     31     3    3    9.5    30098  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   11       0     27     3    3    7.2    31314  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   12       0     33     2    2    9.3    32199  storyboard_create_group,storyboard_create_group
+   13      46     40     3    3   11.3    33417  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   14       0     29     3    3    8.0    34592  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   15       0     30     2    2    5.0    35490  storyboard_create_group,storyboard_create_group
+   16     536     36     3    3   15.2    36931  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   17       0     30     3    3   11.9    38091  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   18       0     29     2    2    7.9    38982  storyboard_create_group,storyboard_create_group
+   19       0     31     2    2    5.1    39834  storyboard_create_group,storyboard_create_group
+   20    1880     99     1    1   17.6    41491  storyboard_create_group
+   21       0      0     2    2    6.1    41983  storyboard_add_draft,storyboard_add_draft
+   22     289     33     2    2    4.7    42584  storyboard_add_draft,read_state_group
+   23     123     42     2    2    5.1    44264  read_state_group,read_state_group
+   24     708    186     3    3    9.7    47473  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+   25    1929    609     1    1   20.1    50010  structured_output
+   26       0   1016     0    0    2.8    50837  
+--------------------------------------------------------------------------------------------------------------
+[2222/MAIN] conv-main.jsonl  steps=2 turns=3 calls=2 avg/step=1.0 reason_total=2442 wall=530.8s
+ step  reason   text calls  res   wall comp_tok  tools
+    1    2126     54     1    3   71.8    16379  document_write
+    2     316     58     1    2  161.5    16873  run_subagent
+==============================================================================================================
+PROJECT 3333 (proj-1790092267-a9abcb25)
+--------------------------------------------------------------------------------------------------------------
+[3333/SUB] conv-1790092468-8b1cb0ee.jsonl  steps=4 turns=0 calls=3 avg/step=0.75 reason_total=3071 wall=31.9s
+ step  reason   text calls  res   wall comp_tok  tools
+    1     364      0     1    1    6.3     7777  read_uploaded_doc
+    2    2486     99     1    1   17.5    11978  script_analysis_report
+    3     172     43     1    1    4.3    12473  structured_output
+    4      49    640     0    0    0.0    13066  
+--------------------------------------------------------------------------------------------------------------
+[3333/SUB] conv-1790092619-648c1d30.jsonl  steps=15 turns=0 calls=49 avg/step=3.27 reason_total=43117 wall=282.1s
+ step  reason   text calls  res   wall comp_tok  tools
+    1    1135      2     2    2    5.0     9214  read_uploaded_doc,read_project_doc
+    2   40473    122     5    5  164.0    31427  storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group
+    3      52     38     5    5    9.7    32653  storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group
+    4       0     22     5    5    9.1    33833  storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group
+    5       0     28     4    4    9.6    35245  storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group
+    6       0     20     3    3    9.4    36612  storyboard_create_group,storyboard_create_group,storyboard_create_group
+    7       0     20     3    3    9.1    37940  storyboard_create_group,storyboard_create_group,storyboard_create_group
+    8       0     23     3    3   12.3    39275  storyboard_create_group,storyboard_create_group,storyboard_create_group
+    9       0     22     4    4    6.2    40963  storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group
+   10     114     47     3    3    7.1    41777  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   11       0     56     5    5    5.2    42731  storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group,storyboard_create_group
+   12       0     52     3    3    7.3    43459  storyboard_create_group,storyboard_create_group,storyboard_create_group
+   13      79     36     3    3    5.0    43872  read_state_group,read_state_group,read_state_group
+   14    1264     51     1    1   17.1    48298  structured_output
+   15       0    854     0    0    3.0    49061  
+--------------------------------------------------------------------------------------------------------------
+[3333/SUB] conv-1790093184-0d8cb72a.jsonl  steps=14 turns=0 calls=53 avg/step=3.79 reason_total=64983 wall=242.4s
+ step  reason   text calls  res   wall comp_tok  tools
+    1   60395      0     3    3  133.0    35928  read_project_doc,read_state_group,read_state_group
+    2     908    104     4    4    5.4    39650  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    3      50     47     4    4    9.5    41077  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    4     201     30     5    5    6.1    43135  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    5     165     27     4    4   12.0    44709  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    6     373     65     5    5   11.3    47947  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    7      30     33     5    5   11.4    51056  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    8      31     35     5    5   12.7    53915  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    9     634     57     5    5   10.8    57005  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+   10      38     33     5    5   10.1    59774  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+   11      39     45     5    5    4.3    62393  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+   12    1274     46     2    2    5.9    63104  read_state_group,read_state_group
+   13     845    107     1    1    4.9    65749  structured_output
+   14       0    773     0    0    0.0    66398  
+--------------------------------------------------------------------------------------------------------------
+[3333/MAIN] conv-main.jsonl  steps=5 turns=4 calls=5 avg/step=1.0 reason_total=4454 wall=1165.1s
+ step  reason   text calls  res   wall comp_tok  tools
+    1    2606     90     0    3    6.3    28099  
+    2      62     17     1    4 1145.8    28259  run_subagent
+    3    1387     67     3    3    4.3    29859  read_draft,read_draft,read_draft
+    4     319     82     0    0    3.5    31010  
+    5      80      2     1    1    0.0    31416  workflow_pause
+==============================================================================================================
+SUMMARY (per session)
+ proj                               file  steps  turns  calls   avg   reason    maxR  maxR@   wall_s top5share
+ 2222     conv-1790091588-478443ae.jsonl      4      0      3  0.75     3250    2499      2     29.1       1.0
+        top5 steps (step,reason_chars,calls) = [(2, 2499, 1), (3, 490, 1), (1, 261, 1), (4, 0, 0)]
+        tool histogram = {'read_uploaded_doc': 1, 'script_analysis_report': 1, 'structured_output': 1}
+ 2222     conv-1790091784-91e4b9b5.jsonl     26      0     59  2.27    26681   12867      2    292.4     0.902
+        top5 steps (step,reason_chars,calls) = [(2, 12867, 3), (9, 3871, 3), (5, 3518, 3), (25, 1929, 1), (20, 1880, 1)]
+        tool histogram = {'storyboard_create_group': 33, 'storyboard_add_draft': 19, 'read_state_group': 4, 'read_uploaded_doc': 1, 'read_project_doc': 1, 'structured_output': 1}
+ 2222                    conv-main.jsonl      2      3      2   1.0     2442    2126      1    530.8       1.0
+        top5 steps (step,reason_chars,calls) = [(1, 2126, 1), (2, 316, 1)]
+        tool histogram = {'document_write': 1, 'run_subagent': 1}
+ 3333     conv-1790092468-8b1cb0ee.jsonl      4      0      3  0.75     3071    2486      2     31.9       1.0
+        top5 steps (step,reason_chars,calls) = [(2, 2486, 1), (1, 364, 1), (3, 172, 1), (4, 49, 0)]
+        tool histogram = {'read_uploaded_doc': 1, 'script_analysis_report': 1, 'structured_output': 1}
+ 3333     conv-1790092619-648c1d30.jsonl     15      0     49  3.27    43117   40473      2    282.1     0.999
+        top5 steps (step,reason_chars,calls) = [(2, 40473, 5), (14, 1264, 1), (1, 1135, 2), (10, 114, 3), (13, 79, 3)]
+        tool histogram = {'storyboard_create_group': 43, 'read_state_group': 3, 'read_uploaded_doc': 1, 'read_project_doc': 1, 'structured_output': 1}
+ 3333     conv-1790093184-0d8cb72a.jsonl     14      0     53  3.79    64983   60395      1    242.4     0.986
+        top5 steps (step,reason_chars,calls) = [(1, 60395, 3), (12, 1274, 2), (2, 908, 4), (13, 845, 1), (9, 634, 5)]
+        tool histogram = {'storyboard_add_draft': 47, 'read_state_group': 4, 'read_project_doc': 1, 'structured_output': 1}
+ 3333                    conv-main.jsonl      5      4      5   1.0     4454    2606      1   1165.1       1.0
+        top5 steps (step,reason_chars,calls) = [(1, 2606, 0), (3, 1387, 3), (4, 319, 0), (5, 80, 1), (2, 62, 1)]
+        tool histogram = {'read_draft': 3, 'run_subagent': 1, 'workflow_pause': 1}

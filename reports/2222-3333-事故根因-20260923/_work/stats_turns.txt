@@ -1,0 +1,100 @@
+========================================================================================================
+[2222/SUB] conv-1790091588-478443ae.jsonl
+    step=1   起=23:39:51 LLM耗时≈  Nones reason=   261 text=    2 calls= 1 comp_tok=7806 tok/s=None  read_uploaded_doc
+    step=2   起=23:39:56 LLM耗时≈  Nones reason=  2499 text=    2 calls= 1 comp_tok=11755 tok/s=None  script_analysis_report
+    step=3   起=23:40:15 LLM耗时≈  Nones reason=   490 text=   40 calls= 1 comp_tok=12401 tok/s=None  structured_output
+    step=4   起=23:40:18 LLM耗时≈  Nones reason=     0 text=  572 calls= 0 comp_tok=12946 tok/s=None  
+========================================================================================================
+[2222/SUB] conv-1790091784-91e4b9b5.jsonl
+    step=1   起=23:43:08 LLM耗时≈  57.8s reason=   507 text=    0 calls= 2 comp_tok=9235 tok/s=159.8  read_uploaded_doc,read_project_doc
+    step=2   起=23:43:13 LLM耗时≈ 212.4s reason= 12867 text=  156 calls= 3 comp_tok=18029 tok/s=84.9  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=3   起=23:43:53 LLM耗时≈ 241.1s reason=    53 text=   36 calls= 1 comp_tok=18362 tok/s=76.2  read_state_group
+    step=4   起=23:44:01 LLM耗时≈  Nones reason=   237 text=   26 calls= 3 comp_tok=19844 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    step=5   起=23:44:06 LLM耗时≈  Nones reason=  3518 text=  154 calls= 3 comp_tok=22409 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    step=6   起=23:44:29 LLM耗时≈  Nones reason=    51 text=   40 calls= 2 comp_tok=23133 tok/s=None  storyboard_add_draft,storyboard_add_draft
+    step=7   起=23:44:39 LLM耗时≈  Nones reason=     0 text=   40 calls= 4 comp_tok=24311 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=8   起=23:44:43 LLM耗时≈  Nones reason=     0 text=   28 calls= 1 comp_tok=24811 tok/s=None  storyboard_add_draft
+    step=9   起=23:44:48 LLM耗时≈  Nones reason=  3871 text=  130 calls= 3 comp_tok=28565 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=10  起=23:45:20 LLM耗时≈  Nones reason=    66 text=   31 calls= 3 comp_tok=30098 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=11  起=23:45:29 LLM耗时≈  Nones reason=     0 text=   27 calls= 3 comp_tok=31314 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=12  起=23:45:37 LLM耗时≈  Nones reason=     0 text=   33 calls= 2 comp_tok=32199 tok/s=None  storyboard_create_group,storyboard_create_group
+    step=13  起=23:45:46 LLM耗时≈  Nones reason=    46 text=   40 calls= 3 comp_tok=33417 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=14  起=23:45:57 LLM耗时≈  Nones reason=     0 text=   29 calls= 3 comp_tok=34592 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=15  起=23:46:05 LLM耗时≈  Nones reason=     0 text=   30 calls= 2 comp_tok=35490 tok/s=None  storyboard_create_group,storyboard_create_group
+    step=16  起=23:46:10 LLM耗时≈  Nones reason=   536 text=   36 calls= 3 comp_tok=36931 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=17  起=23:46:25 LLM耗时≈  Nones reason=     0 text=   30 calls= 3 comp_tok=38091 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=18  起=23:46:37 LLM耗时≈  Nones reason=     0 text=   29 calls= 2 comp_tok=38982 tok/s=None  storyboard_create_group,storyboard_create_group
+    step=19  起=23:46:45 LLM耗时≈  Nones reason=     0 text=   31 calls= 2 comp_tok=39834 tok/s=None  storyboard_create_group,storyboard_create_group
+    step=20  起=23:46:50 LLM耗时≈  Nones reason=  1880 text=   99 calls= 1 comp_tok=41491 tok/s=None  storyboard_create_group
+    step=21  起=23:47:08 LLM耗时≈  Nones reason=     0 text=    0 calls= 2 comp_tok=41983 tok/s=None  storyboard_add_draft,storyboard_add_draft
+    step=22  起=23:47:14 LLM耗时≈  Nones reason=   289 text=   33 calls= 2 comp_tok=42584 tok/s=None  storyboard_add_draft,read_state_group
+    step=23  起=23:47:19 LLM耗时≈  Nones reason=   123 text=   42 calls= 2 comp_tok=44264 tok/s=None  read_state_group,read_state_group
+    step=24  起=23:47:24 LLM耗时≈  Nones reason=   708 text=  186 calls= 3 comp_tok=47473 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft
+    step=25  起=23:47:34 LLM耗时≈  Nones reason=  1929 text=  609 calls= 1 comp_tok=50010 tok/s=None  structured_output
+    step=26  起=23:47:54 LLM耗时≈  Nones reason=     0 text= 1016 calls= 0 comp_tok=50837 tok/s=None  
+========================================================================================================
+[2222/MAIN] conv-main.jsonl
+  turn=1  23:39:06→23:39:17  墙钟=11.3s  steps=0
+  turn=2  23:39:43→23:40:28  墙钟=44.5s  steps=0
+  turn=3  23:42:52→23:47:57  墙钟=304.8s  steps=5
+    step=1   起=23:39:11 LLM耗时≈  Nones reason=  2214 text=   56 calls= 1 comp_tok=11831 tok/s=None  workflow_pause
+    step=1   起=23:39:11 LLM耗时≈  Nones reason=   815 text=   84 calls= 1 comp_tok=12564 tok/s=None  run_subagent
+    step=2   起=23:40:23 LLM耗时≈  Nones reason=  1803 text=  129 calls= 1 comp_tok=14827 tok/s=None  workflow_pause
+    step=1   起=23:39:11 LLM耗时≈  Nones reason=  2126 text=   54 calls= 1 comp_tok=16379 tok/s=None  document_write
+    step=2   起=23:40:23 LLM耗时≈  Nones reason=   316 text=   58 calls= 1 comp_tok=16873 tok/s=None  run_subagent
+========================================================================================================
+[3333/SUB] conv-1790092468-8b1cb0ee.jsonl
+    step=1   起=23:54:32 LLM耗时≈  Nones reason=   364 text=    0 calls= 1 comp_tok=7777 tok/s=None  read_uploaded_doc
+    step=2   起=23:54:39 LLM耗时≈  Nones reason=  2486 text=   99 calls= 1 comp_tok=11978 tok/s=None  script_analysis_report
+    step=3   起=23:54:56 LLM耗时≈  Nones reason=   172 text=   43 calls= 1 comp_tok=12473 tok/s=None  structured_output
+    step=4   起=23:55:00 LLM耗时≈  Nones reason=    49 text=  640 calls= 0 comp_tok=13066 tok/s=None  
+========================================================================================================
+[3333/SUB] conv-1790092619-648c1d30.jsonl
+    step=1   起=23:57:02 LLM耗时≈ 197.5s reason=  1135 text=    2 calls= 2 comp_tok=9214 tok/s=46.7  read_uploaded_doc,read_project_doc
+    step=2   起=23:57:07 LLM耗时≈  Nones reason= 40473 text=  122 calls= 5 comp_tok=31427 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=3   起=23:59:51 LLM耗时≈  Nones reason=    52 text=   38 calls= 5 comp_tok=32653 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=4   起=00:00:01 LLM耗时≈  Nones reason=     0 text=   22 calls= 5 comp_tok=33833 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=5   起=00:00:10 LLM耗时≈  Nones reason=     0 text=   28 calls= 4 comp_tok=35245 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=6   起=00:00:19 LLM耗时≈  Nones reason=     0 text=   20 calls= 3 comp_tok=36612 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=7   起=00:00:29 LLM耗时≈  Nones reason=     0 text=   20 calls= 3 comp_tok=37940 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=8   起=00:00:38 LLM耗时≈  Nones reason=     0 text=   23 calls= 3 comp_tok=39275 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=9   起=00:00:50 LLM耗时≈  Nones reason=     0 text=   22 calls= 4 comp_tok=40963 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=10  起=00:00:56 LLM耗时≈  Nones reason=   114 text=   47 calls= 3 comp_tok=41777 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=11  起=00:01:03 LLM耗时≈  Nones reason=     0 text=   56 calls= 5 comp_tok=42731 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=12  起=00:01:08 LLM耗时≈  Nones reason=     0 text=   52 calls= 3 comp_tok=43459 tok/s=None  storyboard_create_group,storyboard_create_group,storyboard_create_grou
+    step=13  起=00:01:16 LLM耗时≈  Nones reason=    79 text=   36 calls= 3 comp_tok=43872 tok/s=None  read_state_group,read_state_group,read_state_group
+    step=14  起=00:01:21 LLM耗时≈  Nones reason=  1264 text=   51 calls= 1 comp_tok=48298 tok/s=None  structured_output
+    step=15  起=00:01:38 LLM耗时≈  Nones reason=     0 text=  854 calls= 0 comp_tok=49061 tok/s=None  
+========================================================================================================
+[3333/SUB] conv-1790093184-0d8cb72a.jsonl
+    step=1   起=00:06:30 LLM耗时≈  Nones reason= 60395 text=    0 calls= 3 comp_tok=35928 tok/s=None  read_project_doc,read_state_group,read_state_group
+    step=2   起=00:08:43 LLM耗时≈  Nones reason=   908 text=  104 calls= 4 comp_tok=39650 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=3   起=00:08:48 LLM耗时≈  Nones reason=    50 text=   47 calls= 4 comp_tok=41077 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=4   起=00:08:57 LLM耗时≈  Nones reason=   201 text=   30 calls= 5 comp_tok=43135 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=5   起=00:09:04 LLM耗时≈  Nones reason=   165 text=   27 calls= 4 comp_tok=44709 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=6   起=00:09:16 LLM耗时≈  Nones reason=   373 text=   65 calls= 5 comp_tok=47947 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=7   起=00:09:27 LLM耗时≈  Nones reason=    30 text=   33 calls= 5 comp_tok=51056 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=8   起=00:09:38 LLM耗时≈  Nones reason=    31 text=   35 calls= 5 comp_tok=53915 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=9   起=00:09:51 LLM耗时≈  Nones reason=   634 text=   57 calls= 5 comp_tok=57005 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=10  起=00:10:02 LLM耗时≈  Nones reason=    38 text=   33 calls= 5 comp_tok=59774 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=11  起=00:10:12 LLM耗时≈  Nones reason=    39 text=   45 calls= 5 comp_tok=62393 tok/s=None  storyboard_add_draft,storyboard_add_draft,storyboard_add_draft,storybo
+    step=12  起=00:10:16 LLM耗时≈  Nones reason=  1274 text=   46 calls= 2 comp_tok=63104 tok/s=None  read_state_group,read_state_group
+    step=13  起=00:10:22 LLM耗时≈  Nones reason=   845 text=  107 calls= 1 comp_tok=65749 tok/s=None  structured_output
+    step=14  起=00:10:27 LLM耗时≈  Nones reason=     0 text=  773 calls= 0 comp_tok=66398 tok/s=None  
+========================================================================================================
+[3333/MAIN] conv-main.jsonl
+  turn=1  23:51:15→23:51:31  墙钟=16.0s  steps=0
+  turn=2  23:54:17→23:55:12  墙钟=55.8s  steps=0
+  turn=3  23:56:50→00:01:41  墙钟=291.0s  steps=0
+  turn=4  00:06:12→00:10:40  墙钟=267.6s  steps=11
+    step=1   起=23:51:20 LLM耗时≈1152.0s reason=   747 text=   51 calls= 1 comp_tok=10622 tok/s=9.2  read_uploaded_doc
+    step=2   起=23:51:26 LLM耗时≈  Nones reason=  1546 text=  220 calls= 1 comp_tok=12987 tok/s=None  workflow_pause
+    step=1   起=23:51:20 LLM耗时≈  Nones reason=  1912 text=   51 calls= 1 comp_tok=14243 tok/s=None  run_subagent
+    step=2   起=23:51:26 LLM耗时≈  Nones reason=  2422 text=  134 calls= 1 comp_tok=16725 tok/s=None  workflow_pause
+    step=1   起=23:51:20 LLM耗时≈  Nones reason=   879 text=   66 calls= 1 comp_tok=17741 tok/s=None  document_write
+    step=2   起=23:51:26 LLM耗时≈  Nones reason=   273 text=   69 calls= 1 comp_tok=18127 tok/s=None  run_subagent
+    step=1   起=23:51:20 LLM耗时≈  Nones reason=  2606 text=   90 calls= 0 comp_tok=28099 tok/s=None  
+    step=2   起=23:51:26 LLM耗时≈  Nones reason=    62 text=   17 calls= 1 comp_tok=28259 tok/s=None  run_subagent
+    step=3   起=00:10:32 LLM耗时≈  Nones reason=  1387 text=   67 calls= 3 comp_tok=29859 tok/s=None  read_draft,read_draft,read_draft
+    step=4   起=00:10:36 LLM耗时≈  Nones reason=   319 text=   82 calls= 0 comp_tok=31010 tok/s=None  
+    step=5   起=00:10:40 LLM耗时≈  Nones reason=    80 text=    2 calls= 1 comp_tok=31416 tok/s=None  workflow_pause
