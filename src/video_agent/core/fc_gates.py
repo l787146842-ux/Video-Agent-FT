@@ -80,6 +80,10 @@ class GateContext:
     # 阶段建卡媒体类型白名单（2026-09-21 批4）：空集 = 不启用限定（通用委派与
     # 未登记阶段零变化）。由 planner 轮始按当前 stage 下发（同 turn_excluded 模式）。
     stage_card_media: FrozenSet[str] = frozenset()
+    # 阶段建卡**音频种类**白名单（2026-09-25 用户裁决）：仅当 mediaType 判定为
+    # audio 时生效；{"voice"} = 该阶段只建角色音色卡（BGM/旁白卡被拒）。
+    # 空集 = 该维度不受限（维持现状）。
+    stage_card_audio_types: FrozenSet[str] = frozenset()
     # 当前委派阶段的展示标签（拒收文案用；空串回落中性表述）
     stage_label: str = ""
 
@@ -311,12 +315,21 @@ def structure_integrity_gate(
             for k in (ctx.state().get(CAT_KEY_ELEMENTS) or [])
             if isinstance(k, dict)
         ]
+        # 标题提及比对走**元素名变体唯一入口**（2026-09-26）：取短名（括注主名，
+        # 无括注时 = 剥前缀名）与标题比对——此前用 strip_type_prefix(t) 与标题
+        # **单向**比对，而组名带括注（`艾AA（AA）`）时该串不是标题子串
+        # （标题写的是 `…艾AA质问…`）⇒ 恒不命中，漏引静默放过。
+        def _title_names(t: str):
+            short = ops.element_alias_name(t) or ops.strip_type_prefix(t)
+            return (short, ops.strip_type_prefix(t))
+
         missing = [
             t for t, kid in ke_map
             if t
-            and ops.strip_type_prefix(t) in ops.strip_type_prefix(title)
+            and any(n and n in ops.strip_type_prefix(title) for n in _title_names(t))
             and kid not in refs
             and ops.strip_type_prefix(t) not in ref_keys
+            and ops.element_alias_name(t) not in ref_keys
         ]
         if not refs or missing:
             detail = (
@@ -448,7 +461,8 @@ def card_media_gate(
     `gate_override`（用户显式同意）可放行，与同链其它闸同口径。
     """
     allowed = getattr(ctx, "stage_card_media", None)
-    if not allowed:
+    allowed_audio = getattr(ctx, "stage_card_audio_types", None)
+    if not allowed and not allowed_audio:
         return None                      # 未登记阶段/通用委派：不启用限定
     if name not in ("storyboard_add_draft", "storyboard_create_group"):
         return None
@@ -463,25 +477,47 @@ def card_media_gate(
     # 且回喂文案声称「收到 'image'」——那是**平台自己的默认值**，模型从未发过。
     # 两处同引单一实现后，闸机判的就是**该卡真实会落库的那个类型**。
     media = ops_infer_media_type(draft)
-    if media in allowed or ctx.gate_override:
-        return None
-    return (
-        f"storyboard_{'add_draft' if name.endswith('add_draft') else 'create_group'}"
-        f" 被拒收：本阶段（{ctx.stage_label or '已委派阶段'}）新建草稿卡只允许 "
-        f"mediaType={'/'.join(sorted(allowed))}，收到 {media!r}。"
-        "本次调用未执行、工作台保持原样。"
-        + (
-            # 2026-09-23 批5（D-1 裁决）：关键元素设计阶段不建卡、只建分组；
-            # 图像卡全归 write_media_prompt。本句把「该去哪做 + 音色卡怎么标」
-            # 一并交代（音色卡用 audioType=voice，即 Skill 的 key_element_audio）。
-            "本阶段（故事板设计）产出关键元素分组、角色音色卡"
-            "（mediaType=audio 且 audioType=voice，即 Skill 明文的 key_element_audio）"
-            "与分镜卡（mediaType=video）；"
-            "角色/场景/道具的图像卡与提示词属提示词撰写阶段，"
-            "请在委派 write_media_prompt 阶段时创建。"
-            if allowed == frozenset({"audio", "video"}) else ""
+    if allowed and media not in allowed and not ctx.gate_override:
+        return (
+            f"storyboard_{'add_draft' if name.endswith('add_draft') else 'create_group'}"
+            f" 被拒收：本阶段（{ctx.stage_label or '已委派阶段'}）新建草稿卡只允许 "
+            f"mediaType={'/'.join(sorted(allowed))}，收到 {media!r}。"
+            "本次调用未执行、工作台保持原样。"
+            + (
+                # 2026-09-23 批5（D-1 裁决）：关键元素设计阶段不建卡、只建分组；
+                # 图像卡全归 write_media_prompt。本句把「该去哪做 + 音色卡怎么标」
+                # 一并交代（音色卡用 audioType=voice，即 Skill 的 key_element_audio）。
+                "本阶段（故事板设计）产出关键元素分组、角色音色卡"
+                "（mediaType=audio 且 audioType=voice，即 Skill 明文的 key_element_audio）"
+                "与分镜卡（mediaType=video）；"
+                "角色/场景/道具的图像卡与提示词属提示词撰写阶段，"
+                "请在委派 write_media_prompt 阶段时创建。"
+                if allowed == frozenset({"audio", "video"}) else ""
+            )
         )
-    )
+
+    # ===== 第二维：音频种类（2026-09-25 用户裁决，两条）=====
+    # ①「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」；
+    # ②「设计阶段只规划音频，只在提示词撰写才建卡」。
+    # 病灶：本闸此前只读 mediaType，**完全不读 audioType** ⇒ 本意只为角色音色卡
+    # 开的口子把 BGM/旁白卡一并放行（8888 实测 3 张 audioType=bgm 卡落库）。
+    # 仅对判定为 audio 的卡生效；video 卡不受影响（两维正交，见 subagent 注释）。
+    if allowed_audio and media == "audio" and not ctx.gate_override:
+        # 音频种类的缺省取值同样走唯一推导入口（未填 audioType 视为非音色卡，
+        # 与 models.infer_media_type 同源：audioType 为空时不会推导出 voice）。
+        kind = str(draft.get("audioType") or "").strip().lower()
+        if kind not in allowed_audio:
+            return (
+                f"storyboard_{'add_draft' if name.endswith('add_draft') else 'create_group'}"
+                f" 被拒收：本阶段（{ctx.stage_label or '已委派阶段'}）只建角色音色卡"
+                f"（audioType={'/'.join(sorted(allowed_audio))}，即 Skill 明文的 "
+                f"key_element_audio），收到 audioType={kind or '(未填)'!r}。"
+                "本次调用未执行、工作台保持原样。"
+                "BGM 与旁白分两步落账：本阶段建音频分组、把层设计写进分组 desc"
+                "（覆盖镜头范围 + 情绪基调 + 配器/语气方向）；"
+                "音频卡在提示词撰写阶段按该 desc 创建。"
+            )
+    return None
 
 
 def run_gate_chain(

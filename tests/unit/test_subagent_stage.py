@@ -129,6 +129,35 @@ def test_merged_stage_card_media_covers_audio_and_video():
     assert stage_card_media("write_media_prompt") == frozenset()  # 未登记=不受限
 
 
+def test_merged_stage_injection_deduplicates_one_to_many_chapters():
+    """**2026-09-25 回归钉**（8888 取证）：一对多章节映射不得把同一段正文注入多次。
+
+    病灶：`SECTION_TAG_STAGES["storyboard_designer"]` 是**一对多**
+    → `split_skill_sections` 把同一整段正文写进 storyboard_ke/shot/audio 三个键；
+    `SkillEntry.section_for` 逐键取出再 join ⇒ **同一段注入 3 次**。
+    实测（AI-短剧一站式生成）：三章各 1784 字、注入 5356 字 = 3.0 倍；D-24 章节
+    合并后 **16/16 个 Skill 全部命中**（合并前仅个别包如此）。
+
+    正确的语义：一对多 = **检索**需要（三个 stage 键各自可取到全文），
+    不是**注入**需要；拼接时同 body 只出现一次。
+    """
+    from src.video_agent.skill_runtime import registry as reg
+    from src.video_agent.skill_runtime.registry import CAPABILITY_TOOL_STAGES
+
+    injected = reg.tool_sections("AI-短剧一站式生成", "storyboard_design")
+    probe = "单 shot 内切镜数量建议"
+    assert injected.count(probe) == 1, (
+        f"合并阶段的同一段正文被注入 {injected.count(probe)} 次（应 1 次）——"
+        "一对多映射的复制语义泄漏进了注入层")
+    assert len(CAPABILITY_TOOL_STAGES["storyboard_design"]) == 3, \
+        "一对多映射本身应保留（检索面）"
+    ke = reg.tool_sections("AI-短剧一站式生成", "storyboard_key_elements")
+    shot = reg.tool_sections("AI-短剧一站式生成", "storyboard_shots")
+    audio = reg.tool_sections("AI-短剧一站式生成", "storyboard_audio")
+    assert ke == shot == audio == injected, (
+        "合并形态下三个能力名与合并名应取到同一段正文（存量委派名的兼容面）")
+
+
 def test_stage_deny_drops_read_skill_only():
     """2026-09-15 1111 批（对齐 dsh inherit∩restrict）：子级面 = 主代理面 − deny。
     stage 追加 deny read_skill（断跨阶段预读）+ 本阶段未声明的委派专属写入工具

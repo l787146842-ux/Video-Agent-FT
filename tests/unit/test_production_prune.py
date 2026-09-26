@@ -299,10 +299,13 @@ def test_card_media_gate_rejects_image_card_in_storyboard_design():
     #  推导这一支；只填 audioType 的音频卡现在推导为 audio，见下方断言）
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"label": "x"}}) is not None
-    # 2026-09-23 批11（事故 4444/P1-5）：**只填 audioType 的音频卡必须放行**。
-    # 事故原形：子代理建音频卡只填 audioType='bgm'/'voice'（以为声明了种类就够），
-    # mediaType 缺省回落 image ⇒ 在故事板设计阶段被整单拒收 5 次，
-    # 且回喂文案声称「收到 'image'」——那是平台自己的默认值，模型从未发过。
+    # 2026-09-23 批11（事故 4444/P1-5）：**只填 audioType 的音频卡不得被误判为 image**。
+    # 事故原形：子代理建音频卡只填 audioType（以为声明了种类就够），mediaType 缺省
+    # 回落 image ⇒ 被整单拒收，且回喂文案声称「收到 'image'」——那是平台自己的
+    # 默认值，模型从未发过。本闸读的是**该卡真实会落库的那个类型**（infer_media_type）。
+    # 2026-09-25（用户裁决「故事板设计阶段只建角色音色卡」）：本用例的 ctx 未声明
+    # 音频种类维度 ⇒ 判定只到 mediaType 一层，故 bgm 在此仍放行；「设计期 bgm 被拒」
+    # 由下方的音频种类用例覆盖（两维正交，勿混）。
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"audioType": "voice"}}) is None, \
         "只填 audioType 的音频卡被误判为 image（4444/P1-5 回归）"
@@ -443,6 +446,101 @@ def test_card_media_gate_sits_in_chain_before_prompt_gate():
     src = inspect.getsource(fc_gates.run_gate_chain)
     assert src.index("card_media_gate") < src.index("prompt_gate"), \
         "建卡媒体闸应在提示词闸之前"
+
+
+# ---------- ②b 阶段建卡音频种类限定（2026-09-25 用户裁决，8888 取证） ----------
+
+def test_stage_card_audio_types_declaration():
+    """声明表单一事实源：故事板设计阶段只允许角色音色卡（audioType=voice）。
+
+    用户裁决原话：「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡。」
+    病灶：`STAGE_CARD_MEDIA` 只到 mediaType 粒度、闸机只读 mediaType ⇒ 本意只为
+    音色卡开的口子把 BGM/旁白卡一并放行（8888 实测 3 张 audioType=bgm 卡落库）。
+    """
+    from src.video_agent.core.subagent import (
+        STAGE_CARD_AUDIO_TYPES, PIPELINE_STAGE_KINDS, stage_card_audio_types,
+    )
+
+    assert stage_card_audio_types("storyboard_design") == frozenset({"voice"})
+    assert set(STAGE_CARD_AUDIO_TYPES) <= set(PIPELINE_STAGE_KINDS)
+    # 未登记阶段不受限（维持现状，与 stage_card_media 同款默认）
+    assert stage_card_audio_types("write_media_prompt") == frozenset()
+    assert stage_card_audio_types("") == frozenset()
+
+
+def test_card_media_gate_rejects_bgm_and_narration_in_storyboard_design():
+    """设计期 BGM/旁白卡整单拒收；音色卡与分镜卡放行（8888 回归钉）。
+
+    必须是**拒收**而非静默剥离（同 3333 假成功空卡裁决），且文案须交代
+    「BGM/旁白属 audio_layer 设计，写 desc，卡在音频生成阶段建」防反复重试。
+    """
+    from src.video_agent.core.fc_gates import GateContext, card_media_gate
+    from src.video_agent.core.subagent import (
+        stage_card_audio_types, stage_card_media,
+    )
+
+    ctx = GateContext(
+        stage_card_media=stage_card_media("storyboard_design"),
+        stage_card_audio_types=stage_card_audio_types("storyboard_design"),
+        stage_label="故事板设计")
+
+    # 角色音色卡：两入口、显式与只填 audioType 两形态，全放行
+    for tool in ("storyboard_add_draft", "storyboard_create_group"):
+        assert card_media_gate(ctx, tool, {"draft": {"audioType": "voice"}}) is None
+        assert card_media_gate(ctx, tool, {
+            "draft": {"mediaType": "audio", "audioType": "voice"}}) is None
+
+    # BGM / 旁白 / 未标种类：整单拒收（8888 实跑形态：audioType=bgm）
+    for kind in ("bgm", "narration"):
+        for tool in ("storyboard_add_draft", "storyboard_create_group"):
+            err = card_media_gate(ctx, tool, {
+                "draft": {"mediaType": "audio", "audioType": kind}})
+            assert err is not None, f"{kind} 卡在故事板设计阶段未被拒收（8888 回归）"
+            assert "key_element_audio" in err and "保持原样" in err
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"mediaType": "audio"}}) is not None, \
+        "未标 audioType 的音频卡无法证明是音色卡，应拒收"
+
+    # 分镜视频卡不受第二维影响（两维正交）
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"mediaType": "video"}}) is None
+    # 图像卡仍被 mediaType 维拒（本批不放开跨阶段产物）
+    assert card_media_gate(ctx, "storyboard_add_draft",
+                           {"draft": {"mediaType": "image"}}) is not None
+
+    # 字符串形态 draft 同判定（E-1 不回归）
+    import json as _json
+    assert card_media_gate(ctx, "storyboard_add_draft", {
+        "draft": _json.dumps({"mediaType": "audio", "audioType": "voice"})}) is None
+    assert card_media_gate(ctx, "storyboard_add_draft", {
+        "draft": _json.dumps({"mediaType": "audio", "audioType": "bgm"})}) is not None
+
+
+def test_stage_card_audio_types_reaches_gate_ctx_end_to_end(svc):
+    """管线连通性（G4）：音频种类限定同样真能经 planner 下发到闸机。
+
+    防「表改了但没接线」——与 test_stage_card_media_reaches_gate_ctx_end_to_end 同款。
+    """
+    from src.video_agent.core.fc_gates import card_media_gate
+
+    planner = Planner(state_manager=svc, llm_adapter=None)
+    runner = planner._fc_runner
+
+    planner._apply_stage_card_media(PlannerContext(
+        skill_name=SKILL, subagent_depth=1, subagent_stage="storyboard_design"))
+    assert runner.stage_card_audio_types == frozenset({"voice"})
+    g = runner._gate_ctx()
+    assert card_media_gate(g, "storyboard_add_draft",
+                           {"draft": {"audioType": "bgm"}}) is not None
+    assert card_media_gate(g, "storyboard_add_draft",
+                           {"draft": {"audioType": "voice"}}) is None
+
+    # 其它阶段 / 主代理轮 → 该维度不受限
+    planner._apply_stage_card_media(PlannerContext(
+        skill_name=SKILL, subagent_depth=1, subagent_stage="write_media_prompt"))
+    assert runner.stage_card_audio_types == frozenset()
+    assert card_media_gate(runner._gate_ctx(), "storyboard_add_draft",
+                           {"draft": {"audioType": "bgm"}}) is None
 
 
 # ---------- ③ adjust_scope 不裁剪 ----------

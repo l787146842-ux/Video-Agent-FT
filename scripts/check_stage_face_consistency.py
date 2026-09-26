@@ -12,7 +12,7 @@
 **永远无法注入执行者**（`<image_generate>` / `<generate_video>` /
 `<audio_generate>` / `<video_assembler>`；其中 `<video_assembler>` 影响
 16/16 个 Skill），章节正文取得到却发不出去。详见
-`reports/2222-3333-事故根因-20260923/07-全量Skill章节对应审计.md`。
+`reports/2222-3333-事故根因-20260923/07-全量Skill章节对应审计.md`（该审计报告正文已归档删除，结论已固化为本闸断言）。
 
 ## 本闸断言三条
 

@@ -164,6 +164,12 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
                 "index": gi + 1,
                 "title": g.get("title", ""),
                 "timeRange": g.get("timeRange", ""),
+                # 2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
+                # 病灶：音频分支此前只给 `prompt_chars`（且读的是**另一个字段**
+                # `prompt`，前端才写它），而模型建组时写的是 `desc` ⇒ **模型写下的
+                # 音频层设计下一轮自己看不见**（8888 三组 desc 各 130~157 字，
+                # 模型只看到 prompt_chars=0）。与 ke/shot 两分支对齐：desc 全文入状态。
+                "desc": g.get("desc", "") or "",
                 "prompt_chars": len(g.get("prompt", "") or ""),
                 "drafts": [
                     {
@@ -175,6 +181,9 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
                         "imgUrl": _u(d.get("imgUrl", "")),
                         "videoUrl": _u(d.get("videoUrl", "")),
                         "audioUrl": _u(d.get("audioUrl", "")),
+                        # 音频种类（voice=角色音色卡 / bgm / narration…）：模型需要
+                        # 据此判断某组已有哪类卡，避免重复建或建错组。
+                        "audioType": d.get("audioType", ""),
                     }
                     for di, d in enumerate(g.get("drafts", []))
                 ],

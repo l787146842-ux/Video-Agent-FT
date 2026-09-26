@@ -13,19 +13,11 @@
  *   R3 裸名：媒体映射补登分组标题的剥前缀裸名（模型实际写法）。
  */
 import { state } from '@/stores/studio';
+import { elementNameVariants, stripTypePrefix } from '@/lib/group-title';
 import type { AnyGroup, MediaType } from '@/types';
 
-/** 分组标题容器类型前缀（与后端 storyboard_ops._GROUP_TITLE_PREFIX 同契约镜像） */
-const GROUP_TITLE_PREFIXES = ['Element_', 'Shot_', 'Audio_'];
-
-/** 剥容器类型前缀取裸名（与后端 strip_type_prefix 同契约） */
-export function stripTypePrefix(title: string): string {
-  const t = (title || '').trim();
-  for (const p of GROUP_TITLE_PREFIXES) {
-    if (t.startsWith(p)) return t.slice(p.length);
-  }
-  return t;
-}
+// 标题前缀归一 + 元素名形态下沉叶子模块（2026-09-26）；re-export 保持既有导入路径。
+export { stripTypePrefix };
 
 /**
  * 引用记号（与后端 _MENTION_RE 对齐，两式同义）：
@@ -33,6 +25,23 @@ export function stripTypePrefix(title: string): string {
  * 2) `@名称` / `＠名称`，容许可选的 `[ ]` 包络（`@[程心]` 与 `@程心` 等价）。
  */
 const MENTION_RE = /<<<\s*image\\?_([^<>]+?)\s*>>>|[@＠]\[?([^\s@＠[\]]+)\]?/g;
+
+/**
+ * 提取提示词里的全部引用名（与 `MENTION_RE` 同一事实源）。
+ *
+ * 2026-09-26：供**计数徽章**等只读消费方复用——此前 `RefAssetBar` 手抄了
+ * 第三份正则且不剥方括号，`@[程心]` 查表落空、计数恒 0。
+ * 返回 [名称, 原始记号] 对，调用方按需取用。
+ */
+export function* mentionNamesIn(text: string): Generator<[string, string]> {
+  if (!text) return;
+  const re = new RegExp(MENTION_RE.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const name = (m[1] || m[2] || '').trim();
+    if (name) yield [name, m[0]];
+  }
+}
 const KIND_LABEL: Record<MediaType, string> = {
   image: '参考图', video: '参考视频', audio: '参考音频',
 };
@@ -69,10 +78,9 @@ export function storyboardMediaMap(): Record<string, MediaRef> {
         for (const [url, kind] of entries) {
           if (!url) continue;
           if (isKeyElement) {
-            put(g.title, url, kind);
-            // R3：裸名别名（模型实际写法；与后端 build_storyboard_media_map 同口径）
-            const bare = stripTypePrefix(g.title);
-            if (bare !== (g.title || '').trim()) put(bare, url, kind);
+            // 形态集与后端 `prompt_refs.build_storyboard_media_map` 同契约：
+            // 全称 + 剥前缀 + **括注主名**（`<<<image_艾AA>>>` 也要能命中）。
+            elementNameVariants(g.title || '').forEach((v) => put(v, url, kind));
           }
           put(d.label || '', url, kind);
           put(fileNameOf(url), url, kind);

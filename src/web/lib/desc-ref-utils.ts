@@ -7,48 +7,55 @@
  * - 同步：编辑保存时 shotRefs 按「旧 − 正文已消失提及 + @ 插入」派生。
  */
 import { escapeRe, makeChip, type MediaKind } from '@/lib/prompt-ref-utils';
-import type { DraftType, ShotGroup } from '@/types';
+import {
+  GROUP_TITLE_PREFIX, canonicalGroupTitle, elementAliasName, elementNameVariants,
+  stripTypePrefix,
+} from '@/lib/group-title';
+import type { ShotGroup } from '@/types';
 
 export interface KeyElementLike {
   id?: string;
   title?: string;
-  drafts?: Array<{ imgUrl?: string }>;
+  drafts?: Array<{ id?: string; imgUrl?: string }>;
 }
 
-/** 容器 ID 约定类型前缀（2026-09-17 裁决；后端 _GROUP_TITLE_PREFIX 同契约镜像） */
-export const GROUP_TITLE_PREFIX: Record<DraftType, string> = {
-  keyElement: 'Element_',
-  shot: 'Shot_',
-  audio: 'Audio_',
-};
-
-const TYPE_PREFIXES = Object.values(GROUP_TITLE_PREFIX);
-
-/**
- * 前端归一单一事实源：剥容器类型前缀取名字（2026-09-17 裁决对齐 flova：
- * 纯结构性，只认 Element_/Shot_/Audio_ 三个前缀，无词表翻译）；
- * 显示/引用匹配共用，后端 strip_type_prefix 同契约。
- */
-export function stripTypePrefix(title: string): string {
-  const t = String(title || '').trim();
-  for (const p of TYPE_PREFIXES) {
-    if (t.startsWith(p)) return t.slice(p.length);
-  }
-  return t;
-}
-
-/** 写口归一（2026-09-17 裁决）：幂等补容器类型前缀，名字原样（后端 normalize_group_title 同契约） */
-export function canonicalGroupTitle(title: string, type: DraftType): string {
-  const t = String(title || '').trim();
-  const prefix = GROUP_TITLE_PREFIX[type] || '';
-  if (!prefix || !t || t.startsWith(prefix)) return t;
-  return prefix + t;
-}
+// 标题前缀归一 + 元素名形态下沉叶子模块（2026-09-26，破 `prompt-mentions` 导入环
+// 并消除 `stripTypePrefix` 的两份抄写）；此处 re-export 保持既有导入路径不变。
+export { GROUP_TITLE_PREFIX, stripTypePrefix, canonicalGroupTitle, elementAliasName, elementNameVariants };
 
 /** shotRefs 存关键元素 id（ke-xxx）或标题；统一解析为归一标题（同 ShotRefsChips 口径） */
 export function resolveRefTitle(ref: string, keyElements: KeyElementLike[]): string {
-  const el = keyElements.find((k) => k.id === ref || k.title === ref);
+  const el = resolveRefElement(ref, keyElements);
   return stripTypePrefix(el?.title || String(ref));
+}
+
+/**
+ * 引用 → 关键元素组（**点击跳转链唯一入口**）。
+ *
+ * 2026-09-25 修（跳转不稳定根因）：此前跳转链 `ui.ts` 用**逐字比对**
+ * （`k.title === title || k.id === title`），而落库引用存在裸名（`程心`）与
+ * 全称（`Element_程心`）两种形态 ⇒ 裸名恒不命中，表现为「有时跳有时不跳」。
+ * 平台其余各处（本文件 `elementThumb`、后端 `storyboard_ops.find_ref_group`）
+ * 早已 canonical，唯独点击链漏了；本函数即把那条统一到 canonical 单一入口。
+ *
+ * 写口已同批归一（后端 `canonicalize_shot_refs`：落库恒为元素组全称），
+ * 本函数负责**存量裸名数据**的读时兼容——两侧同契约，杜绝第四次比对式。
+ */
+export function resolveRefElement(
+  ref: string,
+  keyElements: KeyElementLike[],
+): KeyElementLike | undefined {
+  const raw = String(ref ?? '').trim();
+  if (!raw) return undefined;
+  // ① 组 id 精确命中（最高优先，无歧义）
+  const byId = keyElements.find((k) => k.id === raw);
+  if (byId) return byId;
+  // ② 逐字标题命中（存量带前缀数据）
+  const byTitle = keyElements.find((k) => k.title === raw);
+  if (byTitle) return byTitle;
+  // ③ canonical 命中（裸名 ↔ 带前缀双向等同）
+  const key = stripTypePrefix(raw);
+  return keyElements.find((k) => stripTypePrefix(k.title || '') === key);
 }
 
 /**
@@ -83,8 +90,9 @@ export function normalizeDisplayGroupTitle(title: string): string {
 
 /**
  * 内联块候选名：候选源 = keyElements 全集（不再局限本镜 shotRefs）。
- * 每个元素产两种形态——原全称 + 归一名字（stripTypePrefix），Set 去重，
- * ≥2 字符守卫（此处为唯一加守卫点），按长度降序（最长优先防重叠误切）。
+ * 每个元素产**全部形态**——原全称 + 归一名字 + 括注主名（`elementNameVariants`
+ * 唯一入口），Set 去重，≥2 字符守卫（此处为唯一加守卫点），
+ * 按长度降序（最长优先防重叠误切）。
  * group 参数保留仅为调用点稳定，候选不再依赖 shotRefs。
  */
 export function descChipNames(
@@ -93,20 +101,21 @@ export function descChipNames(
 ): string[] {
   const titles = new Set<string>();
   keyElements.forEach((k) => {
-    const raw = k.title;
-    if (!raw) return;
-    if (raw.length >= 2) titles.add(raw);            // 原全称
-    const bare = stripTypePrefix(raw);
-    if (bare.length >= 2) titles.add(bare);          // 归一名字
+    elementNameVariants(k.title || '').forEach((v) => {
+      if (v.length >= 2) titles.add(v);
+    });
   });
   return [...titles].sort((a, b) => b.length - a.length);
 }
 
 /** 元素首张概念图（块缩略图）；无图返回 ''（渲染为纯名块，对齐 Flova pill）。
- *  查表按归一标题比对：块名可能是名字（“程心”），元素标题可能带类型前缀（“Element_程心”）。 */
+ *  查表走 `elementNameVariants` 唯一入口：块名可能是括注主名（「艾AA」），
+ *  而元素标题带容器前缀与括注（「Element_艾AA（AA）」）——2026-09-26 前只用
+ *  stripTypePrefix 单式比对，主名块查不到缩略图 ⇒ 图块不显图（本次一并收敛）。 */
 function elementThumb(title: string, keyElements: KeyElementLike[]): string {
-  const norm = stripTypePrefix(title);
-  const el = keyElements.find((k) => stripTypePrefix(k.title || '') === norm);
+  const variants = elementNameVariants(title);
+  const el = keyElements.find((k) =>
+    elementNameVariants(k.title || '').some((v) => variants.includes(v)));
   return (el?.drafts || []).map((d) => d.imgUrl || '').find(Boolean) || '';
 }
 
@@ -196,8 +205,9 @@ export function syncShotRefsAfterEdit(
   const auto: string[] = [];
   descChipNames({ shotRefs: [] }, keyElements).forEach((n) => {
     if (!serializedText.includes(n)) return;
-    const el = keyElements.find(
-      (k) => k.title === n || stripTypePrefix(k.title || '') === n);
+    // 元素回查走**变体唯一入口**（2026-09-26）：正文可能写的是括注主名
+    // （`艾AA`）而标题是 `Element_艾AA（AA）`——逐字/剥前缀两式都比不中。
+    const el = keyElements.find((k) => elementNameVariants(k.title || '').includes(n));
     const canon = el?.title || n;
     if (!canon) return;
     if (boundNorm.has(stripTypePrefix(canon))) return;

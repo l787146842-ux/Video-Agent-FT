@@ -4,6 +4,7 @@ import type {
   DraftType, LeftTab, MiddleView, SubTab, ApiProvider, Skill, PendingAttachment,
 } from '@/types';
 import { showToast } from '@/stores/toast';
+import { resolveRefElement } from '@/lib/desc-ref-utils';
 import { state, setState, findDraftRecord, subTabForType } from '../studio-core';
 
 export const uiActions = {
@@ -123,20 +124,22 @@ export const uiActions = {
     setState('lastAppliedAt', Date.now());
   },
 
-  /** 按标题或分组 id 跳转到关键元素（分镜 shotRefs chip 点击；
-   * shotRefs 存的是 ke-xxx id，需同时支持 id 命中，888 ：只匹配标题报「未找到」）。
+  /** 按标题或分组 id 跳转到关键元素（分镜 shotRefs chip 点击）。
+   * 2026-09-25 修：命中改走 canonical 单一入口 `resolveRefElement`
+   * （组 id → 逐字标题 → 裸名↔带前缀双向等同）。此前逐字比对，而存量引用
+   * 多为裸名 ⇒ 91.5% 点击落空，表现为「有时跳有时不跳」。
    * 跳转效果与预览框「定位」一致：滚动到目标分组卡并闪烁，没有草稿卡也能看到。 */
   jumpToElementByTitle(title: string) {
-    const el = state.keyElements.find((k) => k.title === title || k.id === title);
+    const el = resolveRefElement(title, state.keyElements);
     if (!el) {
       showToast(`未找到关键元素「${title}」`, 'warning');
       return;
     }
     setState('leftTab', 'storyboard');
     setState('subTab', 'keyElements');
-    setState('locateGroupId', el.id);
+    setState('locateGroupId', String(el.id || ''));
     if (el.drafts?.length) {
-      setState('selectedDraftId', el.drafts[0].id);
+      setState('selectedDraftId', String(el.drafts[0].id || ''));
       setState('selectedType', 'keyElement');
       setState('selectTick', (v) => v + 1);
     }

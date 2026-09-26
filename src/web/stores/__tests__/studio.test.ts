@@ -8,7 +8,10 @@ import type { KeyElementGroup, ShotGroup, AudioGroup } from '@/types';
 function makeKeyGroup(id: string, draftIds: string[]): KeyElementGroup {
   return {
     id,
-    title: `元素${id}`,
+    // 2026-09-25：标题用**落库真实形态**（带 Element_ 容器前缀）。此前夹具用裸名
+    // （`元素ke2`）与裸名 shotRefs 恰好逐字相等 ⇒ 跳转链的逐字比对永远绿，
+    // 掩盖了「裸名引用点不动」的生产事故。
+    title: `Element_元素${id}`,
     desc: '',
     drafts: draftIds.map((d) => ({ id: d, label: d, mediaType: 'image' as const })),
   };
@@ -96,9 +99,33 @@ describe('studioActions', () => {
   });
 
   it('jumpToElementByTitle 跳转并选中首个草稿', () => {
-    studioActions.jumpToElementByTitle('元素ke2');
+    studioActions.jumpToElementByTitle('Element_元素ke2');
     expect(state.subTab).toBe('keyElements');
     expect(state.selectedDraftId).toBe('d3');
+  });
+
+  // ---------- 2026-09-25：跳转链 canonical 命中（用户裁决「不能传裸名」） ----------
+  // 生产实证（8888）：落库元素标题恒带 `Element_` 前缀，而 shotRefs 43/47 为裸名；
+  // 旧实现逐字比对 ⇒ 91.5% 的 chip 点击落空，表现为「有时跳有时不跳」。
+  // 三条用例覆盖三种历史存储形态，任一回归即红。
+
+  it('jumpToElementByTitle 裸名引用（存量主形态）canonical 命中', () => {
+    studioActions.jumpToElementByTitle('元素ke1');
+    expect(state.subTab).toBe('keyElements');
+    expect(state.locateGroupId).toBe('ke1');
+    expect(state.selectedDraftId).toBe('d1');
+  });
+
+  it('jumpToElementByTitle 带前缀全称命中', () => {
+    studioActions.jumpToElementByTitle('Element_元素ke1');
+    expect(state.locateGroupId).toBe('ke1');
+    expect(state.selectedDraftId).toBe('d1');
+  });
+
+  it('jumpToElementByTitle 组 id 命中', () => {
+    studioActions.jumpToElementByTitle('ke1');
+    expect(state.locateGroupId).toBe('ke1');
+    expect(state.selectedDraftId).toBe('d1');
   });
 
   it('syncFromServer 快照同步', () => {

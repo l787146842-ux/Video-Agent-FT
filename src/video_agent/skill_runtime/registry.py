@@ -120,9 +120,33 @@ class SkillEntry:
         return tools
     
     def section_for(self, tool: str) -> str:
+        """该能力声明对应的章节全文（多 stage 时拼接）。
+
+        2026-09-25 修（8888 取证）：**去重相同的 chapter body**。
+        病灶：`storyboard_designer` 是**一对多**映射
+        （`SECTION_TAG_STAGES` → `("storyboard_ke","storyboard_shot","storyboard_audio")`），
+        `split_skill_sections` 会把**同一整段正文**写进这三个 stage 键；而本方法
+        逐键取出再 `"\\n\\n".join` ⇒ **同一段正文被注入 3 次**。
+        实测（AI-短剧一站式生成）：三章长度均为 1784 字，注入总量 5356 字 =
+        1782 字的 3.0 倍（HEAD 三章分离时 ke/shot/audio 各 326/1216/238，注入 1784 字正常）。
+        **16/16 个 Skill 全部命中**（D-24 章节合并把所有包的 `storyboard_designer`
+        收敛成单段一对多形态后，重复从「个别」变成「全体」）。
+        与模型采样无关的确定性缺陷；去重后行为 = 合并前的语义（每段正文各出现一次）。
+        """
         stages = CAPABILITY_TOOL_STAGES.get(tool) or ()
-        parts = [self.sections.get(s, "") for s in stages]
-        return "\n\n".join(p for p in parts if p and p.strip()).strip()
+        parts: List[str] = []
+        seen: set = set()
+        for s in stages:
+            body = self.sections.get(s, "")
+            if not body or not body.strip():
+                continue
+            # 同一正文字符串判等即去重（一对多映射的复制语义是**检索**需要，
+            # 不是**注入**需要——各 stage 键仍各自保留完整正文供单独取用）
+            if body in seen:
+                continue
+            seen.add(body)
+            parts.append(body)
+        return "\n\n".join(parts).strip()
 
     @property
     def package_root(self) -> Optional[Path]:

@@ -36,6 +36,140 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-26 · 9999 三问修复批：引用链两处口径缺口（括注别名 + refAssets 写口形态）
+
+- **立项（用户 9999 项目截图三问）**：①分镜描述里有些关键元素（如「艾AA」）没有引用图块；②分镜表格图没有引用图块、而分镜提示词有；③提示词草稿里的引用图块没显示出来。现场 = `proj-1790358500-25465d26`（工作台名「9999」，15 keyElement / 11 shot / 3 audio）。
+- **取证**（只读，两份独立审计，证据链入库）：`reports/9999-引用链口径缺口-20260926/01-shotRefs组装链取证.md`（shotRefs 三源组装链）、`reports/9999-引用链口径缺口-20260926/02-refAssets契约与@解析链取证.md`（refAssets 契约与 `@` 解析链）。核心事实：模型建组入参 **11/11 全带显式 `shot_refs`**（照文档留空会真丢引用）；裸名路径**设计上无「未命中」概念**（`scan_bare_name_mentions` 只返回命中）⇒ 静默落空、零告警。
+- **用户裁决（2026-09-26）**：①Skill 的 `@[角色代号]` 占位符问题「**先不管**」；②「**其他问题全部解决**」；③存量数据「**只修代码，存量不管**」。
+
+- **① 组名括注别名归一（问题1 根因）**——根因：模型把别名/关键特征写进组名**括注**（建组入参原话 `艾AA（AA）`/`曹彬（老年）`/`星环号球形舱（木星轨道）`，动机是消歧，属合理命名），平台按 `normalize_group_title`「名字原样保留」落库；而引用匹配的候选名只有「完整标题 + 剥容器前缀」两形态 ⇒ 正文写主名（`艾AA`）时**逐字子串恒不命中**。自然对照：无括注的 `程心` 一切正常——**同一份代码只在这一种命名形态上失配，模型无过错**。
+  - 新增 `ops.element_alias_name`（取首个 `（`/`(` 前的主名，无括注返回空、主名 <2 字符不产）与 `ops.element_name_variants`（**引用匹配候选名的唯一入口**：全称 + 剥前缀 + 括注主名）。
+  - **四个消费点全部收敛同引**（G4：同类路径全覆盖）：`scan_bare_name_mentions`（裸名提及）、`match_element_titles_report`（`[令牌]` 匹配）、`build_ref_index`（读口 O(1) 命中 ⇒ `resolve_shot_refs` 取概念图）、`prompt_refs.build_storyboard_media_map`（提示词 `<<<image_名称>>>` / `@名称` 解析）；前端 `group-title.ts` 同契约镜像（`descChipNames` 内联图块、`elementThumb` 缩略图、`syncShotRefsAfterEdit` 编辑同步、`storyboardMediaMap`）。
+  - **连带修复闸机失明**：`fc_gates.structure_integrity_gate` 的标题覆盖检查原用**单向** `strip_type_prefix(组名) in strip_type_prefix(标题)`，带括注的组名恒不命中 ⇒ `missing` 恒为空、漏引**不被拦也不回喂**；改用同一变体入口判定。
+  - 实测复算（9999 真实 state）：`find_ref_group('艾AA')` 由 None → 命中；Shot01 显式留空时三源合并**现在能自动挂上 `Element_艾AA（AA）`**（修复前只能推出「星环号球形舱 + 程心」，靠模型手抄才没丢）。
+
+- **② refAssets 写口归一为媒体 URL（问题3 根因）**——根因：`refAssets` 契约是**媒体 URL 列表**（`DraftRecord.ref_assets`；前端 `refAssetName`/`refAssetType`/`safeUrl` 全按 URL 消费），而模型能看见的是**草稿身份**（状态快照里只有 `drafts[].id`，没有分组标题），照抄即落 `draft-1790359321-a010380d`。实测 **79 条引用全是 id 形态、合法 URL 0 条**，后果两处：前端 `<img src="draft-…">` 被 `safeUrl`（`utils.ts:21-33` 只放行 http/https/相对路径）拦成空串 ⇒ 参考素材栏**图裂成 alt 文字**（用户截图「参考素材 1/2/3/4/5」即此，不是标签）；生成时该串被当 URL 塞进 `reference_images` ⇒ **参考图静默落空（花钱生成白挂）**。
+  - 新增 `ops.normalize_ref_assets(state, refs)` 作写口**唯一入口**：卡有媒体 → 落其 URL；卡在但尚无媒体 → 丢弃该条（不留空占位）；合法 URL / 未知字符串 → **原样保留**（不吞用户手填素材）。
+  - **全部写路径覆盖**：`ops.patch_draft` 与 `ops.append_draft` 的 `state` 参数改为**必填**（漏传即报错，不留静默坏值路径），三处工具调用点与 REST 两条路由（`POST .../drafts`、`PATCH .../drafts/{id}`，后者原先**完全绕过领域层**直接 `draft.update`）同引之。
+
+- **③ 提示词引用图块不显示（问题3 的表现层）**——两组独立成因，均已修：
+  - **计数徽章第三份正则抄写**：`RefAssetBar.tsx` 手抄 `/[@＠]([^\s@＠]+)/g` **不剥方括号**，`@[程心]` 捕获成 `[程心]` 查表落空 ⇒ 计数恒 0，与提示词框内已渲染的图块自相矛盾（2026-09-23 批3 R1 修了后端与 `prompt-mentions`，漏了这一处）。现改走新增的 `mentionNamesIn`（`prompt-mentions.ts` 唯一入口，含 `<<<image_名称>>>` 方言）。
+  - **`elementThumb` 缩略图查表口径**：内联块取缩略图只用 `stripTypePrefix` 单式比对，块名是括注主名时查不到图 ⇒ 现同走 `elementNameVariants`。
+
+- **④ `resolve_shot_refs` 加种类判据**——原「组内首张有 `imgUrl` 的卡」隐式依赖卡序（模型建组时设定图恰好在前）；组内先有视频类图卡时会取错参考图。现优先取图像类卡（`infer_media_type == image`），同类内仍按原序（既有正确结果不回归）。
+
+- **⑤ 前端模块下沉（顺带清偿 P1 违规）**：`stripTypePrefix` 此前在 `desc-ref-utils.ts` 与 `prompt-mentions.ts` **各写一份**；而新增的括注形态两处都要用，`prompt-mentions` 导入 `desc-ref-utils` 会成环（后者依赖 `prompt-ref-utils`，后者又依赖 `prompt-mentions`）。新增叶子模块 `src/web/lib/group-title.ts`（标题前缀归一 + 元素名形态），两处 re-export 保持既有导入路径与测试 patch 目标不变。
+
+- **回归钉**：后端 `tests/unit/test_9999_reference_chain_fixes.py`（**29 条**，五组：别名变体/裸名绑定/refAssets 归一/种类判据/闸机覆盖/提示词媒体映射）；前端 `desc-ref-utils.test.ts` +6 条（含「正文写主名渲染出图块」现场复现）、`RefAssetBar-no-limit.test.tsx` +1 条（`@[名称]` 计数）。
+- **验证**：`acceptance.py --quick` **15/15 PASS**；前端全量 vitest **125 文件 / 1056 用例全绿**；`tsc --noEmit` PASS；受影响后端 10 文件 **274 passed**；后端全量 **42 failed / 2575 passed** —— 与 `backup-dirty-20260926` 基线 worktree 对照（**61 failed / 2555 passed**），**新增失败 0**（差异 19 条方向为「基线红、本批绿」，系基线 worktree 未含先前会话的未提交改动所致；本批 42 条失败全为既有 adapter/SSE 类环境红，需活动 HTTP 服务）。
+- **存量处置（用户裁决③「只修代码，存量不管」）**：两个一次性脚本已备好并**验证可跑但未执行**——`scripts/archive/migrate_ref_assets_to_urls.py`（79 条 id → URL）与 `scripts/archive/migrate_9999_sheet_refs.py`（11 张分镜表格图补引用记号 + 参考图，dry-run 实测 **11/11 全解析、0 残留**）。两者均默认 dry-run、幂等、apply 前须停服务（运行中实例持内存态 + `board_version` 账本，直接改库会被其下次落盘覆盖）。**未清偿后果如实登记**：旧卡参考素材栏仍图裂、生成时该字段仍落空。
+- **明确不做（用户裁决①）**：Skill `data/skills/AI-短剧一站式生成/SKILL.md:207-210` 的 `@\[角色代号\]` / `@\[场景代号\]` 占位符问题——该模板变量全平台无替换实现、未命中静默去记号，用户裁决「先不管」，本批零改动。
+
+### 2026-09-25 · 8888 三问修复批：shotRefs 禁止裸名 + 设计期只建音色卡 + 删「按草稿配置」（用户四条裁决）
+
+- **取证**（只读，报告 `reports/8888-徽标跳转与音频层-20260925/`）：用户 8888 项目（`proj-1790326837-3c760e66`）+ 6666 对照 + 全库 64 会话 + sqlite + SSE 抓包。
+- **用户裁决（2026-09-25，五条）**：①分镜描述 6666/8888 两种形态「先记住」，后续再析；②红框内容（徽标整块）「以前没有，今天怎么有的」须查；③**「不能传裸名，裸名只是 UI 视觉效果，本身必须是含前缀的」**；④**「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」**；⑤**skill 改为「按草稿配置」直接删了**。
+
+- **① shotRefs 写口归一为元素组全称（裁决③）**——根因：`merge_shot_refs`（`storyboard_ops.py`）三源合并后只做 canonical **去重**、**不改形态**，而三源中只有 ① 显式 `shot_refs` 原样透传；模型重抄裸名即落裸名。8888 实测 **47 条引用 = 带前缀 4 条（8.5%）+ 裸名 43 条（91.5%）**，前端 chip 点击（`ui.ts` 逐字比对元素标题）⇒ **91.5% 落空**；同一元素 `白色薄片` 在一镜存全称（能跳）、另四镜存裸名（不能跳）⇒ 即用户所报「有时跳有时不跳」。
+  - 新增 `ops.canonicalize_shot_refs(state, refs)` 作**唯一入口**（命中元素组 → 落其真实 `title`；查无此元素 → 保留原值不静默丢），建组写口 `merge_shot_refs` 与改分组写口 `storyboard_patch_group` 同引之。
+  - 去重键取**归一后**形态：`程心`/`Element_程心`/`ke-xxx` 三写法收敛为一条（用入参键去重会让组 id 形态与标题形态各占一条）。
+  - **读口不迁移存量**：后端 `find_ref_group`/前端 `resolveRefElement` 均 canonical，存量裸名数据照常命中（实测 47/47）。
+
+- **② 前端跳转链收敛为 canonical 单一入口（裁决③前半）**——`desc-ref-utils.ts` 新增 `resolveRefElement`（组 id → 逐字标题 → 裸名↔全称双向等同，三级判定），`ui.ts::jumpToElementByTitle`、`ShotRefsChips`、`resolveRefTitle` 三处同引之（此前 canonical 助手全仓只有一份且**唯独点击链没用**，属 P1 违规；后端 `storyboard_ops.py:198-213` 已把同类缺陷定性为「同一条引用链各处各写一遍比对式」）。
+  - `ShotRefsChips` 三处连带修复：`rawResolve` 改走 canonical；添加候选的**去重键**改用 canonical（否则 `ke-1` 已引用时候选仍列同一元素）；候选**显示**剥前缀（落库值带前缀、UI 只显裸名，与裁决③「裸名只是 UI 视觉效果」一致）。
+  - **静默失败可见化**：`StoryboardView` 定位失败原先 `if (!target) return;` 无任何反馈（左栏收起或停在「未归类素材」页时命中此支 = 用户所报「毫无反应」）；改为短重试一轮 + 仍失败则如实提示。
+
+- **③ 故事板设计阶段建卡收窄为「仅角色音色卡」（裁决④）**——根因：`STAGE_CARD_MEDIA` 只到 mediaType 粒度、`card_media_gate` 只读 `infer_media_type(draft)`，**完全不读 `audioType`** ⇒ 本意只为 `key_element_audio` 开的口子把 BGM/旁白卡一并放行（8888 实测 3 张 `audioType=bgm` 卡落库）。**模型不是违规方**：`_DRAFT_FIELDS_HINT` 把 bgm/narration 与 voice 并列，它照契约执行。
+  - 新增 `STAGE_CARD_AUDIO_TYPES = {"storyboard_design": {"voice"}}`（`subagent.py`，正向允许集，与 `STAGE_CARD_MEDIA` 同款默认）+ `stage_card_audio_types()` 访问器 + 装载期 fail-loud 四查（键/工具/枚举/与 mediaType 维不矛盾）。
+  - `card_media_gate` 加**第二维**判定（仅当 media 判定为 audio 时生效；video 卡不受影响），拒收文案交代「BGM/旁白属 audio_layer 设计：desc 写清覆盖镜头与配器方向，卡在音频生成阶段建」。
+  - 下发链同 `stage_card_media`：`planner._apply_stage_card_media` → `fc_runner.stage_card_audio_types` → `GateContext`（两维正交，与 2026-09-23 批11 的 mediaType/audioType 两维口径一致）。
+  - **契约与闸机同源**：`_DRAFT_FIELDS_HINT` 补正面契约句（设计期音频写 desc、卡在音频生成阶段建）。
+
+- **④ 删 Skill「按草稿配置」（裁决⑤ / 冻结#16 部分翻案）**——flova 原文为 `使用 **text_to_instrumental**，推荐模型：**Suno 5**`（全篇无「草稿」二字）；本仓被改为「…**按草稿配置产出**」，**该句预设草稿卡存在**，正是 BGM 卡进设计期的语义来源。`git log -S` 定位引入点 = `7bb5a672`（本意只是删幻影工具名 `audio_generate`，顺手新增该语义，**docs/CHANGELOG 零留痕**，属 G1 违规形态）。已扩散 3 个 Skill（`AI-短剧一站式生成` / `人文纪录短片` / `视频拉片复刻`），本批**只删该短语**（保留 `text_to_instrumental`/`text_to_narration` 通道词与「按全局设置默认渠道」句），Skill 其余正文零改动。
+  - **冻结#16 登记**：本批属用户显式裁决放行（裁决⑤原话「直接删了」），口径为**仅删该误导短语**，不涉媒体生成章节的其他字段；留痕见本条与 `docs/冻结与暂缓清单.md` 第 16 项。
+
+- **golden 重采**：新增 `scripts/recut_skill_sections_golden.py`（按规程重采 + `--check` 只比对；**保留原覆盖范围**，磁盘新增的 `新-Skill` 不顺手收编——属测试覆盖面决策；行尾恒 LF 防整文件伪 diff）。`tests/fixtures/skill_sections_golden.json` 重采（差异 = D-24 章节合并 + 本批删短语，越界 0）。
+- **回归测试**：`test_production_prune.py` +3 条（音频种类声明表单一事实源 / BGM&旁白两入口两形态拒收 + 音色卡放行 + video 不受第二维影响 + 图像卡仍拒 + 字符串 draft 同判定 / 音频种类限定经 planner 真达闸机的端到端连通性）；`studio.test.ts` +3 条（裸名 / 带前缀 / 组 id 三形态 canonical 跳转，关键元素夹具改用**带前缀真实标题**）；`ShotRefsChips.test.tsx` 夹具改带前缀 + 补添加候选的存储/显示分离断言；`test_subagent_delegation.py` 音色卡夹具补 `audioType=voice`（此前不填该字段仅因旧闸机不读 audioType 而侥幸绿）。
+- **验证**：`acceptance.py --quick` **15/15 PASS**（含 tsc）；前端全量 vitest **124 文件 / 1044 用例全绿**；后端受影响 7 文件 **154 passed**；后端全量 **2668 passed / 42 failed**——该 42 条经 `git stash` 反证为**存量环境失败**（adapter 流式/SSE 抓包类用例需活动 HTTP 服务，无改动时失败数一致），非本批引入。
+- **边界登记**：①**徽标「流程」字样**全库 0 命中（976 次建镜入参 / 487 个 distinct 徽标值 / 5 工程 sqlite 全字段 / 前端构建产物），**不可复现**，待用户给具体工程+截图；②**「描述→卡」承接阶段**：音频生成现消费卡片（`generate-actions.ts` 读 `draft.prompt`）且 `audio_generate` **不在可委派阶段内**（`PIPELINE_STAGE_KINDS` 仅 3 个），故设计期拒收 BGM 卡后**尚无阶段承接建卡**——需与「新增音频生成阶段」一并立项（本批未动，如实登记）；③音频组 `desc` 不进模型快照（`context_builder.py` 音频分支缺 `desc` 键）与前端描述位读 `prompt` 不读 `desc`（`GroupCard.tsx:123`）两处**未修**（属另一条链，待裁决）。
+
+### 2026-09-25 · 续2：音频层全链修复（用户四条裁决：desc 统一 / 两步落账 / 音频阶段打通）
+
+- **用户裁决（2026-09-25，四条）**：①徽标与描述容器的引导来源须查明（见下「取证」）；②**「音频也要给 desc。写的地方和看的地方要对的上。音频组暴露出来的问题要全部解决」**；③**「设计阶段只规划音频，只在提示词撰写才建卡」**；④**「音频阶段可以先打通，我后面会接入音频模型」**。
+
+- **取证：徽标/描述两容器的引导来源**（渲染探针 `.tmp_probe/container_guidance.py`，逐字输出模型可见文本）：
+  - **徽标（`summary`）**只有一处引导 = 字段描述「自由文本短句，须与 desc 镜头结构一致 + 3 个例子 + 缺失整单拒收」，**无格式模板**，且唯一硬约束只查「有没有」不查内容；
+  - **描述（`desc`）**由两处构成：平台侧（desc 字段描述／create_group 工具描述／`_GROUP_FIELDS_HINT` 共 3 句，含「禁尾部汇总行」）+ **Skill `<storyboard_designer>` 章节**（`每个 shot 描述必须包含` = 场景／人物动作与对白／分镜语法三件套，加「全局空间锚点卡」版式）；
+  - **「内切镜」在 Skill 该章节出现 4 次**（L73 数量建议 2—6／L76 设计倾向／L104 完稿自检），**唯独 L77-80「必须包含」清单里没有它** ⇒ 模型知道「要有内切镜」却**没被告知写进 desc 的哪里**，于是塞进徽标（徽标问的正是「镜头结构摘要」）。**这是两个容器之间的责任真空，非模型越界**。
+
+- **② 音频组 `desc` 统一为唯一载体（三处同字段）**——病灶：同一份「音频层设计」有两个字段各存各的：
+  - `desc`：**模型**建组时写（8888 实测 130~157 字），**但快照不注入**（音频分支只有 `prompt_chars`，且读的是另一个字段）；
+  - `prompt`：**前端**编辑时写（`board-edit.ts` audio 分支），后端从不写；前端**展示又读它**；
+  - 后果：模型写下的层设计**模型自己看不见、用户也看不见**（界面显示占位符「双击添加描述...」）。
+  - **修法（写/看/快照三处对齐到 `desc`）**：`context_builder.py` 音频分支补 `"desc"`（与 ke/shot 两分支对齐）+ 补 `"audioType"`（模型据此判断某组已有哪类卡）；`GroupCard.tsx` 改读 `g.desc || g.prompt`（prompt 仅存量回落）；`board-edit.ts` 音频分支改**写 desc**（删「audio 走 prompt」的旧写口）；`AudioGroup` 类型补 `desc?`（`prompt` 标 `@deprecated`）；`Draft` 类型补 `audioType?`（后端早就写、前端未建模）。
+
+- **③ 两步落账（设计期规划 / 提示词期建卡）**——契约与闸机同源：
+  - `_DRAFT_FIELDS_HINT` 与 `desc` 字段描述写明「设计阶段建音频分组、层设计写进分组 desc；音频卡在**提示词撰写阶段**按该 desc 创建」；
+  - `card_media_gate` 拒收文案同步指向提示词撰写阶段（原写「音频生成阶段」）；
+  - 承接面核实：`write_media_prompt` **未登记建卡限定**（`STAGE_CARD_MEDIA`/`STAGE_CARD_AUDIO_TYPES` 均无该键）且工具集含 `storyboard_add_draft` ⇒ **该阶段建 BGM/旁白卡本就通畅**（无需改三张表）。
+
+- **④ 音频阶段打通（承接断链修复）**——病灶：`generateAudio` 原实现 ①**入口要求先有卡**（`if (!draft) 请先选中一张音频草稿卡片`）——而设计期已按裁决不建卡 ⇒ 永远进不来；②读的是 `draft.prompt`，**完全不读组 desc** ⇒ 设计期成果根本不参与规划。
+  - **新口径**：以**音频组 desc** 为输入（`audioLayerDesc`，存量回落 `prompt`）；入口改为**组级**（`selectedAudioGroup`，未选中卡时取当前音频页签首组）；**组内无卡时自动建承接卡**承载规划结果（`addDraftLocalWith` 新入口，`addDraftLocal` 改为其空 preset 薄封装）；已有卡则写回该卡。
+  - 参数栏可达性：`ParamControls` 原先要求 `draft()` 非空才渲染 ⇒ 设计期音频组**没有卡就没有「生成音频规划」按钮**；现补无卡代理 draft（`audioProxyDraft`），选中音频页签即可规划。
+  - **接模型的位置已留好**：生成调用集中在 `canvasLlm({...})` 一处，用户接入真实音频模型时只需替换该调用，输入输出契约（组 desc → 承接卡）不变。
+
+- **回归测试**：`test_storyboard_tools.py` +`TestAudioLayerFieldContract`（6 条：desc 字段声明音频载体／字段提示写明两步落账／desc 在 group 白名单／**音频快照必须含 desc 与 audioType**／音频组 desc 建组落库 + patch 生效端到端／设计期音频组不携带卡）；新增 `GroupCard-audio-desc.test.tsx`（4 条**真实渲染**：有 desc 显示正文／仅 prompt 回落／desc 优先／皆空显示占位符）；`GroupCard-badge.test.tsx` +3 条字段映射防回潮（GroupCard 读 desc、board-edit 写 desc、generateAudio 读组 desc）。
+- **验证**：`acceptance.py --quick` **15/15 PASS**；前端全量 vitest **125 文件 / 1051 用例全绿**；后端全量 **2675 passed / 42 failed**（该 42 条为存量环境失败，无改动时一致）；`npm run build` 通过（首屏 380.43 kB / 上限 400 kB）。
+- **边界**：①**音频真实生成通道仍未接**（`generation_channel.py` 自述「当前版本无真实音频文件生成调用」）——本批只打通「组 desc → 规划 → 承接卡」链路，**真实音频文件产出待用户接入音频模型**；②徽标格式是否收窄为「计数」型（去掉 `：A→B→C` 叙述）**未动**——属 Skill 模板决策（冻结#16）与 2026-09-17「summary 是模型自由文本」裁决面，**待用户拍板**。
+
+
+
+- **背景**：用户 8888 截图红框标出分镜徽标整块内容（`含3个内切镜：双人苏醒→飘向舷窗→舷窗木星（约10s）`）并问「以前没有，今天怎么有的」。取证结论：**该形态不是新功能，而是注入污染下的采样漂移**，且污染源是本批同日发现的**确定性缺陷**。
+- **根因（确定性，与模型无关）**：`SECTION_TAG_STAGES["storyboard_designer"]` 是**一对多**映射（→ `storyboard_ke`/`storyboard_shot`/`storyboard_audio`），`split_skill_sections` 把**同一整段正文**分别写进三个 stage 键；而 `SkillEntry.section_for`（`registry.py:122`）逐键取出再 `"\n\n".join` ⇒ **同一段正文被注入 3 次**。
+  - 实测（AI-短剧一站式生成）：三章长度均为 **1784 字**，`tool_sections(skill,"storyboard_design")` 注入总量 **5356 字 = 3.0 倍**；D-24 章节合并前为 1784 字（ke/shot/audio 各 326/1216/238，正常）。
+  - **影响面 16/16 个 Skill 全部命中**（合并把各包的 `storyboard_designer` 统一收敛成单段一对多形态，重复从「个别」变成「全体」）。
+  - **与徽标形态的因果**：注入文本 3 倍重复 ⇒ 近生成端的指令密度被稀释/自我强化，模型在 `summary` 里自组织出「计数+箭头叙述」长句（该形态首现于 09-18，09-23 起在生产中稳定出现：09-23 15 次 / 09-24 13 次 / 09-25 10 次）。**这是采样漂移的放大器，不是唯一成因**（同一 Skill 同一剧本两跑 desc 形态仍可不同）。
+- **修复**：`section_for` 拼接时**对相同 body 去重**（一对多映射的复制语义是**检索**需要——三个 stage 键各自仍保留完整正文供单独取用；不是**注入**需要）。修复后 `storyboard_design` 注入 **1784 字**（= 修复前 1/3），三能力名与合并名取到同一段正文（存量委派名兼容面不破）。
+- **回归钉**：`test_subagent_stage.py::test_merged_stage_injection_deduplicates_one_to_many_chapters`（注入正文探针出现次数 == 1；一对多映射本身保留；三个能力名取到同一段正文）。
+- **验证**：`tests/unit/test_subagent_stage.py` 14 passed；受影响 6 文件 50 passed；后端全量 **2669 passed / 42 failed**（该 42 条为存量环境失败，`git stash` 反证一致）。
+- **边界**：本项只修**注入重复**；徽标是否要限定格式（如「计数+箭头叙述」是否收窄为 `含N个内切镜（约Xs）`）属**内容格式决策**，涉及 Skill 模板（冻结#16）与 2026-09-17「summary 是模型自由文本」裁决，**未动、待用户裁决**。
+
+### 2026-09-25 · 续：章节注入三重复制修复（8888「徽标内容今天才有」取证落地）
+
+- **背景**：用户 8888 截图红框标出分镜徽标整块内容（`含3个内切镜：双人苏醒→飘向舷窗→舷窗木星（约10s）`）并问「以前没有，今天怎么有的」。取证结论：**该形态不是新功能，而是注入污染下的采样漂移**，且污染源是本批同日发现的**确定性缺陷**。
+- **根因（确定性，与模型无关）**：`SECTION_TAG_STAGES["storyboard_designer"]` 是**一对多**映射（→ `storyboard_ke`/`storyboard_shot`/`storyboard_audio`），`split_skill_sections` 把**同一整段正文**分别写进三个 stage 键；而 `SkillEntry.section_for`（`registry.py:122`）逐键取出再 `"\n\n".join` ⇒ **同一段正文被注入 3 次**。
+  - 实测（AI-短剧一站式生成）：三章长度均为 **1784 字**，`tool_sections(skill,"storyboard_design")` 注入总量 **5356 字 = 3.0 倍**；D-24 章节合并前为 1784 字（ke/shot/audio 各 326/1216/238，正常）。
+  - **影响面 16/16 个 Skill 全部命中**（合并把各包的 `storyboard_designer` 统一收敛成单段一对多形态，重复从「个别」变成「全体」）。
+  - **与徽标形态的因果**：注入文本 3 倍重复 ⇒ 近生成端的指令密度被稀释/自我强化，模型在 `summary` 里自组织出「计数+箭头叙述」长句（该形态首现于 09-18，09-23 起在生产中稳定出现：09-23 15 次 / 09-24 13 次 / 09-25 10 次）。**这是采样漂移的放大器，不是唯一成因**（同一 Skill 同一剧本两跑 desc 形态仍可不同）。
+- **修复**：`section_for` 拼接时**对相同 body 去重**（一对多映射的复制语义是**检索**需要——三个 stage 键各自仍保留完整正文供单独取用；不是**注入**需要）。修复后 `storyboard_design` 注入 **1784 字**（= 修复前 1/3），三能力名与合并名取到同一段正文（存量委派名兼容面不破）。
+- **回归钉**：`test_subagent_stage.py::test_merged_stage_injection_deduplicates_one_to_many_chapters`（注入正文探针出现次数 == 1；一对多映射本身保留；三个能力名取到同一段正文）。
+- **验证**：`tests/unit/test_subagent_stage.py` 14 passed；受影响 6 文件 50 passed；后端全量 **2669 passed / 42 failed**（该 42 条为存量环境失败，`git stash` 反证一致）。
+- **边界**：本项只修**注入重复**；徽标是否要限定格式（如「计数+箭头叙述」是否收窄为 `含N个内切镜（约Xs）`）属**内容格式决策**，涉及 Skill 模板（冻结#16）与 2026-09-17「summary 是模型自由文本」裁决，**未动、待用户裁决**。
+
+### 2026-09-25 · Skill 故事板三章合并回 `<storyboard_designer>` + planner 字段回写（D-24 故事板支清偿 / 冻结#16 部分翻案）
+- **起因**：用户比对 `data/skills/新-Skill/SKILL.md`（2026-09-09 新入仓、未经历 08-21 改写）发现其余 Skill 的 planner 箭头字段与章节形态都被改过，要求回到原版形态。**取证定位改写点** = `3579aa69`（2026-08-21，L-0821C「执行器名对齐」批），其父 `29bcbe19` 即仓内完整原版快照（15 个扁平 `data/skills/<名>.md`）；桌面 `flova参考` 只有 3 个 skill 文件，不全。
+- **用户裁决（2026-09-25，四条）**：① 冻结#16 放行，但**仅限故事板支**；② 素材分析步与故事板步的字段要指向本文档真实章节，**生成步骤不改**（媒体字段「后面有大计划」）；③ `document_write`（规格文档步）保留不改；④ 正文里的工具名「原版有就留、没有就删」——实测原版 planner 词表只有 media_generator / storyboard_designer / text_editor / video_assembler / resource_prepare_and_analyze / reply_to_user / write_the_prompt，故事板三件套与 read_uploaded_doc 原版均无。
+- **改动（14 个 Skill 包；`宣言式概念短片`/`新-Skill` 本就是合并形态，零改动）**：
+  - **章节合并**：`<storyboard_key_elements>`/`<storyboard_shots>`/`<storyboard_audio>` → 单个 `<storyboard_designer>`。实测三章全部相邻且区间内不夹其他 tag，故只删 4 行内层标签、首尾改名，三段正文与段间空行逐字保留（**独立对账**：合并段 == HEAD 版三段拼接；planner/故事板段之外零字节改动）。
+  - **planner 字段回写**：故事板步整组指代三件套 → `storyboard_designer`（14 处）、素材分析步 `read_uploaded_doc` → `script_analyze`（3 处）、登记绑定语义的单个内联工具名删除（20 处）、`多人对话访谈` 混合箭头 → `image_generate`（1 处）。
+  - 生成步骤内联的「提示词先经 `storyboard_patch_draft` 写入草稿」类 **28 处按裁决保留**。
+- **为什么代码零改动**：`SECTION_TAG_STAGES["storyboard_designer"]` 自 L-0821C 起就是**一对多**映射到三个故事板 stage，故合并后 `split_skill_sections` 仍把整节喂给三个 stage 键 ⇒ 能力面（available_tools）、音频闸（`storyboard_stage_complete` 靠 storyboard_audio 能力名）、委派面（2026-09-22 批6 早已合并为 `storyboard_design`）、前端 `SECTION_TAGS`/`SECTION_META`（早含「故事板设计」）全部不动。**注释口径同批改**（原写「仅作外来 Skill 兼容别名」，现为存量 16/16 主形态；不改会被下轮审计当漂移回改）。
+- **门禁与快照**：`skill_sections_golden.json` 按规程重采（差异 56 条全部落在 planning 与故事板三 stage，**越界 0**；`skill_catalog_golden.json` 因 frontmatter 未动无需重采，字节快照测试实证通过）；`check_stage_face_consistency` 章节 tag 由 14 收敛为 12 仍 100% 覆盖；`check_skill_anchor_lint` 16 包全绿。
+- **验证**：定点 pytest（skill_section_robustness / skill_section_mapping / read_skill_sections / stage_label_vocabulary / skill_registry_single_portal）**41 passed**；（subagent_delegation / subagent_stage / production_prune / subagent_context_composition / skill_stage_focus）**55 passed**；`run_eval_pipeline.py` 退出码 0；`acceptance.py --quick` **15/15 PASS**。**实测口径留给用户**：Skill 结构页故事板由 3 行变 1 行（关键元素/分镜/音频层 → 故事板设计），需目测确认。
+- **边界登记**：D-24 余支（媒体生成字段与 7 个 Skill 共 13 处章节错位、生成步内联 28 处）仍挂账；`document_write` 14 处按裁决保留；迁移脚本已归档 `scripts/archive/migrate_storyboard_sections_merge.py`（L-0821C 三拆脚本的**反向操作**，两者同处留档）。
+
+### 2026-09-24 · 分镜 desc 复述与转义修复（隐藏字段实验证伪 + 三项确定性兜底）
+- **现象**：用户目测故事板发现分镜 desc「更乱了」且多了【时长】/出场人物行。取证定位为**两个独立现象**，此前被混为一谈。
+- **根因一定案（复述行 = 采样波动，非任何提交引入）**：09-23 22:51 跑 desc 干净、09-24 00:37 跑尾部出现 `【引用】【时长】` 行。**零代码差异证据链**：① 服务启动时间线 `logs/agent-20260923.log` 仅 22:47:35 一条 `[Startup]`，其后**跨零点至 09-24 01:47 无第二次 Startup**（该日志含 325 条 `2026-09-24` 行）⇒ 两次跑**同进程**；② 同进程内 `PromptBuilder` 前缀缓存与 Skill 章节注入均为同一份字节。⇒ 复述行 = deepseek-v4-flash 逐次采样的「合规表态」波动，**不赌模型脾气**是本批的修法前提。
+- **根因二（隐藏字段实验证伪，本批最重）**：同日未提交的 `MODEL_HIDDEN_FIELDS` 实验（从下发 schema 摘掉 `duration`/`shot_refs`，意图「模型看不到就不会复述进正文」）**治错了因、且引入更重的新伤**：18:25 跑 13/13 镜 desc 全部塌成**字面 `\n` 文字墙**（真换行 0／字面 `\n` 124，历史三次跑 97/97 全为真换行），并叠加 13/13 的【时长】+出场人物行。**取证**：原始 SSE 抓包交叉验证为模型自身双反斜杠输出（非平台解析问题），同轮 keyElement 的 desc 无多行内容故不受影响。**机理**：模型失去两个结构化字段锚点后，JSON 转义纪律随之崩塌。⇒ **字段可见 = 值有正式的家**（该 ClassVar 机制已整体撤销，`manager._full_schemas` 恢复直接透传 `properties`/`required`）。
+- **四项修法（抗波动，不依赖模型自觉）**：
+  - **① 撤销隐藏字段实验**：删 `CreateGroupInput.MODEL_HIDDEN_FIELDS`（及因此闲置的 `ClassVar`/`Tuple` 导入）与 `_full_schemas` 过滤块；`_derive_duration_from_summary` 降为**仅兜底**（`duration` 缺失时才参与）。
+  - **② 负面契约文案**：`desc` 字段描述与工具描述明文写入「引用用 [元素名] 令牌内联正文、时长由 duration 字段承载、禁止在 desc 尾部追加【引用】/【时长】/出场人物等汇总行」；`skill_docs.py` 内嵌工作流行同步为 `shot(title+desc+summary+duration；…)`。**禁令句只落 `desc` 字段描述层**——工具类级 `description` 受 `check_tool_descriptions` 闸约束（说明层禁令是 3333 实证的反模式），故该层只留正面契约。
+  - **③ 写入侧无损归一（确定性封死文字墙）**：新增 `_unescape_desc`（字面 `\n`/`\t` → 真换行/真制表符，**只还原转义、不改不丢其他内容**），应用点两处 = 建组 `desc` 赋值前 + `patch_group` 的 desc 更新路径（防「改一次又退回文字墙」）。**令牌解析与引用合并同走归一后文本**（口径唯一：存的与解析的同一份）。
+  - **④ 回归钉五条**：schema 含 `duration`/`shot_refs`（防再隐藏）＋ `MODEL_HIDDEN_FIELDS` 全仓不得复活（含 manager 源码扫描）＋ `desc` 字段描述含负面契约句 ＋ `_unescape_desc` 幂等/不误伤 ＋ 建组与 patch 两条写口的字面 `\n` 归一。
+- **验证**：定点 `pytest tests/unit/test_storyboard_tools.py tests/unit/test_batch10_4444_root_fixes.py tests/unit/test_prompt_sections_subagent_prune.py` **94 passed**；`acceptance.py --quick` **15 项 GATES + tsc 全 PASS**。**实测口径留给用户**：新项目重跑故事板拆解目测 desc 真换行锚点卡、无尾部汇总行（对标 09-23 22:51 跑样式）。
+- **边界登记**：存量坏数据项目 `proj-1790245407-50d1b0b7`（13 镜文字墙）**本批不动**，由用户自行删除；**不新增拒收闸**（第四层闸机未经裁决）。上一批其余未提交改动（`protocol.md` 文案、`duration_only` 注入、`check_stage_face_consistency` 注释）与本批**不混批**、保持原样。
+
 ### 2026-09-23 · 批13 `todo_write` 收窄为子代理专属 + 补齐 dsh 漏抄校验 + 动作日志漏登记
 - **用户裁决（先取证后裁决）**：用户提出「todo 对本项目没什么用，反是上下文浪费——只要激活了 skill 按 skill 流程走，是不是就没必要这个工具」。查证后用户裁定：**主代理删、子代理保留、尾部注入删掉（回到原版）、重复校验补上**；`describe_fc_tool` 漏登记**独立照修**。
 - **取证结论（依据全部来自 dsh 原版源码/README，非推断）**——两平台**前提不同**，故同一工具在两边价值不同：
@@ -87,7 +221,7 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **验证**：`npm run build` 通过（首屏 380.23 kB < 400 kB 上限）；`acceptance.py --quick` 全绿；后端全量 `2618 passed / 42 failed`（42 条全为债务 D-22 既有红，与代码无关）。
 
 ### 2026-09-23 · 批10 4444 实跑复盘根治（4 项根因，用户裁决「全部修复，不能有尾巴、不能打补丁」）
-- **背景**：用户要求查看 4444 项目运行过程的问题。**4444 = 当时活跃项目 `proj-1790159421-bfd25491`**（跑于 09-23 18:30–18:49，5 轮实跑，非 09-21 那次同名事故）。取证报告 = `reports/4444-运行问题取证-20260923.md`（另附两份子查报告）。**本次实跑整体成功**：无 504、无子代理死亡、5 次委派全部收尾，09-21 批E/F/G 三条主修复**全部经实跑验证有效**（`data/sse_capture/` 子代理流式文件 45+ 个 vs 事故时 0；模型一次问 5 问、用户逐问答满；任务书无内部机制词）。查出的问题**均为既有批未覆盖项**，非翻案。
+- **背景**：用户要求查看 4444 项目运行过程的问题。**4444 = 当时活跃项目 `proj-1790159421-bfd25491`**（跑于 09-23 18:30–18:49，5 轮实跑，非 09-21 那次同名事故）。取证报告 = `reports/4444-运行问题取证-20260923.md`（另附两份子查报告；**该批取证报告正文已归档删除，本条结论即留痕**，下同不再单列）。**本次实跑整体成功**：无 504、无子代理死亡、5 次委派全部收尾，09-21 批E/F/G 三条主修复**全部经实跑验证有效**（`data/sse_capture/` 子代理流式文件 45+ 个 vs 事故时 0；模型一次问 5 问、用户逐问答满；任务书无内部机制词）。查出的问题**均为既有批未覆盖项**，非翻案。
 - **用户裁决**：「一次派活派了三件事」（Q5 三阶段合并 = 09-22 批O 批6）**先不动、留到后面讨论**；**其余暴露出来的问题全部修复，不能有尾巴、不能打补丁**。故本批一律取**根因修复**，不加补丁式兜底。
 - **P0-A（引用解析链整条事实性死亡，本批最重）**：`resolve_scene_refs`/`resolve_scene_audio_refs` 是**逐字精确比对**（`id != ref and title != ref`），而落盘组标题带容器前缀（`Element_程心`，写口 `normalize_group_title` 幂等补）、`sceneRefs` 存**裸名**（`程心`）⇒ **恒不命中**。实跑复算：4444 22 镜 90 条 sceneRefs → `image_refs` **0**、`audio_refs` **0**；改 canonical 键复算 → **90/90 命中**。**性质**：`dedup_scene_refs` docstring 本就写着「裸名与 `Element_` 前缀算同一引用（去重键 = `strip_type_prefix`）」——**写口用 canonical、读口用逐字**，是口径漂移；`core/prompt_refs.py` 批3 R3 **已修过同一失配**，判词逐字「平台在别处早就做了裸名归一，**唯独本引用链漏了，属口径漂移而非设计**」。→ 新增 `canonical_ref_key` / `build_ref_index` / `find_ref_group`（读口唯一入口），**四处**比对式全部收敛到它：`resolve_scene_refs`、`resolve_scene_audio_refs`、`web/routes/generate_image.py`、`web/multimodal_builder.py`（本次事故正是四处各抄一遍且全部逐字比对）。同批 `resolve_scene_audio_refs` 补 `audioType=='voice'` **优先**（非硬判，存量回落任意音源）。
 - **P0-B（下发 schema 悬空 `$ref`，新工具自伤）**：`tools/manager._full_schemas` 只取 `model_json_schema()` 的 `properties`+`required`，**丢弃 `$defs`**；pydantic 对嵌套 BaseModel（`List[TodoItem]`）产出 `items: {"$ref": "#/$defs/TodoItem"}` ⇒ 悬空，**条目字段名一个字节都到不了模型**。实跑取证：`todo_write` 被调 11 次、**失败 7 次**，模型原地盲猜键名 `title`→`text`→`label`→`item` **四种全错**（而状态值每次都填对中文，证明它读懂了描述、只是不知道键叫什么）。全量体检 25 个已注册工具：**只有 `todo_write` 中招**（本仓第一个、也是唯一一个用嵌套 BaseModel 描述条目结构的工具；其余工具子字段写在 description 文本里，天然免疫）。**为何测试全绿**：`test_todo_write.py` 全走 `invoke_tool(name, {...})` **直传 dict**，验的是 pydantic 执行链路（`$defs` 在 pydantic 内部完好），缺陷在**下发链路**——两条路各自都对，交汇处漏了。→ 新增 `inline_json_schema_refs`：`$ref` **就地内联展开**（不补发 `$defs`——本平台经中转调用，下游是否解析 `$ref` **不可控也不可观测**，内联后 schema 自足）；**fail-loud**（解析不到定义即抛错，不回落残缺 schema——悬空引用正是本次事故形态，静默降级等于把同一个坑再挖一遍）；空 `$defs` + 悬空 `$ref` **也走解析**（不能"看起来没事"就放过）。**同批封堵内联引入的新泄漏面**：pydantic 把**类 docstring** 映射成被引用模型的 `description`，内联首次会让它进入模型上下文（`TodoItem` docstring 写着「对齐 dsh」「pydantic extra=forbid」「:83-84 注释逐字」等**实现说明**）——故内联时摘掉被引用模型**根部**的 `description`/`title`，字段级 description（有意写给模型）原样保留。

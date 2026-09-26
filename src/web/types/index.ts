@@ -98,6 +98,11 @@ export interface Draft {
   audioModel?: string;
   /** 音频生成模式（独立于视频 mode） */
   audioMode?: string;
+  /** 音频卡的种类（后端 `storyboard_ops.AUDIO_TYPES` 同枚举）：
+   *  `voice` = 角色音色卡（Skill 明文的 key_element_audio，挂在角色组内）、
+   *  `bgm` = 背景音乐轨、`narration` = 旁白；另含 sfx/dialogue/foley。
+   *  2026-09-25 补：后端建组即写该字段，前端此前未建模（读取不到）。 */
+  audioType?: string;
   aspectRatio?: string;
   duration?: string;
   resolution?: string;
@@ -139,6 +144,12 @@ export interface AudioGroup {
   id: string;
   title: string;
   timeRange?: string;
+  /** 音频层设计描述（**唯一载体**，2026-09-25 用户裁决「写的地方和看的地方要对上」）：
+   *  模型建组写在 desc、前端展示/编辑也走 desc、模型快照同字段注入。
+   *  `prompt` 为历史第二事实源（前端旧写口），保留只读兼容，新写入一律走 desc。 */
+  desc?: string;
+  /** @deprecated 历史字段：前端旧写口曾把描述写进 prompt，与 desc 分裂成两份。
+   *  2026-09-25 起统一走 desc；此字段仅用于读取存量数据（回落显示）。 */
   prompt?: string;
   drafts: Draft[];
 }

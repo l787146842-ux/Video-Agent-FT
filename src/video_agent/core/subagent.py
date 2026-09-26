@@ -43,6 +43,9 @@ from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.skill_runtime.registry import (
     CAPABILITY_TOOL_STAGES, STAGE_LABELS,
 )
+# 音频种类枚举（AUDIO_TYPES）取故事板领域层单一事实源：core→state 无环
+# （fc_gates/fc_tool_runner/action_executor 同构先例），供装载期 fail-loud 校验。
+from src.video_agent.state import storyboard_ops as ops
 
 # 模型可见的子代理工具名（无 provider_kind，可在 fc_tool_runner 按名拦截，
 # 同 workflow_pause 一类控制流伪工具；不受 check_fc_tool_name_literals 约束）。
@@ -196,6 +199,30 @@ STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
     "storyboard_design": frozenset({"audio", "video"}),
 }
 
+# 阶段建卡**音频种类**白名单（2026-09-25 用户裁决，8888 取证，两条）：
+# ①「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」；
+# ②「设计阶段只规划音频，只在提示词撰写才建卡」（BGM/旁白卡归提示词撰写阶段）。
+#
+# 病灶：`STAGE_CARD_MEDIA` 只到 mediaType 粒度，`card_media_gate` 也只读
+# `infer_media_type(draft)` —— **完全不读 `audioType`**。于是本意只为
+# 「角色音色卡」开的口子，把 BGM 卡与旁白卡一并放行（8888 实测：故事板设计
+# 阶段建了 3 张 `audioType=bgm` 卡，`BGM-01 末日序曲` 等）。
+# 那**不是模型越权**——`_DRAFT_FIELDS_HINT` 把 bgm/narration 与 voice 并列，
+# 模型是照契约执行的；口径冲突在平台侧。
+#
+# 承接：BGM/旁白卡由 `write_media_prompt`（提示词撰写）阶段创建——该阶段
+# 未登记建卡限定（不受限），且工具集含 `storyboard_add_draft`，本就够用。
+#
+# 形态选择（与 `STAGE_CARD_MEDIA` 同为正向允许集，不合并成一张表）：
+# mediaType 与 audioType 是**两个正交维度**（见 2026-09-23 批11），
+# 合并会逼所有消费端改签名且让「只限音频种类」这类声明无处安放。
+# 本表只对 `mediaType=audio` 的卡生效；video 卡不受影响。
+#
+# 未登记的阶段/类目 → 该维度不受限（维持现状，与 STAGE_CARD_MEDIA 同款默认）。
+STAGE_CARD_AUDIO_TYPES: Dict[str, FrozenSet[str]] = {
+    "storyboard_design": frozenset({"voice"}),
+}
+
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
 # 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
 # （_STAGE_TOOLS），配置漂移在 import 期即报错，不带到运行时静默丢章节注入。
@@ -244,7 +271,8 @@ def _validate_stage_card_media() -> None:
 
     ①键必须是可委派阶段（拼错键 = 限定静默失效）；
     ②该阶段必须真的持有建卡工具（否则限定无的放矢）；
-    ③声明的 mediaType 必须是合法枚举（与 DraftRecord.media_type 同集）。
+    ③声明的 mediaType 必须是合法枚举（与 DraftRecord.media_type 同集）；
+    ④ `STAGE_CARD_AUDIO_TYPES` 同款三查（键/工具/枚举），枚举源 = ops.AUDIO_TYPES。
     """
     valid_media = frozenset({"image", "video", "audio"})
     for st, media in STAGE_CARD_MEDIA.items():
@@ -262,6 +290,30 @@ def _validate_stage_card_media() -> None:
             raise ValueError(
                 f"[subagent] STAGE_CARD_MEDIA 漂移：阶段 {st!r} 声明了非法 "
                 f"mediaType {sorted(bad)}（合法值 {sorted(valid_media)}，fail-loud）")
+    # ④ 音频种类白名单同款校验（2026-09-25）
+    valid_audio = frozenset(ops.AUDIO_TYPES)
+    for st, kinds in STAGE_CARD_AUDIO_TYPES.items():
+        if st not in PIPELINE_STAGE_KINDS:
+            raise ValueError(
+                f"[subagent] STAGE_CARD_AUDIO_TYPES 漂移：键 {st!r} 不是可委派阶段"
+                f"（拼错=限定静默失效，fail-loud）")
+        if not (_STAGE_TOOLS.get(st, frozenset())
+                & {"storyboard_add_draft", "storyboard_create_group"}):
+            raise ValueError(
+                f"[subagent] STAGE_CARD_AUDIO_TYPES 漂移：阶段 {st!r} 未持有建卡工具"
+                f"（限定无的放矢，fail-loud）")
+        bad = kinds - valid_audio
+        if bad:
+            raise ValueError(
+                f"[subagent] STAGE_CARD_AUDIO_TYPES 漂移：阶段 {st!r} 声明了非法 "
+                f"audioType {sorted(bad)}（合法值 {sorted(valid_audio)}，fail-loud）")
+        # 该阶段若同时限定了 mediaType，必须真的允许 audio，否则本表永不生效
+        media = STAGE_CARD_MEDIA.get(st)
+        if media is not None and "audio" not in media:
+            raise ValueError(
+                f"[subagent] STAGE_CARD_AUDIO_TYPES 漂移：阶段 {st!r} 限定了音频种类，"
+                f"但其 mediaType 白名单 {sorted(media)} 不含 audio（限定永不生效，"
+                f"fail-loud）")
 
 
 _validate_stage_card_media()
@@ -279,6 +331,16 @@ def stage_card_media(stage: str = "") -> FrozenSet[str]:
     模式）。空/未知阶段返回空集 ⇒ 不启用限定（通用委派与未登记阶段零变化）。
     """
     return STAGE_CARD_MEDIA.get(resolve_stage(stage), frozenset())
+
+
+def stage_card_audio_types(stage: str = "") -> FrozenSet[str]:
+    """阶段建卡**音频种类**白名单（空集 = 不受限，维持现状）。
+
+    消费端同 `stage_card_media`（`fc_gates.card_media_gate` 的第二维判定）。
+    语义：仅当卡片的 mediaType 判定为 audio 时生效；`{"voice"}` = 该阶段只能建
+    角色音色卡（Skill 明文的 key_element_audio），BGM/旁白卡由音频生成阶段承接。
+    """
+    return STAGE_CARD_AUDIO_TYPES.get(resolve_stage(stage), frozenset())
 
 
 def stage_display_label(stage: str = "") -> str:

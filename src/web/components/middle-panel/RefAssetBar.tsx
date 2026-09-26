@@ -9,7 +9,7 @@ import { FiImage, FiVideo, FiX, FiMusic, FiLayers, FiUpload } from 'solid-icons/
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { safeUrl } from '@/lib/utils';
-import { storyboardMediaMap } from '@/lib/prompt-mentions';
+import { storyboardMediaMap, mentionNamesIn } from '@/lib/prompt-mentions';
 import { uploadRefFile } from '@/lib/ref-upload';
 import {
   boundAssetTitle, refAssetType, refAssetName, videoThumb,
@@ -40,7 +40,11 @@ export function RefAssetBar(props: {
     onCleanup(() => document.removeEventListener('pointerdown', onDown));
   });
 
-  /** 右侧计数：参考栏素材 + 提示词中 @ 引用的故事板素材（URL 去重，按类型统计） */
+  /** 右侧计数：参考栏素材 + 提示词中 @ 引用的故事板素材（URL 去重，按类型统计）
+   *
+   * 2026-09-26：正则改走 `_MENTION_RE` 唯一入口——此处原为第三份手抄
+   * （`/[@＠]([^\s@＠]+)/g`，不剥方括号），`@[程心]` 会捕获出 `[程心]` 查表落空
+   * ⇒ 图示为 0，与提示词框内已渲染的图块自相矛盾。 */
   const refCounts = createMemo(() => {
     const counts: Record<'image' | 'video' | 'audio', number> = { image: 0, video: 0, audio: 0 };
     const seen = new Set<string>();
@@ -49,12 +53,10 @@ export function RefAssetBar(props: {
       seen.add(url);
     }
     const prompt = props.rec()?.draft.prompt || '';
-    if (prompt.includes('@') || prompt.includes('＠')) {
+    if (prompt.includes('@') || prompt.includes('＠') || prompt.includes('<<<')) {
       const map = storyboardMediaMap();
-      const re = /[@＠]([^\s@＠]+)/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(prompt))) {
-        const info = map[m[1]];
+      for (const [name] of mentionNamesIn(prompt)) {
+        const info = map[name];
         if (!info || seen.has(info.url)) continue;
         seen.add(info.url);
         counts[info.kind] += 1;

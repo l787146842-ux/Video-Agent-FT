@@ -18,7 +18,7 @@ from src.video_agent.state.models import (
     # 2026-09-23 批11（事故 4444/P1-5）：mediaType 缺省取值唯一推导入口
     infer_media_type,
 )
-from src.video_agent.state.storyboard_ops import strip_type_prefix
+from src.video_agent.state.storyboard_ops import element_name_variants
 
 # 引用记号匹配（两式同义，2026-09-07 外部标杆 记号兼容裁决）：
 # 1) 半角 @ 或全角 ＠ + 名称（平台原生，前端 PromptEditor 序列化产物）；
@@ -96,12 +96,12 @@ def build_storyboard_media_map(state: Dict[str, Any]) -> Dict[str, Dict[str, str
                     kind = {"imgUrl": "image", "videoUrl": "video", "audioUrl": "audio"}[field]
                     # 关键元素用分组标题命名（对齐前端 refAssetName）
                     if cat == CAT_KEY_ELEMENTS:
-                        title = g.get("title", "")
-                        put(title, url, kind)
-                        # R3：裸名别名（模型实际写法），与显示层/提及层同口径
-                        bare = strip_type_prefix(title)
-                        if bare != title:
-                            put(bare, url, kind)
+                        # 2026-09-26：形态集走 `element_name_variants` 唯一入口
+                        # （全称 + 剥前缀 + **括注主名**）。此前只登记前两式，
+                        # 模型在提示词里写主名（`<<<image_艾AA>>>`）时查表落空
+                        # ⇒ 引用静默降级为纯文字（与 desc 内联块同一处口径缺口）。
+                        for _name in element_name_variants(g.get("title", "")):
+                            put(_name, url, kind)
                     put(d.get("label", ""), url, kind)
                     fname = Path(str(url).split("?")[0].split("#")[0]).name
                     put(fname, url, kind)

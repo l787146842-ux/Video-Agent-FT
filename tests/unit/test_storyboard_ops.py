@@ -73,7 +73,7 @@ async def test_fc_patch_matches_ops_single_implementation(svc):
     # 另一草稿经唯一实现直写，同口径逐字段一致（标签已确认 → 重写同值不作废）
     peer = dict(draft)
     peer["label"], peer["tag"], peer["aspectRatio"] = "旧", "Agent", "16:9"
-    ops.patch_draft(peer, dict(patch))
+    ops.patch_draft(peer, dict(patch), svc.state_dict)
     assert fc_snapshot["label"] == peer["label"]
     assert fc_snapshot["tag"] == peer["tag"]
     assert fc_snapshot["aspectRatio"] == peer["aspectRatio"]

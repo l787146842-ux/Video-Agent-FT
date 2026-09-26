@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveRefTitle, descChipNames, renderDescToDOM, serializeDescDOM, syncShotRefsAfterEdit,
   stripTypePrefix, normalizeDisplayTitle, normalizeDisplayGroupTitle, canonicalGroupTitle,
+  elementAliasName, elementNameVariants,
 } from '@/lib/desc-ref-utils';
 
 const KES = [
@@ -43,8 +44,49 @@ describe('desc-ref-utils', () => {
     expect(names).toEqual(['Element_程心', 'Element_刀', '程心']);
   });
 
-  it('render/serialize roundtrip：分段保留、块还原纯名', () => {
+  // 2026-09-26（9999 项目三问）：组名**括注别名**归一
+  it('elementAliasName 取括注主名；无括注返回空；主名过短不产', () => {
+    expect(elementAliasName('Element_艾AA（AA）')).toBe('艾AA');
+    expect(elementAliasName('Element_曹彬（老年）')).toBe('曹彬');
+    expect(elementAliasName('Element_星环号球形舱（木星轨道）')).toBe('星环号球形舱');
+    expect(elementAliasName('Element_AA(AA)')).toBe('AA');   // 半角同待遇
+    expect(elementAliasName('Element_程心')).toBe('');        // 无括注
+    expect(elementAliasName('Element_A（别名）')).toBe('');   // 主名单字剔除
+  });
+
+  it('elementNameVariants 产全称 + 剥前缀 + 括注主名三形态', () => {
+    expect(elementNameVariants('Element_艾AA（AA）'))
+      .toEqual(['Element_艾AA（AA）', '艾AA（AA）', '艾AA']);
+    expect(elementNameVariants('Element_程心')).toEqual(['Element_程心', '程心']);
+  });
+
+  it('descChipNames 收录括注主名 —— 正文写「艾AA」才能渲染出内联块', () => {
+    const kes = [
+      { id: 'k1', title: 'Element_艾AA（AA）', drafts: [{ imgUrl: '/a/aa.png' }] },
+      { id: 'k2', title: 'Element_曹彬（老年）', drafts: [] },
+    ];
+    const names = descChipNames({ shotRefs: [] }, kes);
+    // 修复前只有「全称 + 剥前缀（艾AA（AA）/曹彬（老年））」⇒ 正文主名匹配不上
+    expect(names).toContain('艾AA');
+    expect(names).toContain('曹彬');
+    // 全部形态都在（含剥前缀形态，存量写法不回归）
+    expect(names).toContain('艾AA（AA）');
+    expect(names).toContain('曹彬（老年）');
+  });
+
+  it('renderDescToDOM 把正文里的括注主名渲染为图块（问题1 现场复现）', () => {
+    const kes = [{ id: 'k1', title: 'Element_艾AA（AA）', drafts: [{ imgUrl: '/a/aa.png' }] }];
     const el = document.createElement('div');
+    const text = '人物当前状态：艾AA（近景偏右，抓扶手上沿稳住身形）。';
+    renderDescToDOM(el, text, descChipNames({ shotRefs: [] }, kes), kes, false);
+    const chips = [...el.querySelectorAll('.mention-chip')] as HTMLElement[];
+    expect(chips.map((c) => c.dataset.name)).toEqual(['艾AA']);
+    expect(chips[0].querySelector('img')).not.toBeNull();
+    // 序列化仍还原为纯名
+    expect(serializeDescDOM(el)).toBe(text);
+  });
+
+  it('render/serialize roundtrip：分段保留、块还原纯名', () => {    const el = document.createElement('div');
     const text = '【空间锚点】程心 在舱内。\n\n【台词】AA：为什么？';
     renderDescToDOM(el, text, descChipNames({ shotRefs: ['ke-1', 'ke-2'] }, KES), KES, false);
     const chips = [...el.querySelectorAll('.mention-chip')] as HTMLElement[];

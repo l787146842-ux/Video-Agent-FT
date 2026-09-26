@@ -13,9 +13,9 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 
 **全流程阶段与依赖关系**
 
-1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型（read_uploaded_doc）
+1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型（script_analyze）
 2. 将全局制作参数写入 制片规格.md（画幅比例、目标时长、影像风格基调、输出语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**
-3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_create_group / storyboard_add_draft / storyboard_patch_draft**
+3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_designer**
 4. 生成所有 key_element 设定图（角色三视图、场景四视图）：提示词先经 storyboard_patch_draft 写入草稿 → **image_generate**
 5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考：提示词先经 storyboard_patch_draft 写入草稿 → **image_generate**
 6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video：视频提示词先经 storyboard_patch_draft 写入草稿，再调用 **generate_video**
@@ -57,16 +57,14 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 - **剧情结构：** 幕次划分（开篇/发展/转折/高潮/结尾）及各幕大致镜头数量估算
 </script_analyze>
 
-<storyboard_key_elements>
+<storyboard_designer>
 **设计 key_element**
 
 - 登记所有**主要角色**（element character）、**关键场景**（element scene）、关键道具（prop element）作为 key_element。
 - 角色描述须包含：年龄/性别/外貌/发型/服装/标志性细节；若角色在剧情中有多套造型或不同时间线形象，在描述中分别列出（如"造型A：…；造型B：…"）。
 - 场景描述须包含：空间结构、固定参照物（不可移动的视觉地标）、材质/光源/色温/氛围词。这些描述是后续每个 shot 空间连续性的锚点。
 - 角色的声音特征（音色/语气/情绪基调）单独登记为 key_element_audio，与角色元素绑定，用于视频生成时的音频条件。
-</storyboard_key_elements>
 
-<storyboard_shots>
 **拆解 shot 列表**
 
 - 每个 shot = 一次生成任务，时长遵循全局设置中的时长参数（超出上限必须拆分）。
@@ -109,15 +107,13 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 - \[ \] **音效/台词位置**：是否紧贴对应动作，无错位？
 
 如有问题，先与用户确认是否修改，再继续下一步（静默修改原稿排除在外）。
-</storyboard_shots>
 
-<storyboard_audio>
 **设计 audio_layer**
 
 - **BGM**：全剧至少规划一条背景音乐轨。若剧情有明显情绪转折点（如 3 分钟以上长片），可分段设计多条 BGM（各有独立 audio_layer ID 和覆盖镜头范围）。
 - **旁白**：如有画外音/旁白，以 narration 类型登记，注明音色特征、语气、具体台词文本及覆盖的镜头范围。
 - 视频生成阶段视频本身**不内嵌 BGM**（在 audio_layer 独立生成后于组装阶段混音）；台词/音效可在视频生成时内嵌。
-</storyboard_audio>
+</storyboard_designer>
 
 <image_generate>
 **key_element 设定图生成**
@@ -147,8 +143,8 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 <audio_generate>
 **音频生成**
 
-- BGM（music 类型）：由系统音频生成通道（text_to_instrumental 纯音乐通道）按草稿配置产出，模型与分辨率按全局设置的默认渠道填写（注意：提示词中知名音乐人名字排除在外）。
-- 旁白（narration 类型）：由系统音频生成通道（text_to_narration 旁白通道）按草稿配置产出，模型与分辨率按全局设置的默认渠道填写。
+- BGM（music 类型）：由系统音频生成通道（text_to_instrumental 纯音乐通道）产出，模型与分辨率按全局设置的默认渠道填写（注意：提示词中知名音乐人名字排除在外）。
+- 旁白（narration 类型）：由系统音频生成通道（text_to_narration 旁白通道）产出，模型与分辨率按全局设置的默认渠道填写。
 </audio_generate>
 
 <write_media_prompt>

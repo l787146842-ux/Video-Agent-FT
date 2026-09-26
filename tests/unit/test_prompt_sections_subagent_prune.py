@@ -61,6 +61,28 @@ class TestSubagentPruneDepth1:
         assert pb_module._sec_global_settings(builder, ctx) == ""
 
 
+class TestSubagentGlobalSettingsStageGated:
+    """Q2(a)：子代理仅故事板/提示词阶段注入「仅分镜最大时长」，其余阶段仍不注入。"""
+
+    def test_storyboard_stage_injects_duration_only(self):
+        builder = _make_builder()
+        ctx = _ctx(depth=1, subagent_stage="storyboard_design")
+        assert pb_module._sec_global_settings(builder, ctx) != ""
+        builder.build_global_settings_note.assert_called_once_with(duration_only=True)
+
+    def test_write_media_prompt_stage_injects(self):
+        builder = _make_builder()
+        ctx = _ctx(depth=1, subagent_stage="write_media_prompt")
+        assert pb_module._sec_global_settings(builder, ctx) != ""
+        builder.build_global_settings_note.assert_called_once_with(duration_only=True)
+
+    def test_other_stage_still_pruned(self):
+        builder = _make_builder()
+        ctx = _ctx(depth=1, subagent_stage="script_analyze")
+        assert pb_module._sec_global_settings(builder, ctx) == ""
+        builder.build_global_settings_note.assert_not_called()
+
+
 # ---------- subagent_depth=0 正常注入 ----------
 
 class TestSubagentPruneDepth0:

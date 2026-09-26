@@ -49,7 +49,7 @@ def _seed_ke_draft(svc, tag="Agent", prompt="白发老者站在冥王星冰原�
 def test_patch_prompt_invalidates_confirmation():
     """重写即作废：已确认草稿的提示词被重写后 tag 重置为 Agent"""
     draft = {"id": "d1", "tag": "已确认", "prompt": "旧提示词"}
-    changed, dropped = ops.patch_draft(draft, {"prompt": "新提示词内容"})
+    changed, dropped = ops.patch_draft(draft, {"prompt": "新提示词内容"}, {})
     assert changed is True and dropped == []
     assert draft["tag"] == "Agent"
 
@@ -57,16 +57,16 @@ def test_patch_prompt_invalidates_confirmation():
 def test_patch_other_fields_keeps_confirmation():
     """非提示词字段修改不作废确认；同值重写也不作废"""
     draft = {"id": "d1", "tag": "已确认", "prompt": "提示词"}
-    ops.patch_draft(draft, {"label": "新标签"})
+    ops.patch_draft(draft, {"label": "新标签"}, {})
     assert draft["tag"] == "已确认"
-    ops.patch_draft(draft, {"prompt": "提示词"})  # 同值
+    ops.patch_draft(draft, {"prompt": "提示词"}, {})  # 同值
     assert draft["tag"] == "已确认"
 
 
 def test_confirm_draft_patch_keeps_tag():
     """patch 同时带 tag 时以 patch 为准（confirm_draft 路径不被误重置）"""
     draft = {"id": "d1", "tag": "Agent", "prompt": "提示词"}
-    ops.patch_draft(draft, {"tag": "已确认"})
+    ops.patch_draft(draft, {"tag": "已确认"}, {})
     assert draft["tag"] == "已确认"
 
 
@@ -88,7 +88,8 @@ def test_rewritten_draft_not_promoted(svc):
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
     # 确认后再次重写 → 作废，需重新确认
     ops.patch_draft(svc.state_dict["keyElements"][0]["drafts"][0],
-                    {"prompt": "艾 AA 短发干练，深蓝色轻型宇航服，顶侧冷白主光，坚毅神情。"})
+                    {"prompt": "艾 AA 短发干练，深蓝色轻型宇航服，顶侧冷白主光，坚毅神情。"},
+                    svc.state_dict)
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "Agent"
 
 

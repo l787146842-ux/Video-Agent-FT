@@ -7,6 +7,7 @@ import { reorderGroups } from '@/api/storyboard';
 import { checkpointHistory } from '@/stores/history';
 import { showContextMenu } from '@/components/shared/ContextMenu';
 import { confirmDialog } from '@/components/shared/ConfirmDialog';
+import { showToast } from '@/stores/toast';
 import { BatchGenBar } from './BatchGenBar';
 import { GroupCard } from './GroupCard';
 import type { AnyGroup, DraftType, SubTab } from '@/types';
@@ -109,7 +110,11 @@ export function StoryboardView() {
     const tick = state.locateTick;
     if (!tick) return;
     // 等 subTab 切换后的重渲染完成，再查找目标 DOM
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+    // 2026-09-25 修（跳转「毫无反应」根因）：DOUBLE_RETRY 帧内查不到目标时**不再
+    // 静默 return**（旧实现 `if (!target) return;` 无任何反馈，用户看到点了没反应）；
+    // 改为短重试一轮（DOM 尚未渲染完是常态），仍失败则如实提示。
+    let tries = 0;
+    const locate = () => {
       // 优先按分组定位（分镜 shotRefs 跳转：目标元素没有草稿卡时也能看到）
       const gid = state.locateGroupId;
       let target: HTMLElement | null = null;
@@ -120,14 +125,23 @@ export function StoryboardView() {
       if (!target) {
         target = containerRef?.querySelector('.draft-card.active') as HTMLElement | null;
       }
-      if (!target) return;
+      if (!target) {
+        if (tries++ < 3) {
+          requestAnimationFrame(() => requestAnimationFrame(locate));
+          return;
+        }
+        // 失败可见（原先静默）：左栏收起或未挂载在故事板页时命中此支
+        showToast('已在故事板定位，请展开左侧面板查看', 'info');
+        return;
+      }
       const el = target;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.classList.remove('locate-flash');
       void el.offsetWidth;
       el.classList.add('locate-flash');
       setTimeout(() => el.classList.remove('locate-flash'), 1500);
-    }));
+    };
+    requestAnimationFrame(() => requestAnimationFrame(locate));
   });
 
   return (

@@ -25,9 +25,15 @@ vi.mock('../RefAssetPickerModal', () => ({
     <>{p.open ? (pickRef.onPick = p.onPick) && null : null}</>
   ),
 }));
-vi.mock('@/lib/prompt-mentions', () => ({
-  storyboardMediaMap: () => ({ '月球': { url: '/assets/moon.png', kind: 'image' } }),
-}));
+vi.mock('@/lib/prompt-mentions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/prompt-mentions')>();
+  return {
+    // 只桩掉媒体映射（画布素材面），`mentionNamesIn` 用**真实现**——
+    // 本次修复的正是「计数与提示词框同口径」，桩掉它就等于测不到。
+    ...actual,
+    storyboardMediaMap: () => ({ '月球': { url: '/assets/moon.png', kind: 'image' } }),
+  };
+});
 vi.mock('@/api/upload', () => ({
   uploadFiles: async (_files: File[]) => [{ name: 'up.png', kind: 'image', url: '/assets/up.png' }],
 }));
@@ -174,6 +180,18 @@ describe('参考素材栏添加入口不受数量限制（台账 #16）', () => 
     const rec = seedShotDraft(['/assets/moon.png'], '月光下 @月球 特写');
     const { container } = render(() => (
       <RefAssetBar rec={() => rec} refAssets={() => ['/assets/moon.png']} maxRefs={() => Infinity} />
+    ));
+    const badge = container.querySelector('.ref-count-badge') as HTMLElement;
+    expect(badge.title).toContain('已加载参考素材 1 个');
+  });
+
+  it('计数容 `@[名称]` 写法（剥方括号，与提示词框内图块同口径）', () => {
+    // 参考栏空 + 提示词 @[月球] → 应计 1。
+    // 2026-09-26 前此处手抄正则不剥方括号 ⇒ 捕获 `[月球]` 查表落空、计数恒 0，
+    // 与已经渲染出图块的提示词框自相矛盾（用户所报「栏里有、图块没有」的观感来源之一）。
+    const rec = seedShotDraft([], '参考 @[月球] 的构图');
+    const { container } = render(() => (
+      <RefAssetBar rec={() => rec} refAssets={() => []} maxRefs={() => Infinity} />
     ));
     const badge = container.querySelector('.ref-count-badge') as HTMLElement;
     expect(badge.title).toContain('已加载参考素材 1 个');

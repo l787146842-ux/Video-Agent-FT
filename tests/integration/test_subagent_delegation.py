@@ -330,9 +330,13 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
             "group_type": "keyElement", "title": "程心",
             "desc": "女主，东方年轻女性，约27岁，温婉而坚毅。"}},
         # 3) 子：建音色卡（该阶段允许的卡型）→ 应放行
+        #    2026-09-25（用户裁决）：本阶段只建**角色音色卡**，判定读 `audioType`，
+        #    故夹具须声明 `audioType=voice`（= Skill 明文的 key_element_audio）；
+        #    此前夹具不填该字段，仅因旧闸机不读 audioType 而侥幸通过。
         {"tool": "storyboard_add_draft", "args": {
             "group_id": "current", "group_type": "keyElement",
             "draft": {"label": "Audio_程心", "mediaType": "audio",
+                      "audioType": "voice",
                       "tag": "key_element_audio",
                       "timbre": "女中音，温润略带沙哑，语速舒缓",
                       "desc": "声音特征：女中音，音色温润略带沙哑"}}},

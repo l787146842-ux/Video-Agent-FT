@@ -106,9 +106,11 @@ export const boardEditActions = {
         if (patch.desc !== undefined) {
           // shot 分镜正文唯一载体 = desc（roughDesc 双通道写口 2026-09-15 退役，
           // 与后端建组入参/patch 白名单一致，ShotDescEditor 编辑的正是 desc）；
-          // keyElement 元素设定同写 desc；audio 走 prompt
-          if (type === 'audio') updated.prompt = patch.desc;
-          else updated.desc = patch.desc;
+          // keyElement 元素设定同写 desc。
+          // 2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
+          // 音频此前**写 prompt**（前端独有的第二事实源），而模型建组写 desc、
+          // 快照/展示也读 desc ⇒ 同一份描述分裂两处。现三类目一律写 desc。
+          updated.desc = patch.desc;
         }
         if (patch.timeRange !== undefined) updated.timeRange = patch.timeRange;
         return updated as unknown as AnyGroup;
@@ -119,20 +121,32 @@ export const boardEditActions = {
 
   /** 手动新建草稿卡片（+ 按钮） */
   addDraftLocal(type: DraftType, groupId: string) {
+    this.addDraftLocalWith(type, groupId, null);
+  },
+
+  /** 新建草稿卡片（可指定初始字段）。
+   *
+   * 2026-09-25（用户裁决「设计阶段只规划音频，只在提示词撰写才建卡」）：
+   * 音频生成阶段需要「按音频组 desc 规划 → 结果落进承接卡」的入口，而设计阶段
+   * 已不建卡 ⇒ 没有现成卡可写。本入口供该链路自动建承接卡（preset 非空时
+   * 以 preset 为准，缺省字段沿用各类型的默认值）。 */
+  addDraftLocalWith(type: DraftType, groupId: string, preset: Partial<Draft> | null) {
     const field = fieldForType(type);
     const newId = uid('draft');
     addLocalAddedId(newId); // D2：未落盘前不被快照冲掉
-    const draft: Draft =
+    const base: Draft =
       type === 'keyElement'
         ? { id: newId, label: '自定义草稿', tag: '手动', mediaType: 'image', imgUrl: '', prompt: '', model: '', aspectRatio: '16:9' }
         : type === 'shot'
           ? { id: newId, label: '自定义分镜', tag: '手动', mediaType: 'video', videoUrl: '', prompt: '', mode: '图生视频', model: '' }
           : { id: newId, label: '自定义音频', tag: '手动', mediaType: 'audio', audioUrl: '', prompt: '' };
+    const draft: Draft = preset ? { ...base, ...preset, id: newId } : base;
     setState(field, (prev: AnyGroup[]) =>
       prev.map((g) => (g.id === groupId ? { ...g, drafts: [...(g.drafts || []), draft] } : g)),
     );
     uiActions.selectDraft(newId, type);
     persistBoard();
+    return newId;
   },
 
   /** 删除草稿（右键菜单）；keepThread：非破坏移动（移入素材池，可还原）

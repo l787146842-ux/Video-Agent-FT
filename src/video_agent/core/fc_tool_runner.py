@@ -221,6 +221,9 @@ class FCToolRunner:
         # 阶段建卡媒体类型白名单（2026-09-21 批4）：由 planner 轮始按当前委派阶段
         # 下发（同 turn_excluded 模式）；空集 = 不启用限定。stage_label 供拒收文案。
         self.stage_card_media: frozenset = frozenset()
+        # 阶段建卡**音频种类**白名单（2026-09-25 用户裁决）：同款下发模式，
+        # 仅当 mediaType 判定为 audio 时生效；空集 = 该维度不受限。
+        self.stage_card_audio_types: frozenset = frozenset()
         self.stage_label: str = ""
         # K6 批（2026-09-16 对齐 dsh structured.ts:109-111）：structured_output
         # 打卡终局 guard（轮内）：打卡成功后本轮拒收任何后续工具调用
@@ -258,6 +261,7 @@ class FCToolRunner:
             # 阶段建卡媒体类型限定（2026-09-21 批4）：非 __init__ 构造的测试桩
             # （object.__new__）缺属性时回落空集 = 不启用限定（不误伤存量测试）
             stage_card_media=getattr(self, "stage_card_media", frozenset()),
+            stage_card_audio_types=getattr(self, "stage_card_audio_types", frozenset()),
             stage_label=getattr(self, "stage_label", ""),
         )
 

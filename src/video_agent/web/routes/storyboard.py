@@ -10,6 +10,7 @@ import time
 import random
 
 from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import build_draft_dict
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
@@ -73,7 +74,11 @@ async def add_draft(group_id: str, body: DraftCreate):
     for category in groups.values():
         for group in category:
             if group["id"] == group_id:
-                draft = build_draft_dict(body.model_dump())
+                payload = body.model_dump()
+                # refAssets 归一：与工具轨同一入口（见 update_draft 注释）
+                payload["refAssets"] = ops.normalize_ref_assets(
+                    svc.state_dict, payload.get("refAssets"))
+                draft = build_draft_dict(payload)
                 group.setdefault("drafts", []).append(draft)
                 await svc.save_async()
                 return {"ok": True, "draft_id": draft["id"]}
@@ -123,6 +128,11 @@ async def update_draft(draft_id: str, body: DraftPatch):
             f"Draft {draft_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
         )
     _cat, _group, draft = found
+    # refAssets 归一（2026-09-26）：用户手编路径同样只落媒体 URL——
+    # 前端上传/选画布给的是 URL（归一为幂等），而模型经 REST 回写草稿 id
+    # 时须与工具轨同一口径（单一事实源 = ops.normalize_ref_assets，G4 全路径覆盖）。
+    if "refAssets" in patch:
+        patch["refAssets"] = ops.normalize_ref_assets(svc.state_dict, patch["refAssets"])
     draft.update(patch)
     await svc.save_async()
     return {"ok": True}

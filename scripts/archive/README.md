@@ -19,6 +19,7 @@
 |---|---|
 | migrate_manifests_to_sidecar.py | B0 批：把 Skill 文档内嵌 manifest 数据等价迁移为 sidecar 声明（registry 双读期收敛用） |
 | migrate_skill_executor_names.py | L-0821C 用户裁决批：skill 文档虚构执行器名一律替换为本项目真实执行器/工具名（章节按标题边界拆分，sidecar flow.steps 同步镜像） |
+| migrate_storyboard_sections_merge.py | D-24 故事板支清偿批（2026-09-25 归档）：上一条的**反向操作**——14 个 Skill 的故事板三拆章节合并回 `<storyboard_designer>`（正文逐字不改）+ planner 内素材分析步/故事板步字段回写与登记类内联删工具名；dry-run 默认、--apply 落盘，已执行完毕（skill_sections_golden 重采兜底） |
 | migrate_skill_manifests.py | S1 批：为存量 Skill 补写 skill_manifest 配置块并删除 pause_rules/gate_rules 块 |
 | migrate_spec_model_params.py | B7 批：规格文档中硬编码的生成模型参数迁移为引用全局设置（dry-run/--apply 两档）+ Skill 写死参数扫描报告 |
 | add_spec_gate.py | S1 批：规格前置闸从 Skill manifest 迁移为 sidecar flow.spec_gate 声明 |
@@ -30,3 +31,10 @@
 | migrate_manifests_to_frontmatter.py | 任务#5：16 个外置 JSON sidecar 声明迁入 Skill 文档头部 YAML frontmatter（flow.steps/step_stages/dependencies 三键废除不迁；已执行完毕，data/skills_manifests/ 随迁删除） |
 | migrate_manifests_v3.py | 任务#34 B1：manifest v2→v3 幂等迁移（schema_version/requires_inputs/pause_points 只加不删）；默认目录 data/skills_manifests 已随任务#5 frontmatter 合一删除，仅 --dir 演练可用（test_sidecar_schema_v3 兜底） |
 | migrate_zombie_step_keys.py | 三维审查修复收尾批：清除 Skill frontmatter flow 下步骤号僵尸键（stage_executors/step_done_conditions/step_short_titles）存量（dry-run 默认，--apply 真删）；已执行完毕（test_zombie_step_keys 锁源同值+幂等兜底，2026-08-25 归档） |
+| migrate_ref_assets_to_urls.py | 9999 三问批（2026-09-26 归档）：把草稿 `refAssets` 里的**草稿 id** 归一到媒体 URL（实测 79 条全是 id 形态）；**未执行**（用户裁决「只修代码，存量不管」），apply 前须停服务 |
+| migrate_9999_sheet_refs.py | 9999 三问批（2026-09-26 归档）：给 11 张「分镜表格图」卡按 `shotRefs` 补规范引用记号（`<<<image_名称>>>`）+ 参考图；**未执行**（同上裁决），dry-run 实测 11/11 全解析；幂等（已含记号的卡自动跳过） |
+
+> **未执行件例外（2026-09-26）**：末两行是本目录**唯一**「已归档但未执行」的脚本
+> （上表其余各行均按设立口径「迁移目标已在各自批次内执行完毕」）。
+> 两者**不在 acceptance/CI 链路**、不被 pre-commit 调用；成因与清偿条件登记于
+> `docs/未清偿债务清单.md` D-25，到期口径同上（归档日 + 两季度，届时随 D-25 一并裁决）。

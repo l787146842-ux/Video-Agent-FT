@@ -140,7 +140,7 @@ class TestPermissiveSchemaTolerated:
 class TestPatchWhitelistDrop:
     def test_patch_draft_exposes_dropped(self):
         draft = {"id": "d1", "prompt": "旧"}
-        changed, dropped = ops.patch_draft(draft, {"prompt": "新", "negitive_prompt": "x"})
+        changed, dropped = ops.patch_draft(draft, {"prompt": "新", "negitive_prompt": "x"}, {})
         assert changed is True
         assert dropped == ["negitive_prompt"]
         assert draft["prompt"] == "新"

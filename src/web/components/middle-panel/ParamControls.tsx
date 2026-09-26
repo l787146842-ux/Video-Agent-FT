@@ -25,6 +25,30 @@ function providerKindFor(type: DraftType, genType: string): 'image' | 'video' | 
 export function ParamControls() {
   const rec = () => findDraftRecord(state.selectedDraftId, state.selectedType);
   const draft = () => rec()?.draft;
+
+  /** 音频组代理 draft（2026-09-25 用户裁决：设计阶段只规划音频、不建卡）。
+   *
+   *  设计期音频组只有 desc、没有卡，而参数栏原先要求 draft 非空 ⇒ 音频组的
+   *  「生成音频规划」按钮不可达。选中音频页签但该组无卡时，用一条**只读代理**
+   *  渲染参数栏（供应商/模式/音色等配置项需要有个承载对象）；真正的落账由
+   *  `generateAudio` 在生成时自动建承接卡完成。 */
+  const audioGroupFallback = () => {
+    if (state.selectedType !== 'audio') return undefined;
+    const groups = state.audioItems || [];
+    if (!groups.length) return undefined;
+    // 已选中某组内卡片时走正常路径（draft() 有值），此处只兜「该组无卡」
+    return groups[0];
+  };
+  const audioProxyDraft = (): Draft | undefined => {
+    const g = audioGroupFallback();
+    if (!g) return undefined;
+    const existing = (g.drafts || [])[0];
+    if (existing) return existing;
+    return {
+      id: `__audio_proxy__${g.id}`, label: String(g.title || '音频'),
+      tag: '', mediaType: 'audio', prompt: '',
+    } as Draft;
+  };
   /** 关键元素当前生成类型：genType 优先，缺省回退 mediaType */
   const genType = () => {
     const d = draft();
@@ -102,14 +126,22 @@ export function ParamControls() {
   });
 
   return (
-    <Show when={draft()}>
+    <Show when={draft() || audioGroupFallback()}>
       <div class="param-controls-bar">
         <Switch>
           <Match when={state.selectedType === 'shot'}>
             <VideoParams draft={draft()!} type="shot" />
           </Match>
           <Match when={state.selectedType === 'audio'}>
-            <AudioParams draft={draft()!} type="audio" />
+            {/* 2026-09-25（用户裁决「设计阶段只规划音频，只在提示词撰写才建卡」）：
+                设计期音频组**只有 desc 没有卡**，而参数栏原先要求 draft 非空才渲染
+                ⇒ 音频组的「生成音频规划」按钮不可达（承接断链的另一半）。
+                无卡时用一条只读代理 draft 渲染参数栏：供应商/模型等配置项写入代理，
+                点「生成音频规划」时由 generateAudio 自动建承接卡落账。 */}
+            <AudioParams
+              draft={draft() || audioProxyDraft()!}
+              type="audio"
+            />
           </Match>
           {/* 关键元素：按生成类型（genType）分发图片/视频/音频参数栏 */}
           <Match when={state.selectedType === 'keyElement' && genType() === 'video'}>

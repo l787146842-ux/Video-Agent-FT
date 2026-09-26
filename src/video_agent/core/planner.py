@@ -395,17 +395,27 @@ class Planner:
         return frozenset(excluded)
 
     def _apply_stage_card_media(self, context: "PlannerContext") -> None:
-        """按本轮委派阶段下发「建卡媒体类型限定」到 FC 执行器（2026-09-21 批4）。
+        """按本轮委派阶段下发「建卡限定」到 FC 执行器（2026-09-21 批4 / 09-25 扩展）。
 
         同 `turn_excluded` 模式：轮始一次、轮内冻结。范围只限**新建草稿卡**
         （add_draft / create_group 内联 draft），判定实现 = `fc_gates.card_media_gate`；
-        本方法只负责把「当前阶段 → 允许的 mediaType」送达执行器。
-        主代理轮/通用委派（无 stage）= 空集 ⇒ 不启用限定（零变化）。
+        本方法只负责把「当前阶段 → 允许的 mediaType / audioType」送达执行器。
+        两个维度正交（2026-09-23 批11 既已确立 mediaType/audioType 两维）：
+          - `stage_card_media`：卡的媒体类型（image/video/audio）；
+          - `stage_card_audio_types`：音频卡的**种类**（voice/bgm/narration…），
+            仅当媒体类型判定为 audio 时生效（2026-09-25 用户裁决：故事板设计阶段
+            只建角色音色卡）。
+        主代理轮/通用委派（无 stage）= 两维均空集 ⇒ 不启用限定（零变化）。
         """
         child_stage = subagent_mod.resolve_stage(
             getattr(context, "subagent_stage", "") or "")
         self._fc_runner.stage_card_media = (
             subagent_mod.stage_card_media(child_stage) if child_stage
+            else frozenset())
+        # 2026-09-25 用户裁决：故事板设计阶段只建角色音色卡（BGM/旁白卡由音频
+        # 生成阶段承接）。同一处下发，第二维（音频种类）与 mediaType 正交。
+        self._fc_runner.stage_card_audio_types = (
+            subagent_mod.stage_card_audio_types(child_stage) if child_stage
             else frozenset())
         self._fc_runner.stage_label = (
             STAGE_LABELS.get(child_stage, child_stage) if child_stage else "")

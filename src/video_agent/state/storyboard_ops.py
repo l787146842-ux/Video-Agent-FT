@@ -19,6 +19,7 @@ from src.video_agent.state.models import (
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
     build_draft_dict,
+    infer_media_type,
 )
 from src.video_agent.utils import gen_id
 
@@ -222,17 +223,86 @@ def canonical_ref_key(ref: Any) -> str:
     return strip_type_prefix(str(ref or "").strip())
 
 
+# ---------- 元素名括注别名（写口归一，2026-09-26） ----------
+# 病灶：模型把别名/关键特征写进组名的**括注**里（`艾AA（AA）`、`曹彬（老年）`、
+#    `星环号球形舱（木星轨道）`——模型建组入参原话如此，平台按
+#    `normalize_group_title`「名字原样保留」落库），而正文/引用里写的是
+#    **括注前的主名**（`艾AA`）。候选名此前只有「完整标题 + 剥容器前缀」两形态，
+#    逐字子串比对 ⇒ 恒不命中：desc 内联图块不渲染、裸名绑定落空、闸机漏检。
+#    无括注的组名（`程心`）一切正常——同一份代码，只在这一种命名形态上失配。
+# 口径：括注是**注释**（别名/年龄态/所在轨道），主名才是引用锚点；
+#    故为主名补登别名形态，与既有「最长优先防重叠」同向（主名最短、优先级最低）。
+
+# 括注起始符（半角 + 全角），取**首个**括注之前的部分为主名。
+_ALIAS_OPEN_RE = re.compile(r"[（(]")
+
+# 引用匹配的最小候选长度（与前端 descChipNames 的 ≥2 字符守卫同口径）：
+# 单字主名（如「A」）歧义过大，不产出别名形态。
+_MIN_REF_NAME_LEN = 2
+
+
+def element_alias_name(title: str) -> str:
+    """元素标题的**括注主名**（别名形态）：取首个 `（`/`(` 之前的部分。
+
+    返回空串 = **无括注**，或主名过短（< `_MIN_REF_NAME_LEN`）——
+    两种情况都**不产出**别名候选（无括注时主名 == 剥前缀名，已由第二形态覆盖；
+    单字主名歧义过大，宁缺毋滥）。
+    """
+    bare = strip_type_prefix(title)
+    parts = _ALIAS_OPEN_RE.split(bare, 1)
+    if len(parts) < 2:
+        return ""  # 无括注：不产别名（避免与「剥前缀」形态重复）
+    main = parts[0].strip()
+    return main if len(main) >= _MIN_REF_NAME_LEN else ""
+
+
+def element_name_variants(title: str) -> List[str]:
+    """元素标题的**全部引用形态**（引用匹配候选名的唯一入口，去重保序）。
+
+    形态（按长度降序由调用方负责，本函数只产全集）：
+      ① 完整标题（`Element_艾AA（AA）`）——存量落库形态 / 组 id 语义；
+      ② 剥容器前缀（`艾AA（AA）`）——模型提示词里的常见写法；
+      ③ 括注主名（`艾AA`）——模型正文里的实际写法（本次修复补齐的形态）。
+
+    消费方（**必须同引本函数**，各写一遍正是本次缺陷成因）：
+      `build_ref_index`（读口 O(1) 命中）、`scan_bare_name_mentions`（裸名提及）、
+      `fc_gates.structure_integrity_gate`（标题覆盖检查）、
+      前端 `desc-ref-utils.ts`（desc 内联图块 / 编辑同步，同契约镜像）。
+    """
+    variants: List[str] = []
+    full = str(title or "").strip()
+    if full:
+        variants.append(full)
+    bare = strip_type_prefix(full)
+    if bare and bare not in variants:
+        variants.append(bare)
+    alias = element_alias_name(full)
+    if alias and alias not in variants:
+        variants.append(alias)
+    return variants
+
+
 def build_ref_index(state: Dict[str, Any], cat_key: str) -> Dict[str, Dict[str, Any]]:
     """建「canonical 引用键 → 分组」索引（供引用解析 O(1) 命中）。
 
     同一 canonical 键出现多组时**保留先出现者**（与 `prompt_refs` 的
     「后写不覆盖先写」同向：关键元素标题优先）。
+
+    键集含**括注主名别名**（键序 = 完整标题 → 剥前缀 → 主名，
+    先出现者胜 = 长名优先）：否则模型传裸主名（`艾AA`）时
+    `canonical_ref_key` 产 `艾AA`、而索引里只有 `艾AA（AA）` ⇒ `find_ref_group`
+    返回 None，`resolve_shot_refs` 取不到概念图（生成时参考图静默落空）。
     """
     index: Dict[str, Dict[str, Any]] = {}
     for group in state.get(cat_key, []) or []:
         if not isinstance(group, dict):
             continue
-        for key in (canonical_ref_key(group.get("title")), str(group.get("id") or "").strip()):
+        keys = [canonical_ref_key(group.get("title"))]
+        alias = element_alias_name(group.get("title"))
+        if alias:
+            keys.append(alias)
+        keys.append(str(group.get("id") or "").strip())
+        for key in keys:
             if key and key not in index:
                 index[key] = group
     return index
@@ -391,13 +461,102 @@ def dropped_patch_fields(patch: Dict[str, Any], allowed: Tuple[str, ...]) -> Lis
     return sorted(set(patch or {}) - set(allowed))
 
 
-def patch_draft(draft: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, List[str]]:
+# ---------- refAssets 写口归一（2026-09-26） ----------
+# 病灶：`refAssets` 的契约是**媒体 URL 列表**（`models.DraftRefRecord.ref_assets`
+#   / 前端 `refAssetName`/`refAssetType`/`safeUrl` 全按 URL 消费），而模型的
+#   写入口径是**草稿身份**（它在状态快照里看得见的是 `drafts[].id`，看不见
+#   Ke 分组标题），于是照抄 `draft-1790359321-a010380d` 落库 —— 实测 79 条全为此形态。
+#   后果两处：①前端 `<img src="draft-…">` 被 `safeUrl` 拦成空串 ⇒ 图裂成 alt 文字；
+#   ②生成时该字符串被当 URL 塞进 `reference_images` ⇒ **参考图静默落空**（花钱生成白挂）。
+# 口径：写口把「能解析到本沙盒草稿的 id」归一为该草稿的媒体 URL；
+#   解析不到的（含用户手填的合法 URL、外部链接）**原样保留**——不静默丢弃，
+#   与「未知引用由既有回喂通道告知」同档（宁缺毋滥 + 不吞输入）。
+# 单一事实源：所有 refAssets 写入路径（建组附带 / 新增卡 / patch）**唯一入口 = 本函数**。
+
+def build_draft_media_index(state: Dict[str, Any]) -> Dict[str, str]:
+    """建「草稿 id → 媒体 URL」索引（覆盖全部故事板类别，供 refAssets 归一）。
+
+    只收录**已有媒体**的卡（无媒体卡由 `build_draft_id_set` 另行判定）。
+    """
+    index: Dict[str, str] = {}
+    for cat_key in ALL_CATEGORIES:
+        for group in state.get(cat_key, []) or []:
+            if not isinstance(group, dict):
+                continue
+            for d in (group.get("drafts") or []):
+                if not isinstance(d, dict):
+                    continue
+                did = str(d.get("id") or "").strip()
+                url = (str(d.get("imgUrl") or "").strip()
+                       or str(d.get("videoUrl") or "").strip()
+                       or str(d.get("audioUrl") or "").strip())
+                if did and url:
+                    index[did] = url
+    return index
+
+
+def build_draft_id_set(state: Dict[str, Any]) -> set:
+    """建「沙盒内全部草稿 id」集合（含尚无媒体者，供 refAssets 归一判定）。"""
+    ids: set = set()
+    for cat_key in ALL_CATEGORIES:
+        for group in state.get(cat_key, []) or []:
+            if not isinstance(group, dict):
+                continue
+            for d in (group.get("drafts") or []):
+                if isinstance(d, dict):
+                    did = str(d.get("id") or "").strip()
+                    if did:
+                        ids.add(did)
+    return ids
+
+
+def normalize_ref_assets(
+    state: Dict[str, Any], refs: Any,
+) -> List[str]:
+    """把 refAssets 归一到**媒体 URL**（写口唯一入口，去重保序留首）。
+
+    三条判定（按序）：
+      ① 条目是沙盒草稿 id 且该卡**已有媒体** ⇒ 落其 URL（本次修复的主路径）；
+      ② 条目是沙盒草稿 id 但该卡**尚无媒体**（图还没出）⇒ 丢弃该条
+         （挂空 URL 无意义；与「未命中即去记号留文字」同向，不留误导性占位）；
+      ③ 其余（合法 URL / 外部链接 / 未知字符串）⇒ **原样保留**，不吞输入
+         （用户手填的素材 URL 必须照常可用）。
+    """
+    if not refs:
+        return []
+    if isinstance(refs, str):
+        refs = [refs]
+    with_media = build_draft_media_index(state)
+    all_ids = build_draft_id_set(state)
+    out: List[str] = []
+    for raw in refs:
+        item = str(raw or "").strip()
+        if not item:
+            continue
+        if item in with_media:
+            value = with_media[item]
+        elif item in all_ids:
+            continue  # ② 卡在但还没图：不留空占位
+        else:
+            value = item  # ③ URL / 未知：原样保留
+        if value not in out:
+            out.append(value)
+    return out
+
+
+def patch_draft(
+    draft: Dict[str, Any], patch: Dict[str, Any], state: Dict[str, Any],
+) -> Tuple[bool, List[str]]:
     """按 ALLOWED_DRAFT_FIELDS 白名单就地更新 draft，返回 (是否有字段被修改, 被丢弃字段名列表)。
     被丢弃字段透出给调用方（T2 第一步「错误可见」），由调用方决定拒收/告警口径。
 
     确认状态闭环：提示词被重写（值变化且非空）时，「已确认」标记作废
     （tag 重置为 Agent）——用户提修改 → 模型重写 → 需重新经用户确认，
     避免旧确认被静默继承到新版本提示词。
+
+    `state` 为**必填**（2026-09-26）：refAssets 入参需经 `normalize_ref_assets`
+    解析草稿 id → 媒体 URL。写成必填而非可选，是为了让「漏传 = 归一失效」
+    在调用点即报错，而不是留下一条静默落到坏值的写路径（G4：覆盖全部调用路径）。
     """
     dropped = dropped_patch_fields(patch, ALLOWED_DRAFT_FIELDS)
     new_prompt = patch.get("prompt")
@@ -409,7 +568,10 @@ def patch_draft(draft: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, Lis
     changed = False
     for field in ALLOWED_DRAFT_FIELDS:
         if field in patch:
-            draft[field] = patch[field]
+            value = patch[field]
+            if field == "refAssets":
+                value = normalize_ref_assets(state, value)
+            draft[field] = value
             changed = True
     if prompt_changed and "tag" not in patch and draft.get("tag") == "已确认":
         draft["tag"] = "Agent"
@@ -422,7 +584,9 @@ def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, Lis
     changed = False
     for field in ALLOWED_GROUP_FIELDS:
         if field in patch:
-            # shotRefs 写口同口径 canonical 去重（与 create_group 三源合并一致）
+            # shotRefs 写口同口径 canonical 去重 + 归一为元素组全称
+            # （与 create_group 三源合并同引 canonicalize_shot_refs；调用方
+            # 需自带 state 时走 canonicalize_shot_refs(state, refs) 分支）
             group[field] = dedup_shot_refs(patch[field]) if field == "shotRefs" else patch[field]
             changed = True
     return changed, dropped
@@ -490,9 +654,18 @@ def new_group_id(cat_key: str) -> str:
     return gen_id(prefix)
 
 
-def append_draft(group: Dict[str, Any], draft_data: Dict[str, Any]) -> Dict[str, Any]:
-    """向指定 group 添加一个 draft，返回新建的 draft"""
-    draft = build_draft_dict(draft_data)
+def append_draft(
+    group: Dict[str, Any], draft_data: Dict[str, Any], state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """向指定 group 添加一个 draft，返回新建的 draft。
+
+    `state` 为**必填**（2026-09-26）：新建卡的 refAssets 同经
+    `normalize_ref_assets` 归一（模型建卡时写的是草稿 id，不是媒体 URL）。
+    """
+    payload = dict(draft_data or {})
+    if "refAssets" in payload:
+        payload["refAssets"] = normalize_ref_assets(state, payload.get("refAssets"))
+    draft = build_draft_dict(payload)
     group.setdefault("drafts", []).append(draft)
     return draft
 
@@ -562,6 +735,11 @@ def resolve_shot_refs(
     2026-09-23 批10（事故 4444/P0-A）：比对改走 `find_ref_group`。
     旧实现逐字比对 `id`/`title`，而落盘标题带前缀、shotRefs 存裸名 ⇒ 恒不命中
     （4444 实测 22 镜 image_refs = 0）。canonical 口径见 `canonical_ref_key`。
+
+    2026-09-26：取图加**种类判据**——原实现「组内首张有 imgUrl 的卡」隐式依赖
+    卡序（模型建组时设定图恰好在前），一旦组内先有别的图卡就会取错图；
+    现优先取**图像类**卡（`infer_media_type == image`，排除音色卡/视频卡），
+    同类内仍按原序取首张（不改变既有正确结果）。
     """
     refs: List[Dict[str, str]] = []
     if not group:
@@ -575,11 +753,18 @@ def resolve_shot_refs(
         ke_group = find_ref_group(state, ref_title)
         if ke_group is None:
             continue
-        for d in ke_group.get("drafts", []):
-            img = d.get("imgUrl") or ""
-            if img:
-                refs.append({"url": img, "role": "reference"})
-                break
+        candidates = [
+            d for d in (ke_group.get("drafts") or [])
+            if isinstance(d, dict) and (d.get("imgUrl") or "")
+        ]
+        # 图像类优先（音色卡 mediaType=audio 且无 imgUrl，本就不会入选；
+        # video 卡带 imgUrl 时才是真歧义——按种类排到后面）
+        pick = next(
+            (d for d in candidates if infer_media_type(d) == "image"),
+            candidates[0] if candidates else None,
+        )
+        if pick is not None:
+            refs.append({"url": str(pick.get("imgUrl")), "role": "reference"})
     return refs[:limit]
 
 
@@ -652,12 +837,18 @@ def scan_bare_name_mentions(
     desc: str, key_elements: List[Dict[str, Any]],
 ) -> List[str]:
     """K4 批（2026-09-16 对齐 flova）：裸名提及自动绑定——分镜正文里
-    提到元素名（原全称/归一裸名）即自动挂引用（提及即绑定）。
+    提到元素名（原全称/归一裸名/**括注主名**）即自动挂引用（提及即绑定）。
 
     镜像前端 desc-ref-utils.ts descChipNames 语义：候选源 = keyElements
-    全集（原全称 + 归一裸名两形态，Set 去重、≥2 字符守卫、最长优先防重叠）；
+    全集，形态由 `element_name_variants` **唯一入口**产出（原全称 + 归一裸名
+    + 括注主名，Set 去重、≥2 字符守卫、最长优先防重叠）；
     命中规则 = 候选名在 desc 子串出现；返回 = 命中的关键元素组标题
-    （shotRefs 存储口径，去重保序）。纯函数，不改状态。"""
+    （shotRefs 存储口径，去重保序）。纯函数，不改状态。
+
+    2026-09-26：候选形态改走 `element_name_variants`——此前只有「完整标题 +
+    剥容器前缀」两形态，模型把别名写进组名括注（`艾AA（AA）`）而正文写主名
+    （`艾AA`）时**恒不命中**且本函数无「未命中」概念 ⇒ 引用静默落空、零告警。
+    """
     text = str(desc or "")
     if not text:
         return []
@@ -669,9 +860,8 @@ def scan_bare_name_mentions(
         title = str(ke.get("title") or "").strip()
         if not title:
             continue
-        bare = strip_type_prefix(title)
-        for cand in (title, bare):
-            if len(cand) >= 2 and cand not in seen:
+        for cand in element_name_variants(title):
+            if len(cand) >= _MIN_REF_NAME_LEN and cand not in seen:
                 seen.add(cand)
                 candidates.append((cand, title))
     candidates.sort(key=lambda pair: len(pair[0]), reverse=True)
@@ -680,6 +870,41 @@ def scan_bare_name_mentions(
         if cand in text and title not in hits:
             hits.append(title)
     return hits
+
+
+def canonicalize_shot_refs(state: Dict[str, Any], refs: Any) -> List[str]:
+    """把引用归一到**元素组标题**（canonical 全称），canonical 去重保序留首。
+
+    2026-09-25 用户裁决：「不能传裸名，裸名只是 UI 视觉效果，本身必须是含前缀的」。
+    裸名（`程心`）与全称（`Element_程心`）此前是**两种落库形态**，导致同一条引用链
+    上「存的」与「比对的」口径分叉——全库 8888 项目 47 条引用里 43 条为裸名，
+    前端 chip 点击（逐字比对元素标题）91.5% 落空，表现为「有时跳有时不跳」。
+
+    纳入归一的三条路径（同引本函数，P1 单一入口）：
+      - 建组写口 `merge_shot_refs`（三源合并后）；
+      - 改分组写口 `patch_group` 的 shotRefs 分支；
+      - 前端点击读口（`desc-ref-utils.ts` 同契约镜像）。
+
+    命中元素组 → 落其真实 `title`；查无此元素 → **保留原值**（不静默丢弃：
+    未知引用由既有回喂通道告知，与「令牌匹配不到不拒收」同档）。纯函数。
+    """
+    index = build_ref_index(state, CAT_KEY_ELEMENTS)
+    out: List[str] = []
+    seen: set = set()
+    for ref in refs or []:
+        if not isinstance(ref, str) or not ref.strip():
+            continue
+        hit = index.get(canonical_ref_key(ref)) or index.get(ref.strip())
+        value = str(hit.get("title")) if hit is not None else ref
+        # 去重键必须取**归一后**的形态：`程心` / `Element_程心` / `ke-chengxin`
+        # 三种写法指向同一元素时须收敛为一条（若用入参键去重，组 id 写法
+        # （canonical_ref_key 不剥 `ke-`）会与标题写法各占一条 = 重复引用）。
+        key = canonical_ref_key(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return out
 
 
 def merge_shot_refs(
@@ -719,15 +944,10 @@ def merge_shot_refs(
     matched_titles, _unmatched = match_element_titles_report(state, tokens)
     bare_hits = scan_bare_name_mentions(
         desc or "", state.get(CAT_KEY_ELEMENTS, []))
-    merged: List[str] = []
-    seen: set = set()
-    for ref in list(explicit) + matched_titles + bare_hits:
-        key = strip_type_prefix(str(ref))
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(ref)
-    return merged
+    # 三源合并 → canonical 去重 → **归一为元素组全称**（唯一实现 = canonicalize_shot_refs）。
+    # 2026-09-25 用户裁决「不能传裸名」：此前 ① 显式 shot_refs 源原样透传，模型重抄
+    # 裸名即落裸名（8888 实测 43/47 条为裸名），前端 chip 点击逐字比对 ⇒ 91.5% 落空。
+    return canonicalize_shot_refs(state, list(explicit) + matched_titles + bare_hits)
 
 
 def match_element_titles_report(
@@ -735,22 +955,31 @@ def match_element_titles_report(
 ) -> Tuple[List[str], List[str]]:
     """把 [元素名] 令牌匹配到既有关键元素组标题，返回 (匹配标题, 未匹配令牌)。
 
-    匹配规则：精确 → 双向包含。未匹配令牌由调用方决定处置（建组通道
-    丢弃不拒收——令牌是引导不是闸；但必须回喂告知模型，防「以为挂上了」）。"""
-    titles = [
-        str(g.get("title") or "").strip()
-        for g in (state.get(CAT_KEY_ELEMENTS, []) or []) if isinstance(g, dict)
-    ]
-    titles = [t for t in titles if t]
+    匹配规则：精确 → 双向包含（比对面 = `element_name_variants` **全部形态**，
+    故 `[艾AA]` / `[艾AA（AA）]` / `[Element_艾AA（AA）]` 三种写法同命）。
+    未匹配令牌由调用方决定处置（建组通道丢弃不拒收——令牌是引导不是闸；
+    但必须回喂告知模型，防「以为挂上了」）。"""
+    title_variants: List[Tuple[str, List[str]]] = []
+    for g in (state.get(CAT_KEY_ELEMENTS, []) or []):
+        if not isinstance(g, dict):
+            continue
+        title = str(g.get("title") or "").strip()
+        if title:
+            title_variants.append((title, element_name_variants(title)))
     matched: List[str] = []
     unmatched: List[str] = []
     for token in tokens or []:
         token = str(token or "").strip()
         if not token:
             continue
-        hit = next((t for t in titles if t == token), None)
+        # ① 精确：令牌等于任一形态（含括注主名）
+        hit = next((t for t, vs in title_variants if token in vs), None)
+        # ② 双向包含：令牌与任一形态互为子串（容 `[启示号实验舱]` 这类简称写法）
         if hit is None:
-            hit = next((t for t in titles if token in t or t in token), None)
+            hit = next(
+                (t for t, vs in title_variants
+                 if any(token in v or v in token for v in vs)),
+                None)
         if hit:
             if hit not in matched:
                 matched.append(hit)

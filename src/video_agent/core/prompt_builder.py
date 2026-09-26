@@ -311,7 +311,7 @@ class PromptBuilder:
         except Exception:
             return True
 
-    def build_global_settings_note(self) -> str:
+    def build_global_settings_note(self, duration_only: bool = False) -> str:
         """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。
         文案外置 prompts/shared/global_settings.md，
         代码只留动态行组装。
@@ -319,25 +319,29 @@ class PromptBuilder:
         注入条件（记于此而非 in-file 注释头：本文件经 render_prompt 整文件加载，
         行内 `#` 注释会进装配、破坏等价，故按 storyboard_progress 同款例外处理）：
         由 stage_allows_global_settings() 阶段门控——规格规划阶段（无任何分组）
-        时长/渠道/分辨率均无消费方故不注入，故事板阶段起注入；且需 use_studio_context。"""
+        时长/渠道/分辨率均无消费方故不注入，故事板阶段起注入；且需 use_studio_context。
+
+        duration_only=True（故事板/提示词阶段的子代理）：只出「分镜最大时长」行，
+        跳过出图/出视频渠道、分辨率、聊天出图开关——这些对拆镜/写提示词无消费方。"""
         image_line = ""
-        if settings.default_image_provider_id:
-            model = f" / 模型 {settings.default_image_model}" if settings.default_image_model else ""
-            image_line = (
-                f"默认出图渠道：供应商 {settings.default_image_provider_id}{model}，"
-                f"图片分辨率 {settings.default_image_resolution}（草稿自身未配置时按其填写参数）")
         video_line = ""
-        if settings.default_video_provider_id:
-            model = f" / 模型 {settings.default_video_model}" if settings.default_video_model else ""
-            video_line = (
-                f"默认出视频渠道：供应商 {settings.default_video_provider_id}{model}，"
-                f"视频分辨率 {settings.default_video_resolution}（草稿自身未配置时按其填写参数）")
+        if not duration_only:
+            if settings.default_image_provider_id:
+                model = f" / 模型 {settings.default_image_model}" if settings.default_image_model else ""
+                image_line = (
+                    f"默认出图渠道：供应商 {settings.default_image_provider_id}{model}，"
+                    f"图片分辨率 {settings.default_image_resolution}（草稿自身未配置时按其填写参数）")
+            if settings.default_video_provider_id:
+                model = f" / 模型 {settings.default_video_model}" if settings.default_video_model else ""
+                video_line = (
+                    f"默认出视频渠道：供应商 {settings.default_video_provider_id}{model}，"
+                    f"视频分辨率 {settings.default_video_resolution}（草稿自身未配置时按其填写参数）")
         return render_prompt(
             "shared/global_settings.md",
             max_shot_duration=settings.max_shot_duration,
             image_line=image_line,
             video_line=video_line,
-            chat_image_off=not settings.chat_image_enabled,
+            chat_image_off=(not settings.chat_image_enabled) and not duration_only,
         )
 
     def build_iron_rules_block(self) -> str:
@@ -677,6 +681,11 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     system 中段凭空出现整段，击穿前缀缓存——本段内容极小且极少变化，
     常驻的字节稳定性收益大于 context rot 代价。"""
     if getattr(context, "subagent_depth", 0):
+        # 子代理仅故事板/提示词阶段注入「仅分镜最大时长」行（拆镜/写提示词需知时长上限），
+        # 其余子代理阶段维持不注入（无消费方，且省稳定前缀字节）
+        if getattr(context, "subagent_stage", "") in (
+                "storyboard_design", "write_media_prompt"):
+            return pb.build_global_settings_note(duration_only=True)
         return ""
     if not context.use_studio_context:
         return ""

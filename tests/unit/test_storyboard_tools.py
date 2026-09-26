@@ -26,6 +26,133 @@ def _reset_tools():
     ToolManager.reset()
 
 
+def test_derive_duration_from_summary():
+    """时长兜底：duration 缺失时从 summary 派生（只认紧跟 s/秒 的数字，取最大值）。"""
+    from src.video_agent.tools.storyboard_tools import _derive_duration_from_summary as d
+    assert d("含内部剪辑（约10s）") == "10s"
+    assert d("含3个内切镜头（约18s）") == "18s"   # 3 是镜头计数、不当时长
+    assert d("缓慢推近（约5秒）") == "5s"
+    assert d("起初(0-4s)…最后切至(7-12s)") == "12s"
+    assert d("无时长标注") == ""
+
+
+def test_create_group_schema_exposes_duration_and_shot_refs():
+    """2026-09-24 批（复述与转义修复）：duration/shot_refs **必须对模型可见**。
+
+    隐藏字段实验（`MODEL_HIDDEN_FIELDS`）已证伪撤销：摘掉字段后模型失去
+    JSON 转义锚点，13/13 镜 desc 塌成字面 `\\n` 文字墙，且自行发明
+    【时长】/出场人物汇总行。字段可见 = 值有正式的家。
+    """
+    ToolManager._schema_cache = None
+    try:
+        schemas = ToolManager._full_schemas()
+        sg = next(s for s in schemas
+                  if s["function"]["name"] == "storyboard_create_group")
+        props = sg["function"]["parameters"]["properties"]
+        assert "duration" in props, "duration 必须下发（时长正式的家）"
+        assert "shot_refs" in props, "shot_refs 必须下发（引用可显式指定）"
+        for visible in ("group_type", "title", "desc", "summary"):
+            assert visible in props
+    finally:
+        ToolManager._schema_cache = None
+
+
+def test_desc_field_description_bans_summary_tail_lines():
+    """负面契约钉：desc 字段描述须明文禁止尾部汇总行（复述行的正面对治）。"""
+    d = CreateGroupInput.model_fields["desc"].description or ""
+    assert "禁止在 desc 尾部追加" in d
+    assert "出场人物" in d
+
+
+def test_no_model_hidden_fields_anywhere():
+    """隐藏字段机制整体退役——全仓不得再有 MODEL_HIDDEN_FIELDS（防复活）。"""
+    from src.video_agent.tools import manager as manager_mod
+    assert not hasattr(CreateGroupInput, "MODEL_HIDDEN_FIELDS")
+    src = __import__("inspect").getsource(manager_mod)
+    assert "MODEL_HIDDEN_FIELDS" not in src, "manager 隐藏字段过滤块未清干净"
+
+
+def test_unescape_desc_restores_literal_escapes():
+    """写入侧无损归一：字面 `\\n`/`\\t` → 真换行/真制表符；其他内容逐字不变。"""
+    from src.video_agent.tools.storyboard_tools import _unescape_desc as u
+    assert u("A\\nB") == "A\nB"
+    assert u("A\\tB") == "A\tB"
+    assert u("【空间锚点】\\n· 程心：左舱壁\\n光影基调：冷白") == \
+        "【空间锚点】\n· 程心：左舱壁\n光影基调：冷白"
+    # 已是真换行的原文逐字不变（幂等）
+    assert u("A\nB") == "A\nB"
+    # 非转义的反斜杠序列不误伤
+    assert u("C:\\path") == "C:\\path"
+    # 空/非字符串原样透传
+    assert u("") == ""
+    assert u(None) is None
+
+
+class TestShotDurationDerivedFromSummary:
+    """时长兜底：duration 缺失时从 summary 派生（正常路径仍以 duration 为准）。"""
+
+    @pytest.fixture
+    def svc(self, tmp_path):
+        StateManager.reset_instance()
+        instance = StateManager(str(tmp_path))
+        StateManager._instance = instance
+        instance.state_dict["keyElements"] = [
+            {"id": "ke-2", "title": "S1 星环号球形舱", "desc": "", "drafts": []},
+        ]
+        instance.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格"}]
+        yield instance
+        StateManager.reset_instance()
+
+    async def test_duration_derived_when_omitted(self, svc):
+        result = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "shot", "title": "苏醒",
+             "desc": "程心 苏醒于 [S1 星环号球形舱] 内。",
+             "summary": "含内部剪辑（约12s）"})
+        assert result.success is True, result.error
+        assert svc.state_dict["shots"][-1]["duration"] == "12s"
+
+    async def test_explicit_duration_still_honored(self, svc):
+        result = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "shot", "title": "苏醒",
+             "desc": "程心 苏醒于 [S1 星环号球形舱] 内。",
+             "summary": "含内部剪辑（约12s）", "duration": "8s"})
+        assert result.success is True, result.error
+        assert svc.state_dict["shots"][-1]["duration"] == "8s"
+
+    async def test_literal_backslash_n_normalized_on_create(self, svc):
+        """建组写口：desc 里的字面 `\\n` 落库为真换行（封死文字墙）。"""
+        result = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "shot", "title": "苏醒",
+             "desc": "【空间锚点 / S1】\\n· 程心：左舷窗\\n【镜头内容】程心 苏醒于 [S1 星环号球形舱] 内。",
+             "summary": "含内部剪辑（约12s）", "duration": "12s"})
+        assert result.success is True, result.error
+        stored = svc.state_dict["shots"][-1]["desc"]
+        assert "\\n" not in stored, "字面 \\n 未归一"
+        assert stored.count("\n") == 2
+        assert "【空间锚点 / S1】\n· 程心：左舷窗" in stored
+
+    async def test_literal_backslash_n_normalized_on_patch(self, svc):
+        """改组写口：patch desc 同样归一（防「改一次又退回文字墙」）。"""
+        created = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "shot", "title": "苏醒",
+             "desc": "初稿。", "summary": "含内部剪辑（约12s）", "duration": "12s"})
+        assert created.success is True, created.error
+        gid = created.data["group_id"]
+
+        result = await ToolManager.invoke_tool(
+            "storyboard_patch_group",
+            {"group_id": gid, "group_type": "shot",
+             "patch": {"desc": "【空间锚点 / S1】\\n改稿正文。\\t带制表。"}})
+        assert result.success is True, result.error
+        stored = next(g for g in svc.state_dict["shots"] if g["id"] == gid)["desc"]
+        assert "\\n" not in stored and "\\t" not in stored
+        assert stored == "【空间锚点 / S1】\n改稿正文。\t带制表。"
+
+
 class TestK4ThreeSourceRefMerge:
     """K4 批（2026-09-16 对齐 flova）：shotRefs 三源合并 =
     显式 shot_refs ∪ [元素名] 令牌 ∪ 裸名提及（去重保序）；
@@ -679,3 +806,88 @@ class TestMediaToChatTargetValidation:
         result = await tool.aexecute(MediaToChatInput(target="all"))
         assert result.success is False
         assert result.error_code != "validation"
+
+
+# =====================================================================
+# 音频层字段契约（2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方
+# 要对的上。」「设计阶段只规划音频，只在提示词撰写才建卡。」）
+# =====================================================================
+
+class TestAudioLayerFieldContract:
+    """音频组 desc 的**唯一载体**地位 + 两步落账契约。
+
+    病灶（8888 取证）：同一份「音频层设计」有两个字段各存各的——
+      - `desc`：模型建组时写（`storyboard_create_group` 落 desc），**但快照不注入**；
+      - `prompt`：前端编辑时写（`board-edit.ts` 的 audio 分支），后端从不写。
+    前端展示又读 `prompt` ⇒ 模型写的 146 字描述既不给模型看、也不给用户看
+    （界面显示占位符「双击添加描述...」）。三处（写/看/快照）统一到 `desc`。
+    """
+
+    @pytest.fixture
+    def svc(self, tmp_path):
+        StateManager.reset_instance()
+        instance = StateManager(str(tmp_path))
+        StateManager._instance = instance
+        yield instance
+        StateManager.reset_instance()
+
+    def test_desc_field_declares_audio_carrier(self):
+        """desc 字段描述须写明 audio 类型的层设计载体（模型才知道往哪写）。"""
+        d = CreateGroupInput.model_fields["desc"].description or ""
+        assert "audio 类型" in d, "desc 字段未声明音频组用途"
+        assert "唯一载体" in d
+
+    def test_draft_hint_states_two_step_landing(self):
+        """字段提示须写明「设计期建组写 desc、提示词期建卡」两步（与闸机同源）。"""
+        from src.video_agent.tools.storyboard_tools import _DRAFT_FIELDS_HINT
+
+        assert "分两步落账" in _DRAFT_FIELDS_HINT
+        assert "desc" in _DRAFT_FIELDS_HINT and "提示词撰写" in _DRAFT_FIELDS_HINT
+
+    def test_group_fields_allow_desc(self):
+        """`desc` 在建组与 patch 的 group 白名单内（写口不被拒收）。"""
+        from src.video_agent.state import storyboard_ops as ops
+
+        assert "desc" in ops.ALLOWED_GROUP_FIELDS
+
+    def test_audio_snapshot_exposes_desc_and_audio_type(self):
+        """**核心钉**：音频分支必须注入 desc（模型看得见自己写的层设计）。
+
+        此前音频分支只有 `prompt_chars`（且读的是前端才写的 `prompt`），
+        而模型写的是 `desc` ⇒ 模型下一轮看不见自己的音频层设计。
+        """
+        import inspect
+
+        from src.video_agent.state import context_builder as cb
+
+        src = inspect.getsource(cb)
+        start = src.index("CAT_AUDIO_ITEMS: [")
+        end = src.index("for gi, g in enumerate(raw_state.get(CAT_AUDIO_ITEMS", start)
+        branch = src[start:end]
+        assert '"desc"' in branch, "音频分支缺 desc 键（模型看不见层设计）"
+        assert '"audioType"' in branch, "音频分支缺 audioType（模型看不见卡的种类）"
+
+    async def test_audio_group_desc_lands_and_patches(self, svc):
+        """端到端：音频组建组写 desc 落库 + patch 改 desc 生效（写口通畅）。"""
+        r = await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "audio", "title": "BGM-01 末日序曲",
+            "desc": "覆盖场一（Shot 1–4）。情绪：低沉压抑。配器：低频弦乐+drone。约46s。"})
+        assert r.success is True, r.error
+        gid = r.data["group_id"]
+        g = next(g for g in svc.state_dict["audioItems"] if g["id"] == gid)
+        assert g["desc"].startswith("覆盖场一")
+
+        r2 = await ToolManager.invoke_tool("storyboard_patch_group", {
+            "group_id": gid, "group_type": "audio",
+            "patch": {"desc": "扩写：覆盖场一。情绪：压抑→荒诞平静。"}})
+        assert r2.success is True, r2.error
+        g = next(g for g in svc.state_dict["audioItems"] if g["id"] == gid)
+        assert g["desc"].startswith("扩写")
+
+    async def test_audio_group_has_no_card_at_design_stage(self, svc):
+        """设计期建音频组**不带卡**（裁决③：只规划、卡留给提示词阶段）。"""
+        r = await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "audio", "title": "BGM-02", "desc": "层设计…"})
+        assert r.success is True, r.error
+        g = next(g for g in svc.state_dict["audioItems"] if g["id"] == r.data["group_id"])
+        assert g.get("drafts") == [], "设计期音频组不应携带卡"

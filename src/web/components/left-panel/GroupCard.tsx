@@ -114,13 +114,17 @@ export function GroupCard(props: {
         };
       }
       default: {
+        const g = props.group as AudioGroup;
         return {
-          badge: (props.group as AudioGroup).timeRange || '音频',
+          badge: g.timeRange || '音频',
           badgeStyle: {
             background: 'color-mix(in srgb, var(--accent-emerald) 15%, transparent)',
             color: 'var(--accent-emerald)',
           },
-          desc: (props.group as AudioGroup).prompt || '',
+          // 2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
+          // 此前读 `prompt`（模型从不写它、只写 desc）⇒ 146 字描述显示成占位符。
+          // 现统一读 desc；`prompt` 仅作存量数据回落（历史前端写口留下的值）。
+          desc: g.desc || g.prompt || '',
           addTitle: '上传或写提示词生成音频',
           adjustLabel: '音频',
         };

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 from loguru import logger
 
 import json
+import re
 
 from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.config import settings
@@ -56,6 +57,17 @@ _DRAFT_FIELDS_HINT = (
     "角色的音色卡挂在该角色自己的 keyElement 组内"
     "（角色组用 elementType=character 声明；音色卡与该角色图像卡同组，"
     "分镜按 shotRefs 引用该角色时自动取到音色锚点）。"
+    # 2026-09-25 用户裁决（8888 取证，两条）：
+    #   ①「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」；
+    #   ②「设计阶段只规划音频，只在提示词撰写才建卡」。
+    # 两个阶段的分工写成正面契约（不写禁令词，与 check_tool_descriptions 闸同口径）：
+    #   - 故事板设计：建音频**分组** + 在分组 desc 里写层设计（覆盖镜头/情绪/配器）；
+    #   - 提示词撰写：按该 desc 建音频卡（承载生成提示词与参数）。
+    # 模型可见面此前把 bgm/narration 与 voice 并列（本 hint 第 40-41 行），
+    # 模型照契约在设计期建 BGM 卡、平台又按新口径拒收——契约须与闸机同源。
+    "音频层（BGM/旁白）分两步落账：故事板设计阶段建音频分组、把层设计写进"
+    "分组的 desc（覆盖镜头范围 + 情绪基调 + 配器/语气方向）；音频卡在"
+    "提示词撰写阶段按该 desc 创建（承载生成提示词与参数）。"
 )
 
 # group patch 合法字段枚举（2026-09-23 批10，事故 4444/P1-1）：
@@ -66,6 +78,45 @@ _GROUP_FIELDS_HINT = (
     "分镜改引用用 shotRefs（关键元素标题数组；裸名与 Element_ 前缀两种写法"
     "系统都认）；镜头内容改动用 desc；时长用 duration。"
 )
+
+_ESCAPE_SEQUENCES = (("\\n", "\n"), ("\\t", "\t"))
+
+
+def _unescape_desc(text: str) -> str:
+    """把 desc 里**字面两字符序列** `\\n`/`\\t` 还原为真换行/真制表符。
+
+    为什么需要（2026-09-24 批，分镜 desc 复述与转义修复）：模型偶发把换行写成
+    字面 `\\n` 两个字符（而非 JSON 转义），落库后整段分镜塌成一整行文字墙
+    （前端 pre-wrap 呈现不出分段）。实测证据：09-24 18:25 跑 13/13 镜全部命中
+    （历史三次跑 97/97 全为真换行）——属采样波动，不能靠「模型会守规矩」。
+
+    口径（无损归一，不是纠错闸）：
+    - **只还原转义、不改不丢任何其他内容**——非转义文本逐字保留；
+    - 先 `\\n`/`\\t` 后无回溯（`\\\\n` 里的 `\\n` 会被还原为换行 + 前导反斜杠，
+      这是字面文本的合理读法：模型本意就是写一个反斜杠后跟换行）；
+    - 非字符串/空值原样透传，调用方无须前置判空。
+    """
+    if not isinstance(text, str) or not text:
+        return text
+    for esc, real in _ESCAPE_SEQUENCES:
+        if esc in text:
+            text = text.replace(esc, real)
+    return text
+
+
+def _derive_duration_from_summary(summary: str) -> str:
+    """从 summary 的时长标注解析整镜总时长（**仅兜底**：duration 字段缺失时用）。
+
+    只取紧跟 s/S/秒 的数字（避免误把「含 3 个镜头」的计数当时长），多个取
+    最大值（总时长）；返回 "Ns"，解析不到返回 ""（调用方回落默认时长）。
+    时长正式的家 = duration 字段，本函数不参与正常路径。
+    """
+    s = str(summary or "")
+    vals = re.findall(r"(\d+(?:\.\d+)?)\s*(?:[sS]|秒)", s)
+    if not vals:
+        return ""
+    return f"{max(float(v) for v in vals):g}s"
+
 
 class CreateGroupInput(StrictToolInput):
     group_type: Literal["keyElement", "shot", "audio"] = Field(..., description=(
@@ -84,8 +135,17 @@ class CreateGroupInput(StrictToolInput):
         "character=角色（其音色卡另建在该角色组内，标 mediaType=audio 且 "
         "audioType=voice）、scene=场景、prop=关键道具。"
         "其他组类型忽略此字段"))
-    desc: str = Field("", description="分组描述（shot 类型：完整镜头设计写这里，唯一载体）")
-    duration: str = Field("", description="时长（shot 类型用；整镜总时长）")
+    desc: str = Field("", description=(
+        "分组描述（shot 类型：完整镜头设计写这里，唯一载体；引用用 [元素名] 令牌"
+        "内联正文、系统自动解析挂参考；时长由 duration 字段承载；"
+        "禁止在 desc 尾部追加【引用】/【时长】/出场人物等汇总行）"
+        "——汇总行是重复信息且落库即污染分镜正文，一律不写。"
+        # 2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
+        # 音频组的层设计唯一载体 = desc（建组写 desc、快照注入 desc、界面展示 desc，
+        # 三处同字段）；历史上前端曾把描述写进 group.prompt 造成两份事实源，已统一。
+        "audio 类型：音频层的设计写这里，唯一载体（覆盖哪些镜头、情绪基调、"
+        "配器/语气方向；BGM 与旁白各有独立 audio_layer ID 与覆盖镜头范围）"))
+    duration: str = Field("", description="时长（shot 类型用；整镜总时长，如 '12s'）")
     summary: str = Field("", description="shot 类型必填：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段")
     shot_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
@@ -207,7 +267,9 @@ class StoryboardCreateGroupTool(BaseTool):
         "完整镜头描述写在 desc 上，引用到的元素用 [元素名] 令牌写在描述里"
         "（系统会自动解析为引用并挂参考），也可用 shot_refs 显式指定。"
         "desc 中 [元素名] 令牌与裸名提及由系统自动解析为引用。"
-        "shot 类型必填 summary（镜头结构摘要徽标），缺失整单拒收打回重填。"
+        "shot 类型必填 summary（镜头结构摘要徽标），缺失整单拒收打回重填；"
+        "整镜时长写 duration 字段，summary 徽标可附（约Xs）仅供展示、"
+        "不作时长来源（仅 duration 缺失时系统从 summary 兜底解析）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -268,7 +330,12 @@ class StoryboardCreateGroupTool(BaseTool):
         # 标题确定性归一（2026-09-17 裁决：容器 ID 约定 = 类型前缀+裸名，与文本轨同一 ops 实现）
         _raw_title = str(params.title or "")
         _title = ops.normalize_group_title(_raw_title, cat_key)
-        new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": params.desc, "drafts": []}
+        # 2026-09-24 批（分镜 desc 复述与转义修复）：desc 写入侧无损归一——
+        # 模型偶发把换行写成字面 `\n` 两字符（采样波动，18:25 跑 13/13 命中），
+        # 落库即整段塌成一行文字墙。归一后 desc 与下游令牌解析/引用合并**同一口径**
+        # （令牌与裸名都从归一后的正文解析，避免「存的」与「解析的」两份事实源）。
+        _desc = _unescape_desc(params.desc)
+        new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": _desc, "drafts": []}
         # 2026-09-23 批5（D-2/D-3）：元素种类落库（仅关键元素组有意义；
         # 空串=未声明，不强制不判错——给字段而非加闸）。
         _elem_type = str(getattr(params, "element_type", "") or "").strip().lower()
@@ -284,7 +351,8 @@ class StoryboardCreateGroupTool(BaseTool):
             # 歧义致模型把完整分镜设计写进 roughDesc——前端展示唯一认 desc，
             # 内容落进盲区（用户看到 16 张空壳卡）。分镜正文唯一载体 = desc，
             # 存量 roughDesc 数据只读保留（context_builder 照常注入）。
-            new_group["duration"] = params.duration or "5s"
+            new_group["duration"] = (
+                params.duration or _derive_duration_from_summary(params.summary) or "5s")
             # flova 对齐批（2026-09-17 裁决）：summary 落库（标题旁徽标载体；
             # desc 编辑不重算——与 flova 行为对齐，承诺只在写入侧成立）
             new_group["summary"] = str(params.summary or "").strip()
@@ -299,18 +367,20 @@ class StoryboardCreateGroupTool(BaseTool):
             # **唯一实现**，闸机（读口）同引之——此前两处各写一遍且口径不同，
             # 导致「模型按文档留空 shot_refs」被闸机在合并前拒收（5 次实证）。
             # 未匹配令牌仍由 ops.match_element_titles_report 单独取回供回喂。
-            _tokens = ops.parse_element_tokens(params.desc or "")
+            # 解析一律走 `_desc`（与落库同一份文本）——防「存的」与「解析的」
+            # 两份事实源（归一前后令牌/裸名结果一致，但口径必须唯一）。
+            _tokens = ops.parse_element_tokens(_desc or "")
             _, unmatched_tokens = ops.match_element_titles_report(
                 svc.state_dict, _tokens)
             new_group["shotRefs"] = ops.merge_shot_refs(
-                svc.state_dict, params.desc or "", params.shot_refs)
+                svc.state_dict, _desc or "", params.shot_refs)
 
         async with svc.lock:
             svc.state_dict.setdefault(cat_key, []).append(new_group)
 
             # 附带草稿
             if draft_payload:
-                ops.append_draft(new_group, draft_payload)
+                ops.append_draft(new_group, draft_payload, svc.state_dict)
 
             svc.save()
         result_data: Dict[str, Any] = {"group_id": new_id}
@@ -318,7 +388,7 @@ class StoryboardCreateGroupTool(BaseTool):
             _miss = "、".join(unmatched_tokens[:5]) + ("…" if len(unmatched_tokens) > 5 else "")
             result_data["detail"] = (
                 f"已建组，但描述中的 [元素名] 令牌未匹配到关键元素组（已丢弃、未挂引用）：{_miss}。"
-                "元素名须与关键元素组标题一致（read_state_group 可查），必要时显式传 shot_refs。")
+                "元素名须与关键元素组标题一致（read_state_group 可查），必要时修正 desc 里的 [元素名] 令牌。")
             result_data["warnings"] = [
                 f"分镜「{_title[:12]}」的元素令牌未匹配：{_miss}（引用缺失，跨镜一致性可能断链）"]
         return ToolResult(success=True, data=result_data)
@@ -354,7 +424,7 @@ class StoryboardPatchDraftTool(BaseTool):
             if found:
                 group, draft = found
                 # 统一白名单（含 imageResolution/genType，与文本轨一致）
-                changed, _ = ops.patch_draft(draft, params.patch)
+                changed, _ = ops.patch_draft(draft, params.patch, svc.state_dict)
                 if changed:
                     # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
                     ops.sync_shot_duration(group, draft, params.patch)
@@ -423,7 +493,7 @@ class StoryboardAddDraftTool(BaseTool):
                            "现有故事板保持原样）。请先用 read_state_group 核对分组 ID "
                            "与 group_type 后重试。"))
 
-            draft = ops.append_draft(target_group, draft_payload)
+            draft = ops.append_draft(target_group, draft_payload, svc.state_dict)
             # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
             ops.sync_shot_duration(target_group, draft)
             # 全局设置补印（唯一权威源）：草稿未自带供应商时按全局设置填充，
@@ -476,6 +546,10 @@ class StoryboardPatchGroupTool(BaseTool):
     （`[元素名]` 令牌 ∪ 裸名提及）：那是**建组**期的一次性解析语义，若在 patch
     上重做，「删掉某条引用」会立刻被 desc 里的裸名重新加回来（引用删不掉）。
     故 patch 一律**以模型显式传入的 shotRefs 为准**（只做 canonical 去重）。
+
+    2026-09-25（用户裁决「不能传裸名」）：显式 shotRefs 归一为**元素组全称**
+    （`canonicalize_shot_refs`，与建组写口同一实现）——裸名只作 UI 显示效果，
+    落库恒为含 `Element_` 前缀的组标题，前端逐字比对才能命中。
     """
     name = "storyboard_patch_group"
     risk = "medium"  # 写内部状态（可再改撤销）
@@ -523,6 +597,16 @@ class StoryboardPatchGroupTool(BaseTool):
                     patch["title"] = ops.normalize_group_title(
                         str(patch.get("title") or ""),
                         ops.category_for_group_type(params.group_type))
+                # 2026-09-24 批（同建组写口）：desc 更新同样做转义无损归一，
+                # 否则「建组已归一、改一次 desc 又退回文字墙」——同一写口同一口径。
+                if "desc" in patch:
+                    patch["desc"] = _unescape_desc(patch.get("desc"))
+                # 2026-09-25（用户裁决「不能传裸名」）：显式 shotRefs 归一为元素组
+                # 全称（与建组写口 canonicalize_shot_refs 同一实现）。此前仅 canonical
+                # 去重、不改形态，模型重抄裸名即落裸名 ⇒ 前端 chip 逐字比对点不动。
+                if "shotRefs" in patch:
+                    patch["shotRefs"] = ops.canonicalize_shot_refs(
+                        svc.state_dict, patch.get("shotRefs"))
                 changed, _ = ops.patch_group(group, patch)
                 if changed:
                     svc.save()
@@ -607,7 +691,7 @@ class StoryboardConfirmDraftTool(BaseTool):
             found = ops.find_draft(svc.state_dict, params.draft_id, params.draft_type)
             if found:
                 _, draft = found
-                ops.patch_draft(draft, {"tag": "已确认"})
+                ops.patch_draft(draft, {"tag": "已确认"}, svc.state_dict)
                 svc.save()
                 return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id), "tag": "已确认"})
         return ToolResult(

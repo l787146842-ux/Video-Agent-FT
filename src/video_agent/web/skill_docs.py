@@ -45,10 +45,12 @@ _HISTORY_MAX = 10
 # 外来 Skill（如 外部标杆 导出）原生就是「每个工具一节」的结构（<planner>/<write_the_prompt>…），
 # 它们的运行时把各节分别注入对应阶段的子工具；本系统把全文一次性注入单一编排模型，
 # 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
-# 值支持一对多：旧 tag（如 storyboard_designer）三拆重构后同时映射到全部拆分 stage，
-# 保证存量 Skill 的整节内容对三个拆解执行器同等注入（与旧执行器语义一致）。
-# 本项目 skill 文档章节 tag 一律用真实执行器/工具名；
-# 源平台遗留名（media_generator/storyboard_designer 等）仅作外来 Skill 兼容别名保留。
+# 值支持一对多：`storyboard_designer` 是本项目 Skill 故事板章节的**现行形态**
+# （2026-09-25 用户裁决：三拆章节合并回单章），同时映射到全部三个故事板 stage，
+# 使整节内容对三个拆解能力同等注入 ⇒ 能力面（available_tools）与音频闸口径零改动。
+# 章节 tag 一律指向该 Skill 文档内真实存在的章节；源平台其余遗留名
+# （media_generator / text_editor / write_the_prompt / resource_prepare_and_analyze）
+# 仅作外来 Skill 兼容别名保留。
 SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
     "planner": "planning",
     # 兼容别名（源平台名，外来 Skill 用）→ 本项目执行器 script_analyze
@@ -56,8 +58,10 @@ SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
     "multimodal_analyze_tool": "planning",
     "script_analyze": "planning",
     "text_editor": "planning",
-    # 兼容别名（源平台名）→ 本项目三拆解执行器（一对多）
+    # 现行故事板章节形态（存量 16/16）→ 三个故事板 stage（一对多）
     "storyboard_designer": ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
+    # 三拆 tag：2026-09-25 起存量 Skill 均已合并为 storyboard_designer，此三行只为
+    # 外来 Skill 兼容保留（同名仍是能力面用词，见 registry.PIPELINE_CAPABILITY_TOOLS）
     "storyboard_key_elements": "storyboard_ke",
     "storyboard_shots": "storyboard_shot",
     "storyboard_audio": "storyboard_audio",
@@ -210,7 +214,7 @@ description: 用户上传剧本/故事文档以生成视频；关键阶段暂停
 1. 剧本正文不会自动注入上下文：先用 read_uploaded_doc 读取剧本全文；
    若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守；
    然后分析素材 → document_write(制片规格.md) → workflow_pause
-2. 规划故事板：storyboard_create_group keyElement(只写 title+desc) + storyboard_create_group shot(只写 title+shotRefs+duration，完整镜头格式写在 desc)
+2. 规划故事板：storyboard_create_group keyElement(只写 title+desc) + storyboard_create_group shot(title+desc+summary+duration；引用用 [元素名] 令牌内联 desc，完整镜头格式写在 desc，尾部不写引用/时长/出场人物汇总行)
    此阶段不写详细提示词 → workflow_pause "故事板已建立，请审阅"
 
 ### 第二段：提示词草案

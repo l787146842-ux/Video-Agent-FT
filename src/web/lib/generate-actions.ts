@@ -15,6 +15,8 @@ import {
 import { registerManualTask } from '@/lib/generation-events';
 import { resolvePromptForGeneration } from '@/lib/prompt-mentions';
 import { IMAGE_GEN_LIMIT, VIDEO_GEN_LIMITS } from '@/lib/ref-limits';
+import { normalizeDisplayTitle } from '@/lib/desc-ref-utils';
+import type { AnyGroup, DraftType } from '@/types';
 
 // ---------- 生图 ----------
 
@@ -163,23 +165,76 @@ export async function generateVideo(): Promise<void> {
 
 // ---------- 音频规划 ----------
 
-export async function generateAudio(): Promise<void> {
-  const rec = findDraftRecord(state.selectedDraftId, state.selectedType);
-  const draft = rec?.draft;
-  if (!draft) { showToast('请先在左侧选中一个音频草稿卡片', 'warning'); return; }
-  const draftType = rec?.type || 'audio';
+/** 音频组的层描述（唯一载体 = `desc`）。
+ *  2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
+ *  存量数据回落读 `prompt`（历史前端写口留下的第二事实源）。 */
+function audioLayerDesc(group: unknown): string {
+  const g = group as { desc?: string; prompt?: string } | undefined;
+  return String(g?.desc || g?.prompt || '').trim();
+}
 
-  const provider = draft.audioProviderId || draft.providerId || '';
-  const model = draft.audioModel || draft.model || '';
-  const mode = draft.audioMode || draft.mode || '多模态音频生成';
-  const timbre = draft.timbre || '深邃男声 (Deep Narrator)';
-  if (!provider || !model) { showToast('请先选择音频规划 API 和对应模型', 'warning'); return; }
+/** 找当前选中卡所属的音频组（生成规划要读**组级描述**，不是卡片自己的 prompt）。 */
+function selectedAudioGroup(): { group: AnyGroup; type: DraftType } | null {
+  const rec = findDraftRecord(state.selectedDraftId, state.selectedType);
+  if (rec?.type === 'audio') return { group: rec.group as AnyGroup, type: 'audio' };
+  // 未选中卡片时：若当前页签在音频，取第一个音频组（允许"先选组再规划"）
+  if (state.subTab === 'audio' || state.selectedType === 'audio') {
+    const first = (state.audioItems || [])[0];
+    if (first) return { group: first as unknown as AnyGroup, type: 'audio' };
+  }
+  return null;
+}
+
+/**
+ * 音频层规划（2026-09-25 用户裁决重做）。
+ *
+ * 裁决原文：「设计阶段只规划音频，只在提示词撰写才建卡」「音频阶段可以先打通，
+ * 我后面会接入音频模型」。
+ *
+ * 旧实现的两个病：
+ *   ① 入口要求**先有卡**（`if (!draft) 请先选中一张音频草稿卡片`）——而设计阶段
+ *      已按裁决**不建卡**（只写组 desc），于是永远进不来（承接断链）；
+ *   ② 读的是 `draft.prompt`，**完全不读组 desc** ⇒ 设计期写下的层描述（覆盖镜头/
+ *      情绪/配器）根本不参与规划。
+ *
+ * 新口径：**以音频组的 desc 为输入**；组内没有卡时自动建一张承接卡（承载规划结果
+ * 与后续音频模型产出），已有卡则写回该卡。生成通道打通后（用户将接入音频模型），
+ * 只需把 `canvasLlm` 换成真实音频生成调用，本条链路的输入输出契约不变。
+ */
+export async function generateAudio(): Promise<void> {
+  const target = selectedAudioGroup();
+  if (!target) {
+    showToast('请先在左侧「音频」页签选中一个音频组', 'warning');
+    return;
+  }
+  const { group } = target;
+  const layerDesc = audioLayerDesc(group);
+  if (!layerDesc) {
+    showToast('该音频组还没有描述：请先在故事板设计阶段写入覆盖镜头/情绪/配器方向', 'warning');
+    return;
+  }
+
+  // 已有卡 → 写回该卡（沿用其供应商/模型配置）；没有卡 → 自动建一张承接卡
+  // （设计阶段不建卡，故此处必须有承接，否则规划结果无处落账）。
+  const existing = (group.drafts || [])[0];
+  const provider = existing?.audioProviderId || existing?.providerId || '';
+  const model = existing?.audioModel || existing?.model || '';
+  const mode = existing?.audioMode || existing?.mode || '多模态音频生成';
+  const timbre = existing?.timbre || '深邃男声 (Deep Narrator)';
+  if (!provider || !model) {
+    showToast('请先选择音频规划 API 和对应模型（在音频卡片参数栏或全局设置）', 'warning');
+    return;
+  }
   showToast('正在生成音频规划...', 'info');
   const t0 = performance.now();
 
   try {
     const data = await canvasLlm({
-      message: `请根据以下内容生成可执行的音频规划，生成模式：${mode}，目标音色：${timbre}。包含旁白、对白、环境音、音乐、时间点和音色建议。不要声称已经生成音频文件。\n\n${draft.prompt || ''}`,
+      // 输入 = 组级层描述（设计期成果）+ 组标题（层 ID），不再依赖卡片 prompt
+      message: `请根据以下音频层设计生成可执行的音频规划，生成模式：${mode}，目标音色：${timbre}。`
+        + '包含旁白、对白、环境音、音乐、时间点和音色建议。不要声称已经生成音频文件。\n\n'
+        + `【音频层】${String((group as { title?: string }).title || '')}\n`
+        + `【层设计】${layerDesc}`,
       // 后端 system_prompt 字段已废弃不再使用（Skill 正文不注入，由 read_skill 按需读取），不再随请求携带
       provider,
       model,
@@ -190,21 +245,31 @@ export async function generateAudio(): Promise<void> {
     const elapsedSec = (performance.now() - t0) / 1000;
     // 非流式响应的文档清单同样即显渲染（通道与流式轨对齐，§5.2）
     chatActions.applyNonStreamDocs(data.documents_written || []);
-    patchDraft(draft.id, draftType, {
-      mediaType: 'audio', genType: 'audio', imgUrl: '', videoUrl: '',
-      prompt: String(data.text || draft.prompt), mode, timbre,
-    });
+    const planText = String(data.text || '').trim();
+    if (existing) {
+      patchDraft(existing.id, 'audio', {
+        mediaType: 'audio', genType: 'audio', imgUrl: '', videoUrl: '',
+        prompt: planText || existing.prompt, mode, timbre,
+      });
+    } else {
+      // 承接卡：label 取层标题（去掉 Audio_ 前缀），交由 store 落进该组
+      const label = normalizeDisplayTitle(String((group as { title?: string }).title || '音频'));
+      studioActions.addDraftLocalWith('audio', group.id, {
+        label, tag: 'Agent', mediaType: 'audio', audioType: 'bgm',
+        prompt: planText, mode, timbre,
+      });
+    }
     // 生成日志：音频规划无论成败都要有记录（未走后端任务通道，前端补录）
     void addGenerationLog({
       media_type: 'audio', status: 'succeeded', provider, model,
-      prompt: draft.prompt || '', draft_id: draft.id,
-      elapsed: Math.round(elapsedSec * 10) / 10, source: 'manual',
+      prompt: layerDesc, draft_id: existing?.id || '', elapsed: Math.round(elapsedSec * 10) / 10,
+      source: 'manual',
     });
     showToast(`音频规划已生成（耗时 ${elapsedSec.toFixed(1)}s）`, 'success');
   } catch (err) {
     void addGenerationLog({
       media_type: 'audio', status: 'failed', provider, model,
-      prompt: draft.prompt || '', draft_id: draft.id,
+      prompt: layerDesc, draft_id: existing?.id || '',
       error: (err as Error).message || '音频规划失败',
       elapsed: Math.round(((performance.now() - t0) / 1000) * 10) / 10, source: 'manual',
     });

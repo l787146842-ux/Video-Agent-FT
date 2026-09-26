@@ -177,6 +177,35 @@ describe('分组卡右上徽标（台账 #10；2026-09-17 裁决：keyElement �
   });
 });
 
+describe('音频组描述位读 desc（2026-09-25 用户裁决：写的地方和看的地方要对的上）', () => {
+  // 本文件为控制测试面把 GroupDescEditor 打了桩，**真实渲染断言**另见
+  // GroupCard-audio-desc.test.tsx（不桩该组件、断言页面实际文本）。
+  // 此处只做**字段映射**的源码级防回潮断言（读/写各一处，改动即红）。
+  it('GroupCard 的 audio 分支读 desc、prompt 仅作存量回落', async () => {
+    const src = await import('fs').then((fs) => fs.readFileSync(
+      'src/web/components/left-panel/GroupCard.tsx', 'utf-8'));
+    expect(src).toContain('g.desc || g.prompt');
+    // 负向：不得再出现「只读 prompt」的旧写法（audio 分支曾为 `(…).prompt || ''`）
+    expect(src).not.toContain('as AudioGroup).prompt');
+  });
+
+  it('board-edit 音频分支写 desc（不再写 prompt，消除第二事实源）', async () => {
+    const src = await import('fs').then((fs) => fs.readFileSync(
+      'src/web/stores/studio/board-edit.ts', 'utf-8'));
+    expect(src).toContain('updated.desc = patch.desc');
+    expect(src).not.toContain('audio 走 prompt');
+    expect(src).not.toContain('updated.prompt = patch.desc');
+  });
+
+  it('generateAudio 以音频组 desc 为输入（承接断链修复）', async () => {
+    const src = await import('fs').then((fs) => fs.readFileSync(
+      'src/web/lib/generate-actions.ts', 'utf-8'));
+    expect(src).toContain('audioLayerDesc');
+    expect(src).toContain('selectedAudioGroup');
+    expect(src).not.toContain('请先在左侧选中一个音频草稿卡片');
+  });
+});
+
 describe('分组卡左上标题纯中文（剥离英文前缀，台账 #10，任务 #15）', () => {
   function titleText(container: HTMLElement): string {
     const span = container.querySelector('.sb-title span[title="双击编辑标题"]');

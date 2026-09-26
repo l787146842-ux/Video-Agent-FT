@@ -5,10 +5,10 @@ description: 制作多人对话访谈视频，含每位发言者的音色设计�
 <planner>
 **阶段逻辑与依赖关系：**
 1. 编写 制片规格.md（标题、类型、画幅、时长、视觉风格、语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**。
-2. 搭建故事板（关键元素、分镜 shot_list、音频层 audio_layers）→ **storyboard_create_group / storyboard_add_draft / storyboard_patch_draft**。
+2. 搭建故事板（关键元素、分镜 shot_list、音频层 audio_layers）→ **storyboard_designer**。
 3. 为所有元素生成图像（提示词先经 storyboard_patch_draft 写入草稿）→ **image_generate**。
 4. 根据故事板生成所有 audio_layers：旁白和背景音乐 (BGM) → 由系统生成通道按故事板配置产出（无需工具调用）。
-5. 为每个镜头撰写关键帧提示词并生成一张关键帧图像 → **storyboard_patch_draft、image_generate**。
+5. 为每个镜头撰写关键帧提示词并生成一张关键帧图像 → **image_generate**。
 6. 为每个镜头生成最终视频；参考该镜头的关键帧（第5步）和音频（第4步）→ 视频提示词先经 storyboard_patch_draft 写入草稿，再调用 **generate_video**。
 7. 所有资源就绪后进行最终合成与导出——由用户在工作台操作，Agent 引导即可（无对应工具调用）。
 
@@ -21,15 +21,13 @@ description: 制作多人对话访谈视频，含每位发言者的音色设计�
 
 </script_analyze>
 
-<storyboard_key_elements>
+<storyboard_designer>
 **如何设计关键元素**
 - 始终包含**关键主体**（人物、物体等）、**关键地点/场景**和**关键道具**（如有）。
 - **人物：** 如果人物在项目中具有多种状态或外观（例如不同的服装、年龄），请在描述中清楚地说明（例如：Look 1：...；Look 2：...）。包含人物的**语音/音色**，以便下游音频能够匹配。
 - **关键地点/场景：** 描述场景中重要物体的**位置和朝向**，特别是道具或主要动作/表演发生的区域。
 - **用户提供的素材：** 如果用户提供了参考媒体并将其指定为关键元素，描述**必须与该素材相符**；不要与所见或所听到的内容相矛盾。
-</storyboard_key_elements>
 
-<storyboard_shots>
 **如何设计镜头**
 - **每个镜头描述必须包含：**
   - **场景：** 参考地点/布景（使用场景元素 ID，例如 `[Element_Office_Noir]`）。
@@ -37,13 +35,11 @@ description: 制作多人对话访谈视频，含每位发言者的音色设计�
   - **景别：** 交替使用**双人镜头 (two-shot)**、**越肩镜头 (OTS)**、**发言者单人镜头**，以在不破坏连贯性的前提下增加变化。
 - **非对话镜头：** 反应镜头、观众切镜或主持人点头——依然需要关键帧元素；如果该镜头中没有台词，则仅使用关键帧生成视频（不进行口型同步音频调节）。
 - **重叠/轮流发言：** 如果两个角色在一个镜头中交替对话，分镜脚本必须拆分为两个镜头。
-</storyboard_shots>
 
-<storyboard_audio>
 **如何设计独立音频**
 - **背景音乐：** 设计至少一个全局背景音轨。如果视频较长（例如3分钟或以上）且有清晰的段落划分或转折点，您可以规划多个音乐片段（每个都有自己的 `audio_id` 和范围）。
 - **旁白：** 始终在分镜脚本中定义旁白/配音层（类型 `narration`）：语音身份、语调、准确脚本以及限定于相关镜头的 `layout_instruction`。此策略中的每个项目都必须包含此层。
-</storyboard_audio>
+</storyboard_designer>
 
 <image_generate>
 **元素图像生成**
