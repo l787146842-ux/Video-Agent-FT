@@ -113,13 +113,18 @@ def test_11111_summary_describes_content_relation_not_position():
 
 
 def test_11111_voice_card_has_single_carrier_field():
-    """R1：音色描述的唯一载体（timbre）必须写在模型可见的字段契约里。
+    """R1（2026-09-27 4444 裁决 A+C 改判）：音色描述唯一载体 = 卡 desc，必须写在
+    模型可见的字段契约里；timbre 回归前端预设选择器专属（模型留空）。
 
     11111 现场：同一份「音色描述」有 4 个候选字段，全库四项目四跑四态
     （6666→timbre+desc / 9999→desc / 8888→prompt / 11111→三者都落）。
+    原 R1 定 timbre，4444 实证自由文本落 timbre 无消费者且打坏预设下拉，
+    且契约「含声音特征进组 desc」造成双份事实源 → 改判卡 desc 单载体。
     """
-    assert "timbre" in _DRAFT_FIELDS_HINT
-    assert "音色描述" in _DRAFT_FIELDS_HINT
+    assert "音色卡的音色描述写 desc" in _DRAFT_FIELDS_HINT
+    assert "timbre" in _DRAFT_FIELDS_HINT  # 仍写明模型留空
+    assert "声音特征只落音色卡" in _DRAFT_FIELDS_HINT
+    assert "含声音特征作为设定的一部分" not in _DRAFT_FIELDS_HINT  # 旧双份口径防回潮
 
 
 def test_11111_audio_kinds_tiered_by_host_group():

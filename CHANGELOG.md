@@ -36,6 +36,23 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-27 · 4444 音色卡字段改判批（用户裁决 A+C，原 R1 归属条款废止）
+
+- **背景（4444 = proj-1790438517-0482b99f 取证）**：R1 契约（11111 批）把音色描述定为 timbre 字段，
+  4444 实跑模型逐字照做（9 张卡 prompt 空/timbre 一句话/组 desc 带「声音特征」长行），暴露两处
+  平台侧设计缺陷：① 自由文本落 timbre 无任何消费者（锚点链 `resolve_shot_audio_refs` 只读 audioUrl；
+  前端 AudioParams 把 timbre 当两预设下拉，自由文本打坏选择器）；② 契约「角色组 desc 含声音特征」
+  与卡内 timbre 构成双份事实源（违 P1，且与 Skill「单独登记为 key_element_audio」相悖）。
+  另：音色卡卡面按 flova 裁决只显图标不显字，desc 空时观感即「空卡」。
+- **改判（A+C）**：音色描述唯一载体 = **卡 desc**（悬停可见、read_state_group 可回读、与「卡片描述放 desc」
+  通用口径统一）；**timbre 回归前端预设选择器专属，模型留空**；角色组 desc 只承载视觉设定全文，
+  声音特征不进组 desc。落点：`_DRAFT_FIELDS_HINT` R1 句重写；`fc_gates` 音频拒收文案同步删创作要求
+  （情绪/配器归 Skill 唯一表述，与 09-26 desc 字段同裁决对齐）；测试钉 `test_11111_voice_card_has_single_carrier_field`
+  改新口径并加旧双份口径防回潮断言。
+- **同批（用户 09-26 追裁）**：`summary` 徽标字段描述加回原三示例（新措辞「简略的镜头描述与时长」保留）。
+- **仍挂起待裁**：卡级 `desc/timbre/audioType` 补进状态快照 drafts 段（行为面）。
+- **验收**：定向 100 passed；`check_tool_descriptions` PASS；`acceptance --quick` 全绿。
+
 ### 2026-09-26 · 工具描述与容器契约修订批（用户 12 条逐裁）+ 历史计划书卷面清理 + 仓库迁移
 
 - **修订（用户逐条裁决，并入 `6c0c2eef` 提交）**：`storyboard_delete_group` 措辞消歧（单个分组）；

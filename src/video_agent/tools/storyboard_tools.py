@@ -57,10 +57,16 @@ _DRAFT_FIELDS_HINT = (
     # timbre+desc、9999 只落 desc、8888 只落 prompt、11111 三处都落）。
     # 卡 prompt 留空是本阶段的分工（生成提示词归提示词撰写阶段），非模型漏写；
     # 缺的是「音色描述写哪」这一句正面契约。
-    # 归属：卡 timbre 承载音色描述本体（该字段本就是音色锚点载体，
-    # `resolve_shot_audio_refs` 按卡取用）；角色组 desc 承载元素设定全文。
-    "音色卡的音色描述写 timbre 字段（一句话音色特征），"
-    "角色组 desc 承载该角色的元素设定全文（含声音特征作为设定的一部分）。"
+    # 归属（2026-09-27 4444 裁决 A+C 改判，原 R1「音色描述写 timbre」废止）：
+    # 卡 desc = 音色描述唯一载体（悬停可见、read_state_group 可回读、
+    # 与卡 desc=「卡片描述」的通用口径统一）；timbre 回归前端预设选择器
+    # 专属（AudioParams 下拉「深邃男声/冷酷女声」），模型只留空、不写自由文本
+    # ——自由文本落 timbre 既无消费者又打坏下拉（4444 实证）；
+    # 角色组 desc 只承载视觉设定全文，声音特征不进组 desc（消双份事实源，
+    # 对齐 Skill「单独登记为 key_element_audio」）。
+    "音色卡的音色描述写 desc 字段（一句话音色特征），prompt 留空"
+    "（生成提示词归提示词撰写阶段）；timbre 由用户在参数栏选择，留空；"
+    "角色组 desc 承载该角色的视觉设定全文，声音特征只落音色卡。"
     # 2026-09-23 批11（事故 4444/P1-5）：mediaType 与 audioType 是**两个维度**，
     # 此前只交代了 audioType，模型以为声明了就够 ⇒ 只填 audioType 不填 mediaType，
     # 而 mediaType 缺省回落 image ⇒ 「音频语义 + 图像类型」自相矛盾卡，
@@ -173,7 +179,8 @@ class CreateGroupInput(StrictToolInput):
     duration: str = Field("", description="时长（shot 类型用；整镜总时长，如 '12s'）")
     summary: str = Field("", description=(
         "shot 类型必填：简略的镜头描述与时长（与 desc 镜头内容一致），"
-        "如'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段。"))
+        "如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；"
+        "缺失或空整单拒收；其他组类型忽略此字段。"))
     shot_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description=(
         "建组同时在该组内建一张卡（可选；只建组不带卡就省略本参数；"
