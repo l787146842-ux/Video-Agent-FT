@@ -1,0 +1,91 @@
+**内切镜时长估算（视频提示词撰写前）**
+
+若 Storyboard shot 未标注各内切镜时长，按以下经验值估算，确保单 shot 合计时长符合全局设置中的时长参数：
+
+| 镜头类型 | 建议时长 |
+| --- | --- |
+| 大特写 / 手部脚部特写 | 1.5–2.5s |
+| 面部特写（含台词） | 2–4s |
+| 近景胸像（含台词） | 2.5–4s |
+| 中景 / 中全景 | 3–5s |
+| 全景 / 大全景建立镜 | 3–5s |
+| 运镜推进 / 拉远 / 环绕 | 基础景别时长 +1s |
+
+超出全局设置的时长上限必须拆分为独立 shot。
+
+**角色三视图提示词（TextToImage，具体渠道与模型由全局设置决定，本文档不指定）**
+
+A character turnaround sheet of \[角色描述，含年龄/性别/外貌/服装/标志性细节\].
+Show three full-body views in one image, evenly spaced left-to-right:
+Front view (facing camera) | Side view (90° profile, facing right) | Back view (facing away).
+Identical clothing, accessories, hairstyle, and body proportions across all three views.
+Plain neutral gray background (#888888), soft even studio lighting, no shadows on background.
+Photorealistic, cinematic film still aesthetic, PANAVISION lens look, 8K detail.
+No text, no labels, no watermark.
+
+**场景四视图提示词（TextToImage，具体渠道与模型由全局设置决定，本文档不指定）**
+
+A location reference sheet of \[场景描述，含空间结构/材质/光源/色温/标志物\].
+Show four angles of the same location in one composite image (2×2 grid):
+Top-left: Wide establishing shot |
+Top-right: Medium shot from main entry point |
+Bottom-left: Detail shot of key prop or feature |
+Bottom-right: Reverse angle from opposite side.
+Identical lighting, color palette, and props across all four panels.
+No people in frame. Photorealistic, \[光影基调描述\], PANAVISION cinematic, IMAX 70mm film grain.
+No text, no labels, no watermark.
+
+**分镜表格图（运镜轨迹示意图）提示词（ImageToImage，具体渠道与模型由全局设置决定，本文档不指定）**
+
+A professional storyboard sheet titled "\[Shot ID\] 运镜轨迹示意图" in Chinese,
+clean white background, top-to-bottom vertical layout.
+
+\[Header\]: bold Chinese title "镜头运动轨迹示意图"; subtitle: "\[本 shot 剧情一句话概括\]";
+legend box — colored dashed arrows: 推进=red, 拉远=blue, 环绕=green, 升降=purple, 跟随=orange, 固定=cyan.
+
+\[Main content — one row per internal cut\]:
+Left (10%): numbered circle + Chinese shot description (景别 + 动作摘要, 2–3 lines)
+Center (70%): wide cinematic frame showing the scene; camera icon 📷 marks start position,
+dashed arrow shows movement path
+Right (20%): Chinese shot type label + one-sentence purpose note
+
+\[Footer\]: pacing summary in rounded box: "整体节奏：\[情绪词1\]→\[情绪词2\]→\[情绪词3\]"
+
+Style: all text Simplified Chinese, clean sans-serif; frame thumbnails photorealistic,
+matching attached reference images exactly; vertical 3:4 layout.
+
+Reference images attached:\
+
+- Image 1: Character sheet for @\[角色代号\] — replicate exactly\
+- Image 2: Location sheet for @\[场景代号\] — replicate exactly
+
+**单 shot 视频提示词**
+
+每个 shot 输出一段提示词，结构如下：
+
+\[影像风格\]: PANAVISION cinematic, anamorphic widescreen, IMAX 70mm film grain,
+24fps, natural depth of field, three-point dramatic lighting, cinematic color grading.
+
+\[场景\]: <<<image\_场景>>> — \[当前光影基调描述\]
+
+\[角色\]: <<<image\_角色>>> — \[当前服装/状态，与设定图一致\]
+
+\[镜头\]: \[景别\] + \[机位角度\] + \[运镜方式\]
+示例: Medium waist shot, fixed camera, eye-level
+
+\[动作\]: \[人物动作分解，按叙事顺序推进，主要动作→次要动作；
+避免写绝对秒数，用 slow / quick / lingering 描述节奏\]
+
+\[音效\]: <\[音效描述，紧贴对应动作\]>
+
+\[台词\]: {\[角色\]说: "\[台词原文\]"} (with \[情绪词\] tone)
+
+\[禁止\]: No subtitles, no background music, no text overlay, no watermark.
+
+\[时长\]: Approximately \[X\]s
+
+**固定尾部规则：**
+
+- 所有视频提示词末尾必须包含 No subtitles, no background music, no text overlay——BGM 在 audio_layer 独立生成，后期混音；台词/音效可内嵌。
+- 若所选视频渠道支持内嵌音频/文本标记（具体渠道与模型由全局设置决定，本文档不指定）：音乐 (...)、音效 <...>、台词 {...}（非项目语言需在括号前标明语言）、片内字幕 【...】；台词括号内只写原文，不加情绪标注。
+- 不依赖绝对时间戳（如 "0–3s"）描述动作节奏，改用速度形容词。

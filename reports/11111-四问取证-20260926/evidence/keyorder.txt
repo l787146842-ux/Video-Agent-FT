@@ -1,0 +1,20 @@
+=== storyboard_create_group 调用键序统计（子代理#2 会话）===
+['group_type', 'title', 'desc', 'duration', 'summary']  x9   ✅ 通过
+['group_type', 'title', 'summary', 'duration', 'desc']  x4   ❌ 被拒（summary 先于 desc）
+
+合计 13 次调用，其中被键序闸拒收 4 次（31%）
+
+=== 逐次时间线 ===
+seq=57   ❌  ['group_type', 'title', 'summary', 'duration', 'desc']  
+seq=57   ❌  ['group_type', 'title', 'summary', 'duration', 'desc']  
+seq=57   ❌  ['group_type', 'title', 'summary', 'duration', 'desc']  
+seq=57   ❌  ['group_type', 'title', 'summary', 'duration', 'desc']  
+seq=68   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=68   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=68   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=68   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=78   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=78   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=78   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=78   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  
+seq=78   ✅  ['group_type', 'title', 'desc', 'duration', 'summary']  

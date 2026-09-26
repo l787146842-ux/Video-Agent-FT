@@ -72,6 +72,13 @@ DECLARED_DATA: List[Tuple[str, str]] = [
      "priority pointer suffix (migration replacement)"),
     ("3. \u56de\u590d\u7eaa\u5f8b\u89c1\u5e73\u53f0\u534f\u8bae\u3002\n",
      "clause 3 pointer (migration replacement text)"),
+    # 2026-09-26 11111 取证批（R9）：铁律第 1 条验收口径——空头承诺
+    # 「（系统机器验收）」收敛为自查口径。两条都属 spec_rules 的
+    # **迁移匹配/替换字面量**（与上方优先级链同源同类），非新增模型 prose。
+    ("\uff08\u81ea\u67e5\u53e3\u5f84\uff1a\u955c\u6570\u3001\u65f6\u957f\u4e0e\u5267\u672c\u5185\u5bb9\u9010\u573a\u5bf9\u8d26\uff1b\u5e73\u53f0\u65e0\u5bf9\u5e94\u673a\u68b0\u95f8\uff09",
+     "clause 1 check scope (R9: iron-rules coverage wording, template + migration)"),
+    ("\uff08\u7cfb\u7edf\u673a\u5668\u9a8c\u6536\uff09",
+     "old clause 1 wording (R9 migration matching pattern; was an empty promise)"),
     # --- tracer display marker ---
     ("\u2026\uff08\u524d\u6587\u601d\u8003\u5df2\u622a\u65ad\uff09",
      "trace display truncation marker (not model context)"),

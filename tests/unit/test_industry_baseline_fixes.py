@@ -42,9 +42,19 @@ def isolate(tmp_path, monkeypatch):
 
 def test_iron_rules_default_body_two_clauses():
     """批 A3（指令收拢批）：模板收敛为「契约条款 + 头部指针」——
-    第 1 条「执行优先」与头部同义复述已删，唯一表述源 = iron_rules_header.md。"""
+    第 1 条「执行优先」与头部同义复述已删，唯一表述源 = iron_rules_header.md。
+
+    2026-09-26 11111 取证批（R9）：第 1 条的验收口径由「系统机器验收」改为
+    「自查口径」。原措辞是空头承诺——对应的机器验收（`_coverage_missing_key_elements`
+    / `skill_declares_audio` / `exec_split._script_speakers`）已随任务#36 B5
+    整体退役，现仅 `structure_integrity_gate` 查「标题提及的元素是否被引用」，
+    **不查镜数、不查时长、不查剧本覆盖**；11111 落盘 9/17 镜、106s vs 目标 180s、
+    场三整场 0 覆盖，全程零告警。文档不得承诺不存在的机器闸。
+    """
     body = spec_rules._IRON_RULES_DOC_BODY
-    assert "1. 拆解覆盖完整（系统机器验收）" in body
+    assert "1. 拆解覆盖完整（自查口径：" in body
+    assert "平台无对应机械闸" in body
+    assert "系统机器验收" not in body  # 空头承诺不得回潮
     assert "见平台注入的《执行铁律》头部声明" in body
     assert "执行优先" not in body
     assert "回复纪律见平台协议" not in body
@@ -111,8 +121,10 @@ def test_pause_label_protocol_scoped_to_confirmation():
 
 def test_iron_rules_clause1_single_sentence():
     """批 A3：铁律第 1 条 = 契约条款，粒度裁量归模型 + Skill，
-    冲突与缺信息处置归头部唯一表述源。"""
+    冲突与缺信息处置归头部唯一表述源。
+
+    2026-09-26 11111 取证批（R9）：验收口径改为自查（见上一用例）。"""
     body = spec_rules._IRON_RULES_DOC_BODY
-    assert "1. 拆解覆盖完整（系统机器验收）。\n" in body
+    assert "1. 拆解覆盖完整（自查口径：" in body
     assert "严禁把多位配角" not in body
     assert "宁缺毋滥" not in body

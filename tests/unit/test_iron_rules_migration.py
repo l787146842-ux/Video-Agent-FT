@@ -112,7 +112,12 @@ def test_clause_3_upgrade_guard_default_template_replaced():
 
 
 def test_clause_3_upgrade_guard_customized_body_preserved():
-    """标题匹配但正文已被用户定制 → 跳过替换，用户措辞逐字保留。"""
+    """标题匹配但正文已被用户定制 → 跳过替换，用户措辞逐字保留。
+
+    2026-09-26 11111 取证批（R9）：夹具里的「（系统机器验收）」现属第 1 条
+    口径漂移点（收敛为自查口径）⇒ `ensure_iron_rules_doc` 返回 True 属预期；
+    本用例的**核心不变式**仍是「用户定制的第 3 条逐字保留、不被平台改写」。
+    """
     from src.video_agent.core.spec_rules import IRON_RULES_DOC_NAME, ensure_iron_rules_doc
 
     custom = "3. 回复精简：回复一律先给结论再给依据，且不超过两百字。\n"
@@ -120,7 +125,9 @@ def test_clause_3_upgrade_guard_customized_body_preserved():
            "1. 执行优先：用户说什么就做什么。\n"
            "2. 拆解覆盖完整（系统机器验收）。\n" + custom)
     raw = {"documents": [{"id": "d1", "name": IRON_RULES_DOC_NAME, "content": old}]}
-    assert ensure_iron_rules_doc(raw) is False  # 无漂移点 → 不写
+    assert ensure_iron_rules_doc(raw) is True  # 第 1 条口径漂移 → 升级
     content = raw["documents"][0]["content"]
     assert custom in content, "用户定制的第 3 条必须原样保留"
     assert "回复纪律见平台协议" not in content
+    # R9：旧口径收敛为现行自查口径
+    assert "系统机器验收" not in content

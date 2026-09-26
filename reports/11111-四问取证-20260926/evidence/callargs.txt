@@ -1,0 +1,77 @@
+seq=57 time=1790410583.019658
+   KEY ORDER: ['group_type', 'title', 'summary', 'duration', 'desc']
+   title: 失重舱室中程心与AA从冬眠中苏醒，舷窗外木星云带旋转
+   引用 present in desc: True
+   desc tail: "引用：[星环号球形舱]、[程心]、[AA]、[深空外景（太阳系外缘）]"
+
+seq=57 time=1790410583.019658
+   KEY ORDER: ['group_type', 'title', 'summary', 'duration', 'desc']
+   title: 信息窗口弹出曹彬的脸，AA抓住扶手质问木星城为何没进掩体
+   引用 present in desc: True
+   desc tail: "引用：[星环号球形舱]、[AA]、[程心]、[曹彬]"
+
+seq=57 time=1790410583.019658
+   KEY ORDER: ['group_type', 'title', 'summary', 'duration', 'desc']
+   title: 程心与曹彬一问一答，曹彬说出小得像一张白色薄片
+   引用 present in desc: True
+   desc tail: "引用：[星环号球形舱]、[程心]、[AA]、[曹彬]、[白色薄片]"
+
+seq=57 time=1790410583.019658
+   KEY ORDER: ['group_type', 'title', 'summary', 'duration', 'desc']
+   title: 舷窗外木星与太空城依旧平静，曹彬说掩体没用了
+   引用 present in desc: True
+   desc tail: "引用：[星环号球形舱]、[程心]、[AA]、[曹彬]、[深空外景（太阳系外缘）]"
+
+seq=68 time=1790410599.519914
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 失重舱室中程心与AA从冬眠中苏醒，舷窗外木星云带旋转
+   引用 present in desc: False
+   desc tail: "无对白，仅环境音（舱内低频嗡鸣）。"
+
+seq=68 time=1790410599.519914
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 信息窗口弹出曹彬的脸，AA抓住扶手质问木星城为何未进掩体
+   引用 present in desc: False
+   desc tail: "对白：AA（沙哑、急促）：“为什么木星城还没躲进掩体？”"
+
+seq=68 time=1790410599.519914
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 程心与曹彬一问一答，曹彬说出小得像一张白色薄片
+   引用 present in desc: False
+   desc tail: "曹彬（摇头）：“不是光粒。我们看到的是一个小东西。小得像一张[白色薄片]。”"
+
+seq=68 time=1790410599.519914
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 舷窗外木星与太空城依旧平静，曹彬说掩体没用了
+   引用 present in desc: False
+   desc tail: "对白：曹彬（画外，苍老、低缓）：“掩体没用了。”"
+
+seq=78 time=1790410619.4380994
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 深空外景中太阳只是远处一个暗淡小点
+   引用 present in desc: True
+   desc tail: "引用：[深空外景（太阳系外缘）]"
+
+seq=78 time=1790410619.4380994
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 控制舱内引力波定位图显示目标急剧减速，领航员报告
+   引用 present in desc: True
+   desc tail: "引用：[启示号控制舱]、[领航员]、[瓦西里]"
+
+seq=78 time=1790410619.4380994
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 白Ice发现未知飞船曾掠过，瓦西里断言“它把另一个东西扔进来了”
+   引用 present in desc: True
+   desc tail: "引用：[启示号控制舱]、[白Ice]、[瓦西里]"
+
+seq=78 time=1790410619.4380994
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: “启示”号逼近至一千千米，屏幕仍是一片黑
+   引用 present in desc: True
+   desc tail: "引用：[启示号控制舱]、[领航员]、[瓦西里]"
+
+seq=78 time=1790410619.4380994
+   KEY ORDER: ['group_type', 'title', 'desc', 'duration', 'summary']
+   title: 观测员报告可见光发现白点，无人太空艇离船
+   引用 present in desc: True
+   desc tail: "引用：[启示号控制舱]、[领航员]"

@@ -624,29 +624,55 @@ def append_turn_end(svc: Any, conversation_id: str, reason: str = "done") -> Non
 
 # ---------- 子代理只读记录（B3 后端地基，事件流单一事实源） ----------
 
+# 子代理完工打卡工具名（R4 完工判定用）：唯一源 = tools/structured_output.py
+# 的 `StructuredOutputTool.name`。此处为**事件流侧只读比对常量**——赛事流里
+# 只留工具名字符串，不持有工具实例，故以字面量登记（非第二份契约：
+# 打卡语义仍归该模块，本处只回答「这名字出现过没有」）。
+_COMPLETION_TOOL = "structured_output"
+
 
 def thread_status(svc: Any, conversation_id: str = "") -> Dict[str, Any]:
     """隐藏线程运行态概览（供子任务卡）：看最后一条 turn/end 的 reason——
     reason != "done"（stopped/cancelled/error）→ failed（子代理崩死不再误报
-    已完成）；reason == "done" → completed；无 turn/end → running。
-    steps = assistant 响应数；读不到事件流静默回落 unknown。"""
+    已完成）；无 turn/end → running。
+    steps = assistant 响应数；读不到事件流静默回落 unknown。
+
+    2026-09-26 11111 取证批（R4，本次修复）：`reason == "done"` 不再直接判
+    「completed」——须**同时**看子代理是否已按契约打卡（`structured_output`）。
+    病灶：子代理收尾契约是「完成 = 一次工具调用」（`tools/structured_output.py`
+    模块头，dsh `structured.ts` 同构），而本函数此前只读 `turn/end.reason`。
+    11111 实跑：两个子代理**都没打卡**（`structured_output` 调用数 = 0）、
+    均在配额耗尽后以 `reason="done"` 收尾，状态却报 completed ——
+    未完工的委派被显示成已完成，主代理只能靠 `read_state_group` 自行发现
+    （`conv-main` step6 推理：「看起来子代理只完成了部分工作」）。
+    修法：只读事件流做**客观判定**（不新增闸机、不改收尾契约）——
+    已打卡 → completed；未打卡 → `incomplete`（前端可区分于 failed：
+    线程没崩，是活没干完）。
+    """
     try:
         events = load_events(svc, conversation_id)
     except Exception:
         return {"status": "unknown", "steps": 0, "events": 0}
     last_reason = ""
     done = False
+    captured = False
     for e in events:
-        if str(e.get("type") or "") == EV_TURN_END:
+        etype = str(e.get("type") or "")
+        if etype == EV_TURN_END:
             done = True
             last_reason = str(e.get("reason") or "done")
+        elif etype == EV_TOOL_RESULT and str(e.get("name") or "") == _COMPLETION_TOOL:
+            captured = True
     steps = sum(1 for e in events if str(e.get("type") or "") == EV_ASSISTANT)
     if not done:
         status = "running"
+    elif last_reason != "done":
+        status = "failed"
     else:
-        status = "completed" if last_reason == "done" else "failed"
+        status = "completed" if captured else "incomplete"
     return {"status": status, "steps": steps,
-            "events": len(events), "reason": last_reason or "done"}
+            "events": len(events), "reason": last_reason or "done",
+            "captured": captured}
 
 
 def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[str, Any]]:

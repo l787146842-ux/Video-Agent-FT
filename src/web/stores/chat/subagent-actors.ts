@@ -63,7 +63,7 @@ export interface SubagentActor {
   stage: string;
   label: string;
   depth: number;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'incomplete' | 'failed';
   /** 子级 state_refresh（actions_applied）累计步数 */
   steps: number;
   tools: SubagentActorTool[];
@@ -305,7 +305,8 @@ export const subagentActorActions = {
             label: th.label || th.title || '',
             depth: 1,
             status: th.status === 'running' ? 'running'
-              : th.status === 'failed' ? 'failed' : 'completed',
+              : th.status === 'failed' ? 'failed'
+                : th.status === 'incomplete' ? 'incomplete' : 'completed',
             steps: Number(th.steps || 0) || 0,
             tools: [],
             startedAt: cidCreatedAtMs(cid) || Date.now(),

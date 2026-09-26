@@ -24,9 +24,11 @@ def protocol_text() -> str:
 
 
 def test_platform_keeps_single_overview(protocol_text: str):
-    """平台层只留总纲一句（含术语「渐进式披露」，既有预算/快照测试依赖该锚点）"""
+    """平台层只留总纲一句（含术语「渐进式披露」，既有预算/快照测试依赖该锚点）
+    （2026-09-26 锚点同步：批N 把「read_* 工具按需读取」改写为「按任务分工决定由谁读」
+    时未同步本测试，此处按现行总纲原文修正锚点，锁定语义不变）"""
     assert "渐进式披露总纲" in protocol_text
-    assert "read_* 工具按需读取" in protocol_text
+    assert "读取本身没有限制，但按任务分工决定由谁读" in protocol_text
 
 
 def test_per_tool_instructions_not_duplicated(protocol_text: str):

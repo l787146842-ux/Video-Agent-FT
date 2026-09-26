@@ -1,0 +1,14 @@
+== �Ӵ���#1 conv-1790410161
+   ['group_type', 'element_type', 'title', 'desc', 'draft'] x6 ok
+   ['group_type', 'title', 'summary', 'duration', 'shot_refs', 'desc'] x4 REJECT
+   ['group_type', 'title', 'element_type', 'desc'] x3 ok
+   ['group_type', 'element_type', 'title', 'desc'] x2 ok
+== �Ӵ���#2 conv-1790410361
+   ['group_type', 'title', 'desc', 'duration', 'summary'] x9 ok
+   ['group_type', 'title', 'summary', 'duration', 'desc'] x4 REJECT
+
+== ȫ��־� desc β��������ͳ�� ==
+  proj-1790326837-3c760e66   8888   shots=10  β�������ã���=0   β����ʱ������=0
+  proj-1790255904-2e5508d2   6666   shots=14  β�������ã���=0   β����ʱ������=0
+  proj-1790358500-25465d26   9999   shots=11  β�������ã���=0   β����ʱ������=0
+  proj-1790409991-6152543d   11111  shots=9   β�������ã���=5   β����ʱ������=0

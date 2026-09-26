@@ -363,7 +363,12 @@ def test_project_readable_record_and_status(svc):
     assert session_log.thread_status(svc, cid)["status"] == "running"  # 无 turn/end
     session_log.append_turn_end(svc, cid)
     st = session_log.thread_status(svc, cid)
-    assert st["status"] == "completed" and st["steps"] == 2
+    # R4（11111 事故）：未打卡即收尾 → incomplete（旧口径误报 completed）
+    assert st["status"] == "incomplete" and st["steps"] == 2
+    # 按收尾契约打卡后 → completed
+    session_log.append_tool_result(
+        svc, cid, 2, "c2", "structured_output", "已创建 3 项", ok=True)
+    assert session_log.thread_status(svc, cid)["status"] == "completed"
 
 
 # ---------- 2026-09-22 批4（Q4.1+Q4.2）：记录态增量腿 + 每步耗时 ----------
@@ -450,14 +455,20 @@ def test_record_interrupted_partial_not_marked_streaming(svc):
 
 
 def test_thread_status_running_then_completed(svc):
-    """隐藏线程状态机（批4 新用例）：无 turn/end = running；
-    落 turn/end 后 = completed 且步数取 assistant 消息数。"""
+    """隐藏线程状态机（批4 新用例；R4 更新）：无 turn/end = running；
+    落 turn/end 后按**打卡与否**分 completed / incomplete，步数取 assistant 消息数。"""
     cid = "conv-sub-status"
     session_log.append_user_message(svc, cid, "任务")
     session_log.append_assistant_message(svc, cid, 1, "一")
     session_log.append_assistant_message(svc, cid, 2, "二")
     assert session_log.thread_status(svc, cid)["status"] == "running"  # 无 turn/end
     session_log.append_turn_end(svc, cid)
+    st = session_log.thread_status(svc, cid)
+    # R4：无打卡 → incomplete（线程没崩，是活没干完）
+    assert st["status"] == "incomplete" and st["steps"] == 2
+    # 打卡后 → completed
+    session_log.append_tool_result(
+        svc, cid, 2, "c1", "structured_output", "已创建 0 项", ok=True)
     st = session_log.thread_status(svc, cid)
     assert st["status"] == "completed" and st["steps"] == 2
 

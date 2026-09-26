@@ -1,0 +1,6 @@
+## 082d6dbf1ab0 label=轮次完成 c55316e4daf8 ts=2026-09-26T08:06:59.142109+00:00 keys=['project_id', 'project_name', 'status', 'keyElements', 'shots', 'audioItems', 'assets', 'documents', 'chatMessages', 'conversations', 'activeConversationId', 'usedSkills', 'activeSkill', 'turn_seq', 'interaction', 'uploadedDocs', 'workflow_run', 'workflow_events']
+   keyElements=0 shots=0 audioItems=0 board_version=None
+## 07d12211aac4 label=轮次完成 68fc2b89281e ts=2026-09-26T08:08:29.699569+00:00 keys=['project_id', 'project_name', 'status', 'keyElements', 'shots', 'audioItems', 'assets', 'documents', 'chatMessages', 'conversations', 'activeConversationId', 'usedSkills', 'activeSkill', 'turn_seq', 'interaction', 'uploadedDocs', 'workflow_run', 'workflow_events', 'analysis']
+   keyElements=0 shots=0 audioItems=0 board_version=None
+## 6b1957e5b756 label=轮次完成 a08f3a60b82f ts=2026-09-26T08:17:08.034611+00:00 keys=['project_id', 'project_name', 'status', 'keyElements', 'shots', 'audioItems', 'assets', 'documents', 'chatMessages', 'conversations', 'activeConversationId', 'usedSkills', 'activeSkill', 'turn_seq', 'interaction', 'uploadedDocs', 'workflow_run', 'workflow_events', 'analysis', 'flowEvents']
+   keyElements=11 shots=9 audioItems=0 board_version=None

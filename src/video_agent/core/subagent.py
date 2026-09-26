@@ -223,6 +223,41 @@ STAGE_CARD_AUDIO_TYPES: Dict[str, FrozenSet[str]] = {
     "storyboard_design": frozenset({"voice"}),
 }
 
+
+def stage_card_contract(stage: str = "") -> str:
+    """阶段建卡限定的**模型可见正面契约**（空串 = 该阶段不受限，整句不出）。
+
+    2026-09-26 11111 取证批（R3，本次修复）：
+    病灶 = **主代理结构性看不见它自己下的禁令**。`STAGE_CARD_MEDIA` /
+    `STAGE_CARD_AUDIO_TYPES` 只经 `planner._apply_stage_card_media` 下发到
+    **子级**的 `GateContext`（`subagent_stage` 只设在 `child_ctx`），
+    而 `prompt_builder` 对 `subagent_depth>=1` 主动跳过不可用工具块渲染
+    ⇒ **父级 prompt 里从来没有这两张表**。
+    实跑后果（11111）：主代理按 `SUBAGENT_POLICY`「只补子代理读不到的东西」
+    老实写下 `current_step="…补齐场景/道具 keyElement 草稿…"`，子代理照办、
+    5 次 `storyboard_add_draft(mediaType=image)` **全被阶段媒体闸拒收**，
+    单步烧掉 188.0s / 42,340 字推理（占两次委派总时长 ≥46%）。
+
+    形态选择（P2 约束下沉 / G3 禁「写一句话让模型配合」）：
+    不新增 prose 禁令、不新增闸机、不改既有表——只把**已存在的两张表**
+    渲染成一句正面契约，挂到主代理**已经要读**的 `run_subagent.stage`
+    入参描述上（同 `_stage_hint()` 动态拼接枚举的先例：白名单唯一源仍是
+    本模块两张表，消费端只引用不复制，P1 不破）。
+    """
+    resolved = resolve_stage(stage)
+    if not resolved:
+        return ""
+    media = STAGE_CARD_MEDIA.get(resolved, frozenset())
+    audio = STAGE_CARD_AUDIO_TYPES.get(resolved, frozenset())
+    if not media and not audio:
+        return ""
+    parts: List[str] = []
+    if media:
+        parts.append("新建草稿卡可用媒体类型=" + "/".join(sorted(media)))
+    if audio:
+        parts.append("其中音频卡的音频种类=" + "/".join(sorted(audio)))
+    return "；".join(parts)
+
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
 # 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
 # （_STAGE_TOOLS），配置漂移在 import 期即报错，不带到运行时静默丢章节注入。

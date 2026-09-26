@@ -213,6 +213,7 @@ const zhCN = {
   'rp.actor.fallbackLabel': '子代理任务',
   'rp.actor.running': '执行中',
   'rp.actor.completed': '已完成',
+  'rp.actor.incomplete': '未完工',
   'rp.actor.failed': '已中断',
   'rp.actor.steps': '{count} 步',
   'rp.actor.tools': '子代理操作（{count}）',

@@ -315,7 +315,40 @@ def _downgrade_tool_role_messages(messages: List[Dict[str, Any]]) -> List[Dict[s
     """拒收型端点降级：assistant.tool_calls 消息转回 assistant 文本占位，
     role:"tool" 结果消息转回 user 伪装（FEEDBACK_MARKER 前缀，与旧格式
     兼容——fc_feedback 家族的文本解析对两种形态都成立）。浅拷贝替换，
-    不改调用方历史本体。"""
+    不改调用方历史本体。
+
+    2026-09-26 11111 取证批（样板话回声修复，用户批准）：
+    病灶 = **assistant 侧占位文案被模型当成自己的口吻模仿**。原文案是一句
+    完整的第一人称式陈述「（本轮为工具调用轮：{names}，结果见紧随其后的
+    系统消息）」，而本降级**是粘性的**（`MSG_TOOL_ROLE_KEY` 入
+    `_unsupported_fields` ⇒ 本实例后续请求一律沿用旧通道），于是模型每一轮
+    看到的**自己的历史全是这句样板话**，开始照抄。
+
+    实跑取证（`proj-1790409991-6152543d`，两次子代理 5 处纯文本轮逐字复现）：
+    其中 seq=57 那轮**确实带了 5 个工具调用**、正文却仍是该样板话 ⇒ 已成
+    "说话习惯"；模型推理两次自认 `I again failed to emit tool calls.`。
+    危害：被这句「结果见紧随其后的系统消息」暗示后，模型倾向只写正文、
+    忘记发工具，直接被轮末假停判定捕获（子代理#2 八步里丢 3 步）。
+
+    判别依据（非推测）：本函数用 `", ".join` **逗号连接**工具名、**从不产
+    `×N`**；而实测正文含 `×4`/`×5`/「含 corrected 字段顺序」——那些是模型
+    自己补的字 ⇒ 因果方向 = harness 给前半句、模型照抄并补全。
+
+    修法：改为**机械标记式**（对齐既有 `⟦PRUNE: …⟧` 结构标记口径，
+    `context_prune` 同款，见 `check_prompt_literals.DECLARED_DATA`）——
+    方括号 + 冒号 + 名词短语，**不写成第一人称完整句**，模型无从模仿；
+    工具名保留（排障需要，且是唯一可追溯调用内容的痕迹）。
+
+    ⚠️ 下方 `role:"tool"` 分支的前缀**不属本批改动范围**，且经实测**与
+    `fc_feedback.FEEDBACK_MARKER` 并非同一字符串**（适配器写「（系统）本轮
+    工具执行结果：」，而 FEEDBACK_MARKER 是「（系统）本轮调用的工具已执行完毕，
+    结果如下：」）⇒ `fc_feedback._is_feedback_msg` 对降级后的消息**返回
+    False**，历史注释所称「fc_feedback 家族的文本解析对两种形态都成立」
+    **不成立**。影响面 = `digest_projected_tool_lines`（工具行摘要压缩）与
+    `_skill_section_seen`（read_skill 去重）在降级通道下双双失效——降级是
+    粘性的，故该通道一经启用，两项优化全程不生效。**已登记，待裁决**，
+    本批只改 assistant 侧可模仿文案。
+    """
     out = messages
     mutated = False
     for i, m in enumerate(messages):
@@ -331,7 +364,7 @@ def _downgrade_tool_role_messages(messages: List[Dict[str, Any]]) -> List[Dict[s
                 for c in calls if isinstance(c, dict))
             new_msg = {k: v for k, v in m.items() if k != "tool_calls"}
             new_msg["content"] = new_msg.get("content") or (
-                f"（本轮为工具调用轮：{names}，结果见紧随其后的系统消息）")
+                f"\u27e6TOOL_CALLS: {names}\u27e7")
             out[i] = new_msg
         elif m.get("role") == "tool":
             if not mutated:

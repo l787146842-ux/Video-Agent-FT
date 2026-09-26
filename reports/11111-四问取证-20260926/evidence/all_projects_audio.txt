@@ -1,0 +1,55 @@
+=== proj-1790326837-3c760e66 (8888) ke=14 shots=10 audioItems=3
+   voice card: group=Element_程心 label=音色卡：程心 prompt_len=48 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_AA label=音色卡：AA prompt_len=45 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_曹彬 label=音色卡：曹彬 prompt_len=40 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_瓦西里 label=音色卡：瓦西里 prompt_len=49 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_白Ice label=音色卡：白Ice prompt_len=42 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_领航员 label=音色卡：领航员 prompt_len=39 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_观测员 label=音色卡：观测员 prompt_len=39 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_研究员A label=音色卡：研究员A prompt_len=41 timbre_len=0 desc_len=0 has_audio=False
+   voice card: group=Element_研究员B label=音色卡：研究员B prompt_len=40 timbre_len=0 desc_len=0 has_audio=False
+   audio group: Audio_BGM-01 末日序曲  drafts=1
+       draft BGM-01 末日序曲 prompt_len=76 audioType=bgm
+   audio group: Audio_BGM-02 深空追踪  drafts=1
+       draft BGM-02 深空追踪 prompt_len=66 audioType=bgm
+   audio group: Audio_BGM-03 白色薄片  drafts=1
+       draft BGM-03 白色薄片 prompt_len=88 audioType=bgm
+=== proj-1790255904-2e5508d2 (6666) ke=14 shots=14 audioItems=3
+   voice card: group=Element_程心 label=程心·音色 prompt_len=0 timbre_len=10 desc_len=51 has_audio=False
+   voice card: group=Element_AA label=AA·音色 prompt_len=0 timbre_len=11 desc_len=52 has_audio=False
+   voice card: group=Element_曹彬 label=曹彬·音色 prompt_len=0 timbre_len=9 desc_len=45 has_audio=False
+   voice card: group=Element_瓦西里 label=瓦西里·音色 prompt_len=0 timbre_len=9 desc_len=50 has_audio=False
+   voice card: group=Element_白Ice label=白Ice·音色 prompt_len=0 timbre_len=11 desc_len=54 has_audio=False
+   voice card: group=Element_领航员 label=领航员·音色 prompt_len=0 timbre_len=9 desc_len=48 has_audio=False
+   voice card: group=Element_观测员 label=观测员·音色 prompt_len=0 timbre_len=8 desc_len=41 has_audio=False
+   voice card: group=Element_研究员甲 label=研究员甲·音色 prompt_len=0 timbre_len=9 desc_len=50 has_audio=False
+   voice card: group=Element_研究员乙 label=研究员乙·音色 prompt_len=0 timbre_len=9 desc_len=38 has_audio=False
+   audio group: Audio_BGM-场一·木星警报  drafts=1
+       draft BGM-木星警报 prompt_len=0 audioType=bgm
+   audio group: Audio_BGM-场二·深空探秘  drafts=1
+       draft BGM-深空探秘 prompt_len=0 audioType=bgm
+   audio group: Audio_BGM-场三·异象白辉  drafts=1
+       draft BGM-异象白辉 prompt_len=0 audioType=bgm
+=== proj-1790358500-25465d26 (9999) ke=15 shots=11 audioItems=3
+   voice card: group=Element_程心 label=程心-音色 prompt_len=0 timbre_len=0 desc_len=69 has_audio=False
+   voice card: group=Element_艾AA（AA） label=艾AA-音色 prompt_len=0 timbre_len=0 desc_len=56 has_audio=False
+   voice card: group=Element_曹彬（老年） label=曹彬-音色 prompt_len=0 timbre_len=0 desc_len=62 has_audio=False
+   voice card: group=Element_瓦西里 label=瓦西里-音色 prompt_len=0 timbre_len=0 desc_len=59 has_audio=False
+   voice card: group=Element_白Ice label=白Ice-音色 prompt_len=0 timbre_len=0 desc_len=57 has_audio=False
+   voice card: group=Element_领航员 label=领航员-音色 prompt_len=0 timbre_len=0 desc_len=47 has_audio=False
+   voice card: group=Element_观测员 label=观测员-音色 prompt_len=0 timbre_len=0 desc_len=55 has_audio=False
+   voice card: group=Element_研究员A label=研究员A-音色 prompt_len=0 timbre_len=0 desc_len=50 has_audio=False
+   voice card: group=Element_研究员B label=研究员B-音色 prompt_len=0 timbre_len=0 desc_len=46 has_audio=False
+   audio group: Audio_BGM-1 末世静默  drafts=0
+   audio group: Audio_BGM-2 深空追迹  drafts=0
+   audio group: Audio_BGM-3 谜团逼近  drafts=0
+=== proj-1790409991-6152543d (11111) ke=11 shots=9 audioItems=0
+   voice card: group=Element_程心 label=程心-音色 prompt_len=0 timbre_len=16 desc_len=36 has_audio=False
+   voice card: group=Element_AA label=AA-音色 prompt_len=0 timbre_len=13 desc_len=31 has_audio=False
+   voice card: group=Element_曹彬 label=曹彬-音色 prompt_len=0 timbre_len=11 desc_len=34 has_audio=False
+   voice card: group=Element_领航员 label=领航员-音色 prompt_len=0 timbre_len=12 desc_len=32 has_audio=False
+   voice card: group=Element_瓦西里 label=瓦西里-音色 prompt_len=0 timbre_len=17 desc_len=0 has_audio=False
+   voice card: group=Element_白Ice label=白Ice-音色 prompt_len=0 timbre_len=13 desc_len=0 has_audio=False
+
+TOTALS: projects=7, with voice/audio=4
+voice cards total=33, with non-empty prompt=9

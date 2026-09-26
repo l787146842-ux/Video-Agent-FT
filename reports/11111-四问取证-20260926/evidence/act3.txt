@@ -1,0 +1,36 @@
+=== 场三 逐句精确覆盖检查 ===
+
+[MISSING ] “启示”号实验舱
+[MISSING ] 机械臂伸向白色薄膜。密封抓斗合拢。
+[MISSING ] 抓斗退回。
+[MISSING ] 薄膜仍悬在原地，像从抓斗里漏出来的光。
+[MISSING ] 机械臂再次伸过去，直接穿过薄膜。没有火花，没有阻力，没有刮痕。
+[MISSING ] 太空艇缓慢撞向薄膜。白色小片进入艇身，又从艇尾穿出，位置不偏不移。
+[MISSING ] 实验舱内，灯光被调暗。薄膜悬在中心，透过它能看见后方的设备和人影，只是边缘带着淡淡白辉。
+[MISSING ] 研究员：所有频段电磁波都穿透。无反射，无衍射。磁场无效。
+[MISSING ] 另一名研究员：引力测不到。质量可能接近零。
+[MISSING ] 瓦西里戴着宇宙服手套，把手伸进薄膜。手掌被那一片白色光面“分开”，又完整地抽出来。
+[MISSING ] 瓦西里：它什么也不做。
+[MISSING ] 白Ice：也可能是我们还没碰到它真正存在的地方。
+[MISSING ] 二十多个小时过去。白光在监测曲线上一点点下降，引力波强度也在下降。
+[MISSING ] 有人把薄膜穿过眼睛位置，让同伴拍照。笑声在实验舱里响起。
+[MISSING ] 白Ice猛地关掉图像记录。
+[MISSING ] 白Ice：离它远点。
+[MISSING ] 没人笑了。
+
+场三：17 句，覆盖 0 句（0%）
+
+=== 场三在分镜里到底有没有 ===
+  实验舱          in_shots=False
+  机械臂          in_shots=False
+  抓斗           in_shots=False
+  薄膜           in_shots=False
+  研究员          in_shots=False
+  电磁波          in_shots=False
+  手套           in_shots=False
+  离它远点         in_shots=False
+  没人笑了         in_shots=False
+  监测曲线         in_shots=False
+  二十多个小时       in_shots=False
+  拍照           in_shots=False
+  笑声           in_shots=False

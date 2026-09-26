@@ -1,0 +1,67 @@
+LANDED SHOTS: 9
+0: Shot_失重舱室中程心与AA从冬眠中苏醒，舷窗外木星云带旋转
+    dur=13s 内切镜=5 desc_chars=404 shotRefs=['Element_程心', 'Element_AA', 'Element_星环号球形舱']
+1: Shot_信息窗口弹出曹彬的脸，AA抓住扶手质问木星城为何未进掩体
+    dur=14s 内切镜=4 desc_chars=401 shotRefs=['Element_程心', 'Element_AA', 'Element_曹彬', 'Element_星环号球形舱']
+2: Shot_程心与曹彬一问一答，曹彬说出小得像一张白色薄片
+    dur=14s 内切镜=5 desc_chars=437 shotRefs=['Element_程心', 'Element_曹彬', 'Element_白色薄片', 'Element_星环号球形舱', 'Element_AA']
+3: Shot_舷窗外木星与太空城依旧平静，曹彬说掩体没用了
+    dur=12s 内切镜=3 desc_chars=329 shotRefs=['Element_程心', 'Element_AA', 'Element_曹彬', 'Element_星环号球形舱']
+4: Shot_深空外景中太阳只是远处一个暗淡小点
+    dur=6s 内切镜=2 desc_chars=199 shotRefs=['Element_深空外景（太阳系外缘）']
+5: Shot_控制舱内引力波定位图显示目标急剧减速，领航员报告
+    dur=12s 内切镜=4 desc_chars=363 shotRefs=['Element_启示号控制舱', 'Element_领航员', 'Element_瓦西里']
+6: Shot_白Ice发现未知飞船曾掠过，瓦西里断言“它把另一个东西扔进来了”
+    dur=13s 内切镜=4 desc_chars=401 shotRefs=['Element_启示号控制舱', 'Element_白Ice', 'Element_瓦西里']
+7: Shot_“启示”号逼近至一千千米，屏幕仍是一片黑
+    dur=11s 内切镜=4 desc_chars=313 shotRefs=['Element_启示号控制舱', 'Element_领航员', 'Element_瓦西里']
+8: Shot_观测员报告可见光发现白点，无人太空艇离船
+    dur=11s 内切镜=4 desc_chars=324 shotRefs=['Element_启示号控制舱', 'Element_领航员']
+TOTAL LANDED = 106s (1.77 min)
+
+SPEC TARGET = 约 3 分钟 = 180s
+MODEL PLAN  = 182s (A:53 + B:65 + C:64)
+SHORTFALL vs target = 74s (59% of target)
+
+KEY ELEMENTS: 11
+  - Element_程心 [character] drafts=1
+  - Element_AA [character] drafts=1
+  - Element_曹彬 [character] drafts=1
+  - Element_领航员 [character] drafts=1
+  - Element_瓦西里 [character] drafts=1
+  - Element_白Ice [character] drafts=1
+  - Element_星环号球形舱 [scene] drafts=0
+  - Element_启示号控制舱 [scene] drafts=0
+  - Element_"启示"号实验舱 [scene] drafts=0
+  - Element_深空外景（太阳系外缘） [scene] drafts=0
+  - Element_白色薄片 [prop] drafts=0
+
+AUDIO ITEMS: 0
+DOCUMENTS: ['执行铁律.md', '制片规格.md']
+
+=== MISSING ACT 3 CHECK ===
+  机械臂          present_in_shots=False
+  抓斗           present_in_shots=False
+  穿过薄膜         present_in_shots=False
+  太空艇          present_in_shots=True
+  灯光           present_in_shots=False
+  研究员          present_in_shots=False
+  电磁波          present_in_shots=False
+  引力测不到        present_in_shots=False
+  手套           present_in_shots=False
+  它什么也不做       present_in_shots=False
+  监测曲线         present_in_shots=False
+  拍照           present_in_shots=False
+  笑声           present_in_shots=False
+  图像记录         present_in_shots=False
+  离它远点         present_in_shots=False
+  没人笑了         present_in_shots=False
+  二十多个小时       present_in_shots=False
+
+=== ACT2 TAIL CHECK ===
+  全息图像         present_in_shots=False
+  8.5          present_in_shots=False
+  5.2          present_in_shots=False
+  手掌           present_in_shots=False
+  松了口          present_in_shots=False
+  盯着那片白光       present_in_shots=False

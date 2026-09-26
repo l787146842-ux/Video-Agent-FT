@@ -457,16 +457,51 @@ def test_thread_status_reflects_turn_end_reason(svc):
     session_log.append_assistant_message(svc, "", 1, "干活中")
     assert session_log.thread_status(svc, "")["status"] == "running"
 
-    # 最后一条 reason=done → completed
+    # 2026-09-26 11111 取证批（R4）：reason=done 但**未打卡** → incomplete
+    # （未按收尾契约声明完工，不得报「已完成」）
     session_log.append_turn_end(svc, "", reason="done")
     st = session_log.thread_status(svc, "")
-    assert st["status"] == "completed" and st["reason"] == "done"
+    assert st["status"] == "incomplete" and st["reason"] == "done"
+    assert st["captured"] is False
 
     # 最后一条 reason=error → failed（子代理 504 崩死不再误报「已完成」）
     session_log.append_turn_start(svc, "")
     session_log.append_turn_end(svc, "", reason="error")
     st = session_log.thread_status(svc, "")
     assert st["status"] == "failed" and st["reason"] == "error"
+
+
+def test_thread_status_done_with_completion_card_is_completed(svc):
+    """R4（11111 事故）：reason=done 且已 structured_output 打卡 → completed。
+
+    收尾契约「完成 = 一次工具调用」（tools/structured_output.py 模块头）：
+    只有打了卡才代表子代理按契约自己声明完工；本用例钉死该判定，
+    并钉死「打卡事件按其工具名从事件流客观识别」这一口径。
+    """
+    session_log.append_turn_start(svc, "")
+    session_log.append_assistant_message(svc, "", 1, "收尾")
+    session_log.append_tool_result(
+        svc, "", 1, "c9", "structured_output", "已创建 3 项", ok=True)
+    session_log.append_turn_end(svc, "", reason="done")
+    st = session_log.thread_status(svc, "")
+    assert st["status"] == "completed" and st["captured"] is True
+
+
+def test_thread_status_done_unfinished_subagent_not_completed(svc):
+    """R4 反例（11111 现场复刻）：两个子代理均未打卡即 reason=done 收尾。
+
+    11111 实跑：`structured_output` 调用数 = 0、配额耗尽后 reason=done，
+    旧判定报 completed ⇒ 未完工的委派被显示成已完成。本用例为现场复刻，
+    防止「未打卡也算完成」回归。
+    """
+    session_log.append_turn_start(svc, "")
+    session_log.append_assistant_message(svc, "", 1, "（本轮为工具调用轮…）")
+    session_log.append_tool_result(
+        svc, "", 1, "c1", "storyboard_create_group", "分组 ID = shot-1", ok=True)
+    session_log.append_turn_end(svc, "", reason="done")
+    st = session_log.thread_status(svc, "")
+    assert st["status"] == "incomplete"
+    assert st["captured"] is False
 
 
 def test_thread_status_unknown_on_read_failure(svc, monkeypatch):

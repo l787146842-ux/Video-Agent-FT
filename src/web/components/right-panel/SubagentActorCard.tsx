@@ -20,15 +20,18 @@ import {
   requestSubagentRecord, subagentActorActions, type SubagentActor,
 } from '@/stores/chat/subagent-actors';
 
-/** 三态 → 药丸类名（与 SubagentRail 同口径；actor 域不产 unknown 态） */
+/** 四态 → 药丸类名（与 SubagentRail 同口径；actor 域不产 unknown 态）。
+ *  2026-09-26 11111 取证批（R4）：「未完工」（未按契约打卡即收尾）单列一态，
+ *  沿用 failed 的告警配色以提示「这活没干完」，但不与「已中断」混为一谈。 */
 function statusClass(s: SubagentActor['status']): string {
   return s === 'running' ? 'running' : s === 'completed' ? 'completed' : 'failed';
 }
 
-/** 三态 → 文案（走 i18n 字典，不硬编码） */
+/** 四态 → 文案（走 i18n 字典，不硬编码） */
 function statusText(s: SubagentActor['status']): string {
   if (s === 'running') return t('rp.actor.running');
-  return s === 'completed' ? t('rp.actor.completed') : t('rp.actor.failed');
+  if (s === 'completed') return t('rp.actor.completed');
+  return s === 'incomplete' ? t('rp.actor.incomplete') : t('rp.actor.failed');
 }
 
 export function SubagentActorCard(props: { actor: () => SubagentActor | undefined }) {

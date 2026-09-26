@@ -5,7 +5,7 @@
 """
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from loguru import logger
 
 import json
@@ -39,6 +39,28 @@ _DRAFT_FIELDS_HINT = (
     # 只能自发用 tag/desc 表达而平台不消费 —— 本句即那条缺失的正面契约。
     f"音频卡用 audioType 声明种类（{'/'.join(ops.AUDIO_TYPES)}；"
     "voice = 角色音色卡，即 Skill 明文的 key_element_audio）。"
+    # 2026-09-26 11111 取证批（R7，本次修复）：**并列枚举与闸机口径打架**。
+    # 病灶：本句把全部音频种类与 voice 并列，模型据此在故事板设计阶段建
+    # bgm 卡，而 `STAGE_CARD_AUDIO_TYPES` 只放行 voice ⇒ 整单拒收。
+    # 该冲突由 2026-09-25 裁决引入（`subagent.py` 注释原文：「那不是模型越权——
+    # `_DRAFT_FIELDS_HINT` 把 bgm/narration 与 voice 并列，模型是照契约执行的；
+    # 口径冲突在平台侧」），但当批只在本 hint **尾部**补了「分两步落账」，
+    # 并列枚举原样保留 ⇒ 模型读到的是「先并列、后限定」。
+    # 修法（正面契约，不写禁令词；与 check_tool_descriptions 闸同口径）：
+    # 按**宿主分组**给种类分档——音色卡挂角色组、其余种类挂音频组，
+    # 与「音频层分两步落账」同源，不新增闸机、不改白名单。
+    "音色卡（voice）挂角色组；bgm/narration/sfx/dialogue/foley 挂音频组"
+    "（音频组的卡按下方「音频层分两步落账」在提示词撰写阶段创建）。"
+    # 2026-09-26 11111 取证批（R1，本次修复）：**音色描述的唯一载体**。
+    # 病灶：同一份「音色描述」有 4 个候选字段（组 desc / 卡 timbre / 卡 desc /
+    # 卡 prompt），平台从未指定归属 ⇒ 全库 4 个项目**四跑四态**（6666 落
+    # timbre+desc、9999 只落 desc、8888 只落 prompt、11111 三处都落）。
+    # 卡 prompt 留空是本阶段的分工（生成提示词归提示词撰写阶段），非模型漏写；
+    # 缺的是「音色描述写哪」这一句正面契约。
+    # 归属：卡 timbre 承载音色描述本体（该字段本就是音色锚点载体，
+    # `resolve_shot_audio_refs` 按卡取用）；角色组 desc 承载元素设定全文。
+    "音色卡的音色描述写 timbre 字段（一句话音色特征），"
+    "角色组 desc 承载该角色的元素设定全文（含声音特征作为设定的一部分）。"
     # 2026-09-23 批11（事故 4444/P1-5）：mediaType 与 audioType 是**两个维度**，
     # 此前只交代了 audioType，模型以为声明了就够 ⇒ 只填 audioType 不填 mediaType，
     # 而 mediaType 缺省回落 image ⇒ 「音频语义 + 图像类型」自相矛盾卡，
@@ -55,8 +77,7 @@ _DRAFT_FIELDS_HINT = (
     # 本句补齐「卡 → 宿主类目」的正面契约（与 CATEGORY_MEDIA_MATRIX 的
     # keyElement 行「可放音频」、前端 isVoiceCard 同口径；不新增拒收闸）。
     "角色的音色卡挂在该角色自己的 keyElement 组内"
-    "（角色组用 elementType=character 声明；音色卡与该角色图像卡同组，"
-    "分镜按 shotRefs 引用该角色时自动取到音色锚点）。"
+    "（音色卡与该角色图像卡同组，分镜按 shotRefs 引用该角色时自动取到音色锚点）。"
     # 2026-09-25 用户裁决（8888 取证，两条）：
     #   ①「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」；
     #   ②「设计阶段只规划音频，只在提示词撰写才建卡」。
@@ -128,13 +149,14 @@ class CreateGroupInput(StrictToolInput):
             f"{k}{ops.matrix_contract_line(k)}"
             for k in ("keyElement", "shot", "audio"))
     ))
-    title: str = Field(..., description="分组标题（裸名；平台按组类型幂等补类型前缀 Element_/Shot_/Audio_；shot 标题=一句话描述镜头内容，顺序由列表序号承担，标题中不带镜号/场号编号）")
+    title: str = Field(..., description="分组标题（裸名；平台按组类型幂等补类型前缀 Element_/Shot_/Audio_；shot 标题=概括本镜主体动作或画面的 4~10 字短语（如「舱内醒来望木星」，写成短语即止），顺序由列表序号承担，标题中不带镜号/场号编号）")
     # 2026-09-23 批5（D-2=schema 层 / D-3=给字段+正面契约）：元素种类落成模型可见字段。
+    # 2026-09-26 用户裁决：元素种类由模型自行判断，平台不再向模型枚举取值
+    # （字段与落库保留：存量数据只读、前端零消费、音色锚点按组取与它无关）。
     element_type: str = Field("", description=(
-        f"关键元素组的元素种类（{'/'.join(ops.ELEMENT_TYPES)}）；"
-        "character=角色（其音色卡另建在该角色组内，标 mediaType=audio 且 "
-        "audioType=voice）、scene=场景、prop=关键道具。"
-        "其他组类型忽略此字段"))
+        f"关键元素组的元素种类标注（可选；取值 {'/'.join(ops.ELEMENT_TYPES)}，"
+        "由你按元素语义自行判断，省略不影响任何链路；"
+        "角色的音色卡一律挂该角色自己的元素组内，与本字段填与无关）"))
     desc: str = Field("", description=(
         "分组描述（shot 类型：完整镜头设计写这里，唯一载体；引用用 [元素名] 令牌"
         "内联正文、系统自动解析挂参考；时长由 duration 字段承载；"
@@ -143,34 +165,20 @@ class CreateGroupInput(StrictToolInput):
         # 2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
         # 音频组的层设计唯一载体 = desc（建组写 desc、快照注入 desc、界面展示 desc，
         # 三处同字段）；历史上前端曾把描述写进 group.prompt 造成两份事实源，已统一。
-        "audio 类型：音频层的设计写这里，唯一载体（覆盖哪些镜头、情绪基调、"
-        "配器/语气方向；BGM 与旁白各有独立 audio_layer ID 与覆盖镜头范围）"))
+        # 2026-09-26 用户裁决：层设计的创作要求（情绪基调/配器/语气方向等）
+        # 归 Skill 章节唯一表述，工具句只留结构契约，不复述。
+        "audio 类型：音频层的设计写这里，唯一载体（写清覆盖哪些镜头范围；"
+        "每个音频分组即一个独立层、各有自己的组 ID；BGM 与旁白各成一组——"
+        "两者生成通道不同）"))
     duration: str = Field("", description="时长（shot 类型用；整镜总时长，如 '12s'）")
-    summary: str = Field("", description="shot 类型必填：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段")
+    summary: str = Field("", description=(
+        "shot 类型必填：简略的镜头描述与时长（与 desc 镜头内容一致），"
+        "如'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段。"))
     shot_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
-    draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT)
+    draft: Optional[Union[Dict[str, Any], str]] = Field(None, description=(
+        "建组同时在该组内建一张卡（可选；只建组不带卡就省略本参数；"
+        "传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT))
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _desc_before_summary(cls, data):
-        """批 E（2026-09-18）：shot 建组验原始入参键序——desc 必须先于 summary。
-
-        意图：先写完整镜头设计 desc、再据其提炼 summary 徽标（flova：summary
-        是 desc 的镜子），防「徽标吹内切、desc 里没有」。只查字段顺序、不看
-        内容、不碰格式红线（与「summary 缺失整单拒收」同档写闸）。
-        mode="before" 收到的 data = json.loads 保序 dict（manager.invoke_tool 原样传
-        kwargs），故键序 = 模型原始入参 JSON 键序；倒序抛 ValueError →
-        ValidationError → 整单拒收重填（retryable=False）。
-        """
-        if isinstance(data, dict) and data.get("group_type") == "shot":
-            keys = list(data.keys())
-            if ("desc" in keys and "summary" in keys
-                    and keys.index("desc") > keys.index("summary")):
-                raise ValueError(
-                    "shot 建组入参键序错误：desc 必须先于 summary（先写完整镜头"
-                    "设计 desc，再据其提炼 summary 徽标）；请调整字段顺序后整单重填。")
-        return data
 
 
 class PatchDraftInput(StrictToolInput):
@@ -241,7 +249,8 @@ class ReadDraftInput(BaseModel):
 class ViewStoryboardMediaInput(BaseModel):
     draft_ids: List[str] = Field(default_factory=list, description="要查看的草稿 ID 或「组号-卡序号」编号数组（与 target 二选一，优先）")
     target: str = Field("", description="批量目标: all | all_keyElements | all_shots | all_audio（与 draft_ids 二选一）")
-    limit: int = Field(0, description="本次加载图片数量上限（0 = 系统默认上限）")
+    limit: int = Field(0, description="本次加载图片数量上限（0 = 系统默认上限 9 张；"
+        "超限的卡会在回执 notes 里逐个告知，可下轮再加载）")
 
 
 class ReadStateGroupInput(BaseModel):
@@ -267,7 +276,7 @@ class StoryboardCreateGroupTool(BaseTool):
         "完整镜头描述写在 desc 上，引用到的元素用 [元素名] 令牌写在描述里"
         "（系统会自动解析为引用并挂参考），也可用 shot_refs 显式指定。"
         "desc 中 [元素名] 令牌与裸名提及由系统自动解析为引用。"
-        "shot 类型必填 summary（镜头结构摘要徽标），缺失整单拒收打回重填；"
+        "shot 类型必填 summary（简略的镜头描述与时长），缺失整单拒收打回重填；"
         "整镜时长写 duration 字段，summary 徽标可附（约Xs）仅供展示、"
         "不作时长来源（仅 duration 缺失时系统从 summary 兜底解析）。"
     )
@@ -508,7 +517,7 @@ class StoryboardDeleteGroupTool(BaseTool):
     name = "storyboard_delete_group"
     risk = "medium"  # §2.7 裁决：写内部状态（可重建撤销），定 medium
     detail_tier = "output"  # 删除类：仅输出留痕
-    description = "删除整个故事板分组（含其全部草稿）"
+    description = "删除指定的单个故事板分组（含该组内全部草稿）"
 
     def get_input_schema(self) -> Type[BaseModel]:
         return DeleteGroupInput

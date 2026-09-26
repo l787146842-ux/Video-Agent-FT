@@ -1,0 +1,48 @@
+# endpoint = http://127.0.0.1:8080/api/project/state
+# keyElements=14 shots=10 audioItems=3
+
+## 关键元素标题形态
+总 14；带 Element_ 前缀 14；不带前缀 0
+  - title='Element_程心'
+  - title='Element_AA'
+  - title='Element_曹彬'
+  - title='Element_瓦西里'
+  - title='Element_白Ice'
+  - title='Element_领航员'
+  - title='Element_观测员'
+  - title='Element_研究员A'
+  - title='Element_研究员B'
+  - title='Element_木星轨道「星环」号球形舱'
+  - title='Element_「启示」号控制舱'
+  - title='Element_「启示」号实验舱'
+  - title='Element_白色薄片'
+  - title='Element_无人太空艇'
+
+## 分镜 shotRefs 逐条判定（literal=逐字命中标题或 id / canonical=剥前缀后命中 / miss=都不命中）
+- shot shot-1790327108-b7b84f22 'Shot_程心与AA从冬眠中醒来望向窗外旋转的木星' refs=3 literal=0 canonical_only=3 miss=0
+    MISS-ON-CLICK: '程心':canonical, 'AA':canonical, '木星轨道「星环」号球形舱':canonical
+- shot shot-1790327108-22ae45dc 'Shot_信息窗口弹出曹彬影像，AA质问木星城为何未躲入掩体' refs=4 literal=0 canonical_only=4 miss=0
+    MISS-ON-CLICK: '程心':canonical, 'AA':canonical, '曹彬':canonical, '木星轨道「星环」号球形舱':canonical
+- shot shot-1790327108-6a5306a7 "Shot_程心追问打击，曹彬说出'小得像一张白色薄片'" refs=5 literal=1 canonical_only=4 miss=0
+    MISS-ON-CLICK: '程心':canonical, 'AA':canonical, '曹彬':canonical, '木星轨道「星环」号球形舱':canonical, 'Element_白色薄片':literal
+- shot shot-1790327115-fe0695cb "Shot_窗外木星与太空城依旧平静，曹彬低语'掩体没用了'" refs=4 literal=0 canonical_only=4 miss=0
+    MISS-ON-CLICK: '程心':canonical, 'AA':canonical, '曹彬':canonical, '木星轨道「星环」号球形舱':canonical
+- shot shot-1790327115-a82b6af1 'Shot_一年前控制舱：领航员报告目标已减速至光速千分之一' refs=5 literal=1 canonical_only=4 miss=0
+    MISS-ON-CLICK: '瓦西里':canonical, '白Ice':canonical, '领航员':canonical, '「启示」号控制舱':canonical, 'Element_木星轨道「星环」号球形舱':literal
+- shot shot-1790327115-075d7e8f 'Shot_白Ice与瓦西里研判发射体，逼近后观测员发现一个白点' refs=5 literal=0 canonical_only=5 miss=0
+    MISS-ON-CLICK: '瓦西里':canonical, '白Ice':canonical, '领航员':canonical, '观测员':canonical, '「启示」号控制舱':canonical
+- shot shot-1790327122-03692672 'Shot_太空艇抵近目标，全息图展开悬空的白色薄片，白Ice凝视不动' refs=7 literal=2 canonical_only=5 miss=0
+    MISS-ON-CLICK: '瓦西里':canonical, '白Ice':canonical, '无人太空艇':canonical, '白色薄片':canonical, '「启示」号控制舱':canonical, 'Element_程心':literal, 'Element_AA':literal
+- shot shot-1790327122-1dfb9b1c 'Shot_机械臂伸向薄膜，抓斗合拢退回，再次穿过无火花无阻力' refs=3 literal=0 canonical_only=3 miss=0
+    MISS-ON-CLICK: '白色薄片':canonical, '无人太空艇':canonical, '「启示」号实验舱':canonical
+- shot shot-1790327122-4f9e45ce "Shot_瓦西里戴手套把手伸入薄膜又完整抽出，白Ice说'还没碰到它存在的地方'" refs=6 literal=0 canonical_only=6 miss=0
+    MISS-ON-CLICK: '瓦西里':canonical, '白Ice':canonical, '研究员A':canonical, '研究员B':canonical, '白色薄片':canonical, '「启示」号实验舱':canonical
+- shot shot-1790327127-82b4efa9 "Shot_二十多小时过去，众人拍照发笑，白Ice关掉记录冷声警告'离它远点'" refs=5 literal=0 canonical_only=5 miss=0
+    MISS-ON-CLICK: '瓦西里':canonical, '白Ice':canonical, '研究员B':canonical, '白色薄片':canonical, '「启示」号实验舱':canonical
+
+## 合计 literal=4 canonical_only=43 miss=0
+## 含「点击必失败」引用的分镜数 = 10 / 10
+## 全部 literal 可跳的分镜数 = 0
+
+## 与后端 canonical 读口对照（find_ref_group）
+find_ref_group 命中 47 / 未命中 0（后端全命中 vs 前端逐字比对）

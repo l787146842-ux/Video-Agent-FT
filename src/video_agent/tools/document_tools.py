@@ -15,7 +15,9 @@ from src.video_agent.core import ports, prompt_gates
 # 批3（事故 2222/Q3b）：run_subagent.stage 的 description 动态拼接枚举值——
 # 单一事实源 = core.subagent 的 PIPELINE_STAGE_KINDS/STAGE_LABELS（顶层引用，
 # 只读常量；core.subagent 仅依赖 utils.prompts + skill_runtime，无环）。
-from src.video_agent.core.subagent import PIPELINE_STAGE_KINDS, STAGE_LABELS
+from src.video_agent.core.subagent import (
+    PIPELINE_STAGE_KINDS, STAGE_LABELS, stage_card_contract,
+)
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import (
@@ -50,6 +52,12 @@ def _stage_hint() -> str:
     运行时从 `subagent.PIPELINE_STAGE_KINDS` + `registry.STAGE_LABELS` 拼接
     可选值（含中文标签），**单一事实源仍是那张枚举表**——本函数只引用不复制，
     改枚举不会漏改描述（同 storyboard_tools._DRAFT_FIELDS_HINT 先例）。
+
+    2026-09-26 11111 取证批（R3）：追加**阶段建卡限定**的可见声明。
+    病灶 = 主代理看不见自己下的禁令（该限定只下发到子级 GateContext，
+    父级 prompt 从无此表）⇒ 主代理在 `current_step` 里命令子代理建
+    图像卡、5 次全被闸拒收（占两次委派总时长 ≥46%）。
+    渲染源 = `subagent.stage_card_contract`（两张表仍为唯一事实源）。
     """
     pairs = "、".join(
         f"{k}（{STAGE_LABELS.get(k, k)}）"
@@ -58,6 +66,10 @@ def _stage_hint() -> str:
         f"本次委派推进的生产阶段名。可选值：{pairs}；留空 = 通用委派。"
         "填写后系统自动把所选 Skill 对应阶段的章节全文注入子代理（章节即产出规范），"
         "任务书里不用复述规范。"
+        "各阶段对新建草稿卡的限定：" + "；".join(
+            f"{k}（{stage_card_contract(k)}）"
+            for k in sorted(PIPELINE_STAGE_KINDS) if stage_card_contract(k))
+        + "。安排 current_step / task 时以该限定为准。"
     )
 
 
@@ -253,7 +265,8 @@ class DocumentWriteTool(BaseTool):
     risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（文档带修订记录），写入不设逐次确认闸
     detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
     description = (
-        "写入/更新项目文档工件。已存在同名文档则整篇覆盖，系统自动留更新痕迹。"
+        "写入/更新项目文档工件（创建与修改都走本工具）：已存在同名文档则整篇覆盖"
+        "——修改时先读回原文、改好后传全文；每次覆盖自动累加修订次数可回溯。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -1003,7 +1016,7 @@ class RunSubagentTool(BaseTool):
     # 结构上已锁死；说明层禁令经 3333 项目实证会吓退模型不敢委派。
     description = (
         "把一段工作委派给子代理：它在独立上下文里连续执行到完成，只回结果摘要。"
-        "task 写要做什么即可（子代理共享工作台、自读文档）。"
+        "task 只写子代理完成任务所必要、而它自己读不到的信息（共享工作台与文档它自读）。"
         "stage 填生产阶段名时，系统自动注入该阶段 Skill 章节全文。"
     )
 

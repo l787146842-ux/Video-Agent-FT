@@ -1,0 +1,41 @@
+======================================================================
+trace a9c271b90990  total_ms=55676 llm_calls=5 total_actions=5
+  step 1:    2540ms finish=tool_calls       applied=1 actions=['read_uploaded_doc']
+  step 2:   30847ms finish=tool_calls       applied=2 actions=['todo_write', 'script_analysis_report']
+  step 3:    7123ms finish=fakestop_resume  applied=0 actions=[]
+  step 4:    6759ms finish=tool_calls       applied=2 actions=['todo_write', 'structured_output']
+  step 5:    8407ms finish=stop             applied=0 actions=[]
+  final text: ""
+======================================================================
+trace d0d18e2e9c52  total_ms=189362 llm_calls=9 total_actions=16
+  step 1:    4059ms finish=tool_calls       applied=2 actions=['read_uploaded_doc', 'read_project_doc']
+  step 2:  133856ms finish=tool_calls       applied=5 actions=['todo_write', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 3:    2095ms finish=fakestop_resume  applied=0 actions=[]
+  step 4:    8791ms finish=tool_calls       applied=4 actions=['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 5:    5209ms finish=tool_calls       applied=3 actions=['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 6:    6371ms finish=tool_calls       applied=2 actions=['read_state_group', 'todo_write']
+  step 7:   23133ms finish=tool_calls       applied=0 actions=['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 8:    2703ms finish=fakestop_resume  applied=0 actions=[]
+  step 9:    3144ms finish=stop             applied=0 actions=[]
+  final text: ""
+======================================================================
+trace 8bfb8599197b  total_ms=264692 llm_calls=8 total_actions=13
+  step 1:    2265ms finish=tool_calls       applied=2 actions=['read_uploaded_doc', 'read_project_doc']
+  step 2:  193066ms finish=tool_calls       applied=1 actions=['todo_write', 'storyboard_add_draft', 'storyboard_add_draft', 'storyboard_add_draft', 'storyboard_add_draft', 'storyboard_add_draft']
+  step 3:   26044ms finish=tool_calls       applied=1 actions=['todo_write', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 4:    1994ms finish=fakestop_resume  applied=0 actions=[]
+  step 5:   14544ms finish=tool_calls       applied=4 actions=['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 6:    4846ms finish=fakestop_resume  applied=0 actions=[]
+  step 7:   15046ms finish=tool_calls       applied=5 actions=['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 8:    6887ms finish=stop             applied=0 actions=[]
+  final text: ""
+======================================================================
+trace a5a9efc5d96f  total_ms=494407 llm_calls=7 total_actions=6
+  step 1:   16925ms finish=fakestop_resume  applied=0 actions=[]
+  step 2:    4884ms finish=tool_calls       applied=1 actions=['document_write']
+  step 3:    3301ms finish=fakestop_resume  applied=0 actions=[]
+  step 4:  192208ms finish=tool_calls       applied=1 actions=['run_subagent']
+  step 5:    2535ms finish=tool_calls       applied=3 actions=['read_state_group', 'read_state_group', 'read_state_group']
+  step 6:  272895ms finish=tool_calls       applied=1 actions=['run_subagent']
+  step 7:    1658ms finish=stop             applied=0 actions=[]
+  final text: ""

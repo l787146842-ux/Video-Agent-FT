@@ -17,11 +17,14 @@ const POLL_MS = 1500;
 
 function statusClass(s: string): string {
   return s === 'running' ? 'running' : s === 'completed' ? 'completed'
-    : s === 'failed' ? 'failed' : 'unknown';
+    : (s === 'failed' || s === 'incomplete') ? 'failed' : 'unknown';
 }
+/** 2026-09-26 11111 取证批（R4）：新增「未完工」态（未按契约打卡即收尾），
+ *  与「已中断」区分——线程没崩，是活没干完（后端 thread_status 客观判定）。 */
 function statusText(s: string): string {
   return s === 'running' ? '执行中' : s === 'completed' ? '已完成'
-    : s === 'failed' ? '已中断' : '未知';
+    : s === 'incomplete' ? '未完工'
+      : s === 'failed' ? '已中断' : '未知';
 }
 /** epoch ms → HH:MM（记录条目时间戳；无值返回空串不显示） */
 function formatHHMM(ts?: number): string {

@@ -66,9 +66,22 @@ def _upgrade_clause_3(body: str) -> str:
         return body
     return _IRON_CLAUSE_3_RE.sub(_CLAUSE_3_POINTER, body)
 
+# 铁律第 1 条验收口径（2026-09-26 11111 取证批 R9）——**唯一表述源**：
+# 模板下发与存量迁移同引本常量。
+#
+# 原措辞「（系统机器验收）」/「（自检核对）」是空头承诺：对应的机器验收
+# （`_coverage_missing_key_elements` / `skill_declares_audio` /
+# `exec_split._script_speakers`）已随任务#36 B5 整体退役，现仅
+# `structure_integrity_gate` 查「标题提及的元素是否被引用」——**不查镜数、
+# 不查时长、不查剧本覆盖**。11111 实跑落盘 9/17 镜、106s vs 目标 180s、
+# 场三整场 0 覆盖，全程零告警。文档不得承诺不存在的机器闸。
+_CLAUSE_1_CHECK = "（自查口径：镜数、时长与剧本内容逐场对账；平台无对应机械闸）"
+# 存量迁移：两张旧口径都收敛到上句（措辞升级，语义不变——都是「覆盖率由谁负责」）
+_OLD_CLAUSE_1_CHECK = ("（自检核对）", "（系统机器验收）")
+
 _IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级执行：{_NEW_PRIORITY_POINTER}）
 
-1. 拆解覆盖完整（系统机器验收）。
+1. 拆解覆盖完整{_CLAUSE_1_CHECK}。
 2. 冲突与缺信息处置、回复纪律：见平台注入的《执行铁律》头部声明
    （优先级链唯一表述源），本文档不复述。
 """
@@ -149,8 +162,10 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         for old in _OLD_PRIORITIES:
             upgraded = upgraded.replace(old, _NEW_PRIORITY_POINTER)
         upgraded = _NO_BLOCK_RE.sub("。", upgraded)
-        # 第 2 条措辞迁移（自检→系统机器验收，验收已由代码承担）
-        upgraded = upgraded.replace("（自检核对）", "（系统机器验收）")
+        # 第 1 条验收口径迁移（2026-09-26 R9）：两张旧口径 → 现行自查口径。
+        # 与模板同引 _CLAUSE_1_CHECK，杜绝两套说辞。
+        for old in _OLD_CLAUSE_1_CHECK:
+            upgraded = upgraded.replace(old, _CLAUSE_1_CHECK)
         if _IRON_CLAUSE_45_RE.search(upgraded):
             upgraded = _IRON_CLAUSE_45_RE.sub("", upgraded).rstrip() + "\n"
         upgraded = _upgrade_clause_3(upgraded)

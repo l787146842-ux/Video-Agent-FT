@@ -1,0 +1,38 @@
+FAKESTOP_AUTO_RESUME_MAX = 2  (src/video_agent/core/round_end_policies.py:79)
+判据: settings.fakestop_auto_resume_enabled AND skill非空 AND text_round_streak==0
+      AND 无confirmation AND 未打卡 AND resumes_used < 2
+  注意 skill = fallback_skill_from_state(executor.state)  —— 子代理 skill_name=""
+
+============================================================================
+d0d18e2e9c52  [子代理#1 故事板设计（首派）]
+  step 1      4059ms  finish=tool_calls       已续=0/2  applied=2  ['read_uploaded_doc', 'read_project_doc']
+  step 2    133856ms  finish=tool_calls       已续=0/2  applied=5  ['todo_write', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 3      2095ms  finish=fakestop_resume  已续=1/2  applied=0  (无工具调用)
+  step 4      8791ms  finish=tool_calls       已续=1/2  applied=4  ['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 5      5209ms  finish=tool_calls       已续=1/2  applied=3  ['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 6      6371ms  finish=tool_calls       已续=1/2  applied=2  ['read_state_group', 'todo_write']
+  step 7     23133ms  finish=tool_calls       已续=1/2  applied=0  ['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 8      2703ms  finish=fakestop_resume  已续=2/2  applied=0  (无工具调用)
+  step 9      3144ms  finish=stop             已续=2/2  applied=0  (无工具调用)
+  >>> 末步 finish=stop ；已续 2/2 【续跑配额耗尽 → 轮末 break，任务未完成即交回】
+============================================================================
+8bfb8599197b  [子代理#2 故事板设计（续派）]
+  step 1      2265ms  finish=tool_calls       已续=0/2  applied=2  ['read_uploaded_doc', 'read_project_doc']
+  step 2    193066ms  finish=tool_calls       已续=0/2  applied=1  ['todo_write', 'storyboard_add_draft', 'storyboard_add_draft', 'storyboard_add_draft', 'storyboard_add_draft', 'storyboard_add_draft']
+  step 3     26044ms  finish=tool_calls       已续=0/2  applied=1  ['todo_write', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 4      1994ms  finish=fakestop_resume  已续=1/2  applied=0  (无工具调用)
+  step 5     14544ms  finish=tool_calls       已续=1/2  applied=4  ['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 6      4846ms  finish=fakestop_resume  已续=2/2  applied=0  (无工具调用)
+  step 7     15046ms  finish=tool_calls       已续=2/2  applied=5  ['storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group', 'storyboard_create_group']
+  step 8      6887ms  finish=stop             已续=2/2  applied=0  (无工具调用)
+  >>> 末步 finish=stop ；已续 2/2 【续跑配额耗尽 → 轮末 break，任务未完成即交回】
+============================================================================
+a5a9efc5d96f  [主代理 第3轮]
+  step 1     16925ms  finish=fakestop_resume  已续=1/2  applied=0  (无工具调用)
+  step 2      4884ms  finish=tool_calls       已续=1/2  applied=1  ['document_write']
+  step 3      3301ms  finish=fakestop_resume  已续=2/2  applied=0  (无工具调用)
+  step 4    192208ms  finish=tool_calls       已续=2/2  applied=1  ['run_subagent']
+  step 5      2535ms  finish=tool_calls       已续=2/2  applied=3  ['read_state_group', 'read_state_group', 'read_state_group']
+  step 6    272895ms  finish=tool_calls       已续=2/2  applied=1  ['run_subagent']
+  step 7      1658ms  finish=stop             已续=2/2  applied=0  (无工具调用)
+  >>> 末步 finish=stop ；已续 2/2 【续跑配额耗尽 → 轮末 break，任务未完成即交回】

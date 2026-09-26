@@ -1,0 +1,37 @@
+=== CreateGroupInput JSON schema (模型可见) ===
+属性顺序（平台发给模型的键序）: ['group_type', 'title', 'element_type', 'desc', 'duration', 'summary', 'shot_refs', 'draft', 'idempotency_key']
+required: ['group_type', 'title']
+
+--- group_type (type=string, len=124)
+分组类型（闭集枚举）: keyElement | shot | audio。类目能力矩阵：keyElement（该类目可放：图/视频/音频；可出：图/视频/音频）；shot（该类目可放：视频；可出：视频）；audio（该类目可放：音频；可出：音频）
+
+--- title (type=string, len=85)
+分组标题（裸名；平台按组类型幂等补类型前缀 Element_/Shot_/Audio_；shot 标题=一句话描述镜头内容，顺序由列表序号承担，标题中不带镜号/场号编号）
+
+--- element_type (type=string, len=125)
+关键元素组的元素种类（character/scene/prop）；character=角色（其音色卡另建在该角色组内，标 mediaType=audio 且 audioType=voice）、scene=场景、prop=关键道具。其他组类型忽略此字段
+
+--- desc (type=string, len=210)
+分组描述（shot 类型：完整镜头设计写这里，唯一载体；引用用 [元素名] 令牌内联正文、系统自动解析挂参考；时长由 duration 字段承载；禁止在 desc 尾部追加【引用】/【时长】/出场人物等汇总行）——汇总行是重复信息且落库即污染分镜正文，一律不写。audio 类型：音频层的设计写这里，唯一载体（覆盖哪些镜头、情绪基调、配器/语气方向；BGM 与旁白各有独立 audio_layer ID 与覆盖镜头范围）
+
+--- duration (type=string, len=26)
+时长（shot 类型用；整镜总时长，如 '12s'）
+
+--- summary (type=string, len=104)
+shot 类型必填：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；缺失或空整单拒收；其他组类型忽略此字段
+
+--- shot_refs (type=array, len=44)
+引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并
+
+--- draft (type=[{'additionalProperties': True, 'type': 'object'}, {'type': 'string'}, {'type': 'null'}], len=708)
+附带草稿（可选；传 JSON 对象，字符串会自动解析一次）。合法字段（白名单外字段整单拒收）：label, tag, mediaType, genType, imgUrl, videoUrl, audioUrl, prompt, mode, model, providerId, resolution, duration, aspectRatio, imageResolution, size, timbre, refAssets, desc, audioType, id。卡片名用 label（不是 title）；提示词放 prompt；卡片描述放 desc。音频卡用 audioType 声明种类（voice/bgm/narration/sfx/dialogue/foley；voice = 角色音色卡，即 Skill 明文的 key_element_audio）。**mediaType 与 audioType 配套**：音频卡两个都标（只标 audioType 时系统按它推导出 mediaType=audio）；图像卡 mediaType=image；分镜视频卡 mediaType=video。角色的音色卡挂在该角色自己的 keyElement 组内（角色组用 elementType=character 声明；音色卡与该角色图像卡同组，分镜按 shotRefs 引用该角色时自动取到音色锚点）。音频层（BGM/旁白）分两步落账：故事板设计阶段建音频分组、把层设计写进分组的 desc（覆盖镜头范围 + 情绪基调 + 配器/语气方向）；音频卡在提示词撰写阶段按该 desc 创建（承载生成提示词与参数）。
+
+--- idempotency_key (type=string, len=15)
+幂等键：重复提交去重用，可留空
+
+=== 检索 ===
+  schema 含 禁止在 desc 尾部追加        : True
+  schema 含 汇总行                  : True
+  schema 含 引用】                  : True
+  schema 含 时长】                  : True
+  schema 含 出场人物                 : True
