@@ -42,6 +42,9 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
 ## FAILURE_HINT_DEFAULT
 可调整参数后重试一次，或先向用户说明困难。
 
+## FAILURE_HINT_CONFLICT
+本次写入因版本冲突被放弃（同项目另一会话/后台任务刚写过）。先 read_state_group 读回最新状态、确认差异后再重新提交，不要用原参直接重试。
+
 <!-- SKILL_REMINDER 分节已随 S09 退役删除（用户裁决 2026-09-02，唯一消费点 planner._SKILL_REMINDER 同批删除） -->
 <!-- BAD_OUTPUT_NUDGE 分节已随五项修法批 2 退役删除（用户裁决 2026-09-07：判空 = 正常收轮，
      nudge 重试退役，唯一消费点 agent_loop._bad_output_nudge 同批删除；退役记录见 core/recovery_policy.py） -->

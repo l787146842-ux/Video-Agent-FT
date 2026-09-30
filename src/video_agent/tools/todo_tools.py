@@ -5,9 +5,14 @@
 
 2222/3333 实跑取证：子代理**首个规划响应推理 12867 字（占全会话 48.2%）**，
 之后 seq=75~129 推理≈0 字纯批量执行 —— 典型的「一次性想完全部再动手」。
-平台对「分批」只有**散文劝告**（`prompts/planner/subagent.md:70`），
-实跑只被吸收一半：模型照做了「每批 3-5 个工具调用」，
-而 `随想随写`/`预先起草全部` 两个短语**零命中**。
+平台对「分批」只有**散文劝告**（`prompts/planner/subagent.md` 的
+DELEGATION_CONTEXT），实跑只被吸收一半：模型照做了「每批 3-5 个工具调用」，
+而当时同在劝告里的「思考也随想随写」半句**零命中**。
+
+> 2026-09-27 用户裁决（7777 取证）：那半句「思考同样分批」及「后果说明」
+> 已从 DELEGATION_CONTEXT 与 `skill_runtime.md` 第 6 条**删除**——模型拿到的
+> 是有明确结果导向的任务，草稿在思考里一次打完再落盘是正常形态，平台只约束
+> **写入分批**。上文 2222/3333 的「零命中」是当时的事实留痕，非现行契约。
 
 dsh 的对照做法（`packages/todo/tool-todo/src/index.ts:45-78`）：**不靠劝，
 给模型一个工具把进度状态外在化** —— 模型必须先列步骤、干活时改状态、
@@ -72,12 +77,12 @@ dsh 的清单是**每会话一份**。此前本平台实现把它存在项目级
 `allowParallelInProgress=true` 档下连清单自身的状态都不强制。
 （批13 新加的拒收只作用于**本次提交自身的形状**，不涉及其它工具/产物/阶段。）
 """
-from typing import Any, Dict, List, Literal, Type
+from typing import Any, Dict, List, Literal, Optional, Type
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.tools.base import BaseTool, ToolResult, save_or_conflict
 # 模块级导入（func_imports 闸：合法函数内 import 须登记豁免，本模块无此需要）
 from src.video_agent.state import conversation_ops as conv_ops
 from src.video_agent.state.manager import StateManager
@@ -220,7 +225,9 @@ class TodoWriteTool(BaseTool):
                 error_code="validation", retryable=False,
             )
 
-        _write_session_todos(svc, raw_items)
+        _conflict = _write_session_todos(svc, raw_items)
+        if _conflict is not None:
+            return _conflict
 
         _done = sum(1 for i in raw_items if i["status"] == "completed")
         return ToolResult(success=True, data={
@@ -260,12 +267,16 @@ def _conversation(svc: Any, cid: str) -> Dict[str, Any]:
     return stub
 
 
-def _write_session_todos(svc: Any, items: List[Dict[str, Any]]) -> None:
-    """整表覆盖写入当前会话的清单（每会话一份，见模块 docstring）。"""
+def _write_session_todos(svc: Any, items: List[Dict[str, Any]]) -> Optional[ToolResult]:
+    """整表覆盖写入当前会话的清单（每会话一份，见模块 docstring）。
+
+    返回 None = 落盘成功；返回 ToolResult = 落盘被版本闸放弃（事故
+    9999/2026-09-27 动作二②：不得静默回「执行成功」，调用方须原样上抛）。
+    """
     cid = resolve_session_id(svc)
     conv = _conversation(svc, cid)
     conv[_TODOS_KEY] = items
-    svc.save()
+    return save_or_conflict(svc)
 
 
 def read_session_todos(svc: Any, conversation_id: str = "") -> List[Dict[str, Any]]:

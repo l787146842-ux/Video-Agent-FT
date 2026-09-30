@@ -109,6 +109,20 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
   （遵 GOVERNANCE §五 门禁增减由用户裁决）；`fc_reconcile.BatchLedger.gen_*` 字段**保留**
   （对账客观账本既有语义，只改注释）。
 
+### 2026-09-30 · 9999 事故：refAssets 对象形态静默字符串化致参考图落空（根因修复）
+
+- **事故现场**：`proj-1790513490-8468602e`（工作台 9999）。上一轮取证（`reports/9999-分镜表格图与参考栏取证-20260930/`）实测：模型把 `refAssets` 条目写成**对象**（`{"type":"image","name":"设定图·曹彬","url":"/workspace/assets/gen-…png"}`），而平台只用 `str(raw)` 粗暴字符串化 ⇒ 落库成 **Python repr 串**；全库实测 **39 条全是 dictrep、合法 URL 0 条**，且全部 30 次生图日志 **`refs=0`** ⇒ 模型只拿到文字、角色场景全靠凭空重建。
+- **两条后果**（与 draft-id 形态同构，只是更难认）：① 前端 `<img src="{'type'…">` 被 `safeUrl` 拦成空串 ⇒ 参考栏**图裂**、计数因去重失效而虚高（坏串与真 URL 永不相等）；② 生成时该串被当 URL 塞进 `reference_images` ⇒ **参考图静默落空（花钱生成白挂）**。
+- **根因**：`normalize_ref_assets` 的形态判定只认「草稿 id / 媒体 URL / 其余原样保留」，对象串既非 id 亦非 URL ⇒ 恒落分支③「原样保留」**永久留存**（幂等死锁，复算再跑结果完全相同）。
+- **口径**：**收得宽、存得严**——认对象（真 dict / JSON 串 / Python repr 串）并取其 `url`；取不到 url 退回其 `id`/`draftId` 走既有草稿 id 归一；两者皆无才丢弃（WARNING 留痕，不静默吞）。裸串仍走原三条判定。**不做写口拒收**：形态属可无损归一、不属安全边界，拒收会让模型连卡都建不成（与「未知引用由既有回喂通道告知」同档）。
+- **动作**：新增 `ops.unwrap_ref_entry`（对象条目解包唯一入口）与 `_DICT_ENTRY_RE`，接进 `normalize_ref_assets` 写口唯一入口链。
+- **回归钉**：`tests/unit/test_9999_reference_chain_fixes.py` 新增「②b refAssets 对象形态归一」一组 7 例（Python repr 串 / JSON 串 / 真 dict / `imgUrl` 键变体 / 无 url 退草稿 id / 无 url 无 id 丢弃 / 混合形态去重）。
+- **同批收尾（同属「平台改写必须模型可见」原则的落地）**：
+  - `prompts/planner/feedback.md` 新增 `FAILURE_HINT_CONFLICT`——版本闸放弃写入时的回喂话术（要求先 `read_state_group` 读回再重交，禁止原参重试）。
+  - `src/web/lib/generate-actions.ts` 音频组空描述提示改指 Skill 音频章节（不再复述「情绪基调/配器」措辞，与 5555/6666 批同口径）。
+- **验证**：`acceptance.py --quick` 15/15 PASS；全量 `pytest tests/` **2701 passed / 41 failed**（41 = D-22 环境缺陷，零新增失败）；vitest 125 文件 / 1057 passed；tsc + eslint 干净。
+- **环境留痕（本轮）**：`acceptance.py` 全量的 pytest 步骤在当前机器**无法启动**——`pytest.ini` 的 `--basetemp=.pytest_tmp/run`（2026-09-27 15:49 遗留目录）不可读不可删，pytest 清理该目录即 `PermissionError`。绕行 = 手工删除/改名该空目录，或临时 `--basetemp` 指新目录（本次验收即用后者，未改仓库配置）。
+
 ### 2026-09-27 · 5555/6666 复核修正批（用户逐条裁决；撤销同日 A+C 的音色定法 + 补删上批遗漏）
 
 - **背景（5555=proj-1790490550-03cc96cb / 6666=proj-1790490851-678a1dd2 取证）**：两项目均只跑到

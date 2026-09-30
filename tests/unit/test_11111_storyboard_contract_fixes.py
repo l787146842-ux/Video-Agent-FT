@@ -113,18 +113,17 @@ def test_11111_summary_describes_content_relation_not_position():
 
 
 def test_11111_voice_card_has_single_carrier_field():
-    """R1（2026-09-27 4444 裁决 A+C 改判）：音色描述唯一载体 = 卡 desc，必须写在
-    模型可见的字段契约里；timbre 回归前端预设选择器专属（模型留空）。
+    """音色描述唯一载体 = 卡 prompt（提示词框），必须写在模型可见的字段契约里；
+    timbre 归前端预设下拉（模型留空）；声音特征不进组 desc（消双份事实源）。
 
     11111 现场：同一份「音色描述」有 4 个候选字段，全库四项目四跑四态
     （6666→timbre+desc / 9999→desc / 8888→prompt / 11111→三者都落）。
-    原 R1 定 timbre，4444 实证自由文本落 timbre 无消费者且打坏预设下拉，
-    且契约「含声音特征进组 desc」造成双份事实源 → 改判卡 desc 单载体。
+    2026-09-27 用户裁决：音色卡整张卡的内容即这段音色描述，落在提示词框（prompt）；
+    是否附台词样本顺其自然、平台不加否定约束；此前 A+C 的「写 desc」定法作废。
     """
-    assert "音色卡的音色描述写 desc" in _DRAFT_FIELDS_HINT
+    assert "音色卡的音色描述写 prompt" in _DRAFT_FIELDS_HINT
     assert "timbre" in _DRAFT_FIELDS_HINT  # 仍写明模型留空
     assert "声音特征只落音色卡" in _DRAFT_FIELDS_HINT
-    assert "含声音特征作为设定的一部分" not in _DRAFT_FIELDS_HINT  # 旧双份口径防回潮
 
 
 def test_11111_audio_kinds_tiered_by_host_group():
@@ -132,8 +131,15 @@ def test_11111_audio_kinds_tiered_by_host_group():
 
     11111 读到的契约把 bgm/narration 与 voice 并列，而闸机只放行 voice
     （`STAGE_CARD_AUDIO_TYPES`）⇒ 模型照契约执行却被拒。本句把分档写明。
+
+    ⚠ 2026-09-30：原断言手抄字面量 `"音色卡（voice）挂角色组"`，2026-09-27 去重批
+    改写措辞（只留长版后半句、丢掉「音色卡（voice）」主语）后即失配——**契约真被
+    改坏了，测试反而是对的**。现按语义断言：主语标签 + 宿主分组 + 音频组三者齐备。
     """
-    assert "音色卡（voice）挂角色组" in _DRAFT_FIELDS_HINT
+    # 主语标签必须还在：读不出「这句在说哪种卡」等于契约失效
+    assert "音色卡（voice）" in _DRAFT_FIELDS_HINT, "归位契约丢了主语标签（2026-09-27 回归）"
+    # 分档两侧必须都在：voice→角色组、其余→音频组
+    assert "角色自己的 keyElement 组内" in _DRAFT_FIELDS_HINT
     assert "挂音频组" in _DRAFT_FIELDS_HINT
 
 
@@ -141,7 +147,7 @@ def test_11111_audio_kinds_contract_matches_gate():
     """R7 同源：契约里点名「挂角色组」的种类，必须正是闸机放行的种类。"""
     allowed = subagent_mod.STAGE_CARD_AUDIO_TYPES["storyboard_design"]
     assert allowed == frozenset({"voice"})
-    assert "音色卡（voice）挂角色组" in _DRAFT_FIELDS_HINT
+    assert "音色卡（voice）" in _DRAFT_FIELDS_HINT
 
 
 # ---------- R9：文档不得承诺不存在的机器闸 ----------

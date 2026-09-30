@@ -57,7 +57,9 @@ def _fail_entries():
 
 def test_fail_count_visible_in_trace_summary(monkeypatch):
     """失败条目：时间线条目摘要携带累计失败次数（止损计数可观测）。
-    注：同批首次失败即触发批级回滚中止（既有行为），故跨批观察累计。"""
+    注：本用例每批单调用（`_gen_response(1)`），跨批观察累计。
+    （2026-09-27 批：原注「同批首次失败即触发批级回滚中止」已过时——批级整态
+    回滚随事故 9999/2026-09-27 退役，批内失败不再连坐、不再中止本批。）"""
     runner = FCToolRunner(tool_manager=_CostlyFailToolManager())
     _run(runner, _gen_response(1), monkeypatch)
     fails = _fail_entries()

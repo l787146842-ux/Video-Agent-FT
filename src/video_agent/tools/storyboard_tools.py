@@ -11,7 +11,7 @@ from loguru import logger
 import json
 import re
 
-from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
+from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult, save_or_conflict
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
@@ -38,34 +38,35 @@ _DRAFT_FIELDS_HINT = (
     # 平台此前只在注释里写了归属（可执行代码 0 命中），模型没有字段可用，
     # 只能自发用 tag/desc 表达而平台不消费 —— 本句即那条缺失的正面契约。
     f"音频卡用 audioType 声明种类（{'/'.join(ops.AUDIO_TYPES)}；"
-    "voice = 角色音色卡，即 Skill 明文的 key_element_audio）。"
-    # 2026-09-26 11111 取证批（R7，本次修复）：**并列枚举与闸机口径打架**。
-    # 病灶：本句把全部音频种类与 voice 并列，模型据此在故事板设计阶段建
-    # bgm 卡，而 `STAGE_CARD_AUDIO_TYPES` 只放行 voice ⇒ 整单拒收。
-    # 该冲突由 2026-09-25 裁决引入（`subagent.py` 注释原文：「那不是模型越权——
-    # `_DRAFT_FIELDS_HINT` 把 bgm/narration 与 voice 并列，模型是照契约执行的；
-    # 口径冲突在平台侧」），但当批只在本 hint **尾部**补了「分两步落账」，
-    # 并列枚举原样保留 ⇒ 模型读到的是「先并列、后限定」。
-    # 修法（正面契约，不写禁令词；与 check_tool_descriptions 闸同口径）：
-    # 按**宿主分组**给种类分档——音色卡挂角色组、其余种类挂音频组，
-    # 与「音频层分两步落账」同源，不新增闸机、不改白名单。
-    "音色卡（voice）挂角色组；bgm/narration/sfx/dialogue/foley 挂音频组"
-    "（音频组的卡按下方「音频层分两步落账」在提示词撰写阶段创建）。"
-    # 2026-09-26 11111 取证批（R1，本次修复）：**音色描述的唯一载体**。
+    "voice = 角色音色卡，即 Skill 明文的 key_element_audio），"
+    # 2026-09-27 去重批（用户：模型只看单一实时源，不要重复描述）：
+    # 「音色卡挂角色组」此前在**同一段内**说了两遍（旧句 7 短版「音色卡（voice）
+    # 挂角色组」+ 旧句 15 长版「角色的音色卡挂在该角色自己的 keyElement 组内」），
+    # 且在 `create_group.element_type` 里还有第三遍。现只保留本句一处（长版，
+    # 带理由）；`element_type` 那遍已删。段内其余重复（「见下方分两步落账」前向
+    # 指针、mediaType 三句）同批一并收口。
+    # 2026-09-30 补正（事故 9999 收尾）：去重时只留下长版的**后半句**，把
+    # 开头的「音色卡（voice）」主语标签一起删掉了 ⇒ 模型可见面只剩裸的
+    # 「挂在角色自己的 keyElement 组内」，**读不出这句在说哪种卡**。
+    # 现把主语补回：语义不变、仍是同一句一处表述，只是把丢掉的标签找回来。
+    # （不另立模块级常量：`check_prompt_literals` 会把独立 CJK 字面量常量
+    #   当成注入源登记项，见 Gate；故标签就留在这条既有 hint 里。）
+    "音色卡（voice）挂在角色自己的 keyElement 组内、与该角色图像卡同组"
+    "（分镜按 shotRefs 引用该角色时自动取到音色锚点）；"
+    "bgm/narration/sfx/dialogue/foley 挂音频组。"
+    # 2026-09-26 11111 取证批（R1）+ 09-27 4444/5555 复核：**音色描述的唯一载体**。
     # 病灶：同一份「音色描述」有 4 个候选字段（组 desc / 卡 timbre / 卡 desc /
-    # 卡 prompt），平台从未指定归属 ⇒ 全库 4 个项目**四跑四态**（6666 落
-    # timbre+desc、9999 只落 desc、8888 只落 prompt、11111 三处都落）。
-    # 卡 prompt 留空是本阶段的分工（生成提示词归提示词撰写阶段），非模型漏写；
-    # 缺的是「音色描述写哪」这一句正面契约。
-    # 归属（2026-09-27 4444 裁决 A+C 改判，原 R1「音色描述写 timbre」废止）：
-    # 卡 desc = 音色描述唯一载体（悬停可见、read_state_group 可回读、
-    # 与卡 desc=「卡片描述」的通用口径统一）；timbre 回归前端预设选择器
-    # 专属（AudioParams 下拉「深邃男声/冷酷女声」），模型只留空、不写自由文本
-    # ——自由文本落 timbre 既无消费者又打坏下拉（4444 实证）；
-    # 角色组 desc 只承载视觉设定全文，声音特征不进组 desc（消双份事实源，
-    # 对齐 Skill「单独登记为 key_element_audio」）。
-    "音色卡的音色描述写 desc 字段（一句话音色特征），prompt 留空"
-    "（生成提示词归提示词撰写阶段）；timbre 由用户在参数栏选择，留空；"
+    # 卡 prompt），平台不指定归属 ⇒ 四跑四态（6666→timbre+desc、9999→desc、
+    # 8888→prompt、11111→三处都落）。
+    # 归属（2026-09-27 用户裁决，覆盖此前 A+C 的「写 desc」定法）：
+    # 音色卡的整张卡内容 = 这段音色描述，落在 **prompt 提示词框**（平台给模型
+    # 填卡内容的位置，也是后续生成音色样本的输入）；内容按 Skill = 音色/语气/
+    # 情绪基调；是否附台词样本由模型按发声需要自行把握（平台不加否定约束）；
+    # timbre 归前端预设下拉（「深邃男声/冷酷女声」），模型留空——自由文本落
+    # timbre 无消费者且打坏下拉（4444 实证）；角色组 desc 只承载视觉设定全文，
+    # 声音特征不进组 desc（消双份事实源，对齐 Skill「单独登记为 key_element_audio」）。
+    "音色卡的音色描述写 prompt 字段（音色/语气/情绪基调）；"
+    "timbre 由用户在参数栏选择、模型留空；"
     "角色组 desc 承载该角色的视觉设定全文，声音特征只落音色卡。"
     # 2026-09-23 批11（事故 4444/P1-5）：mediaType 与 audioType 是**两个维度**，
     # 此前只交代了 audioType，模型以为声明了就够 ⇒ 只填 audioType 不填 mediaType，
@@ -76,25 +77,27 @@ _DRAFT_FIELDS_HINT = (
     "**mediaType 与 audioType 配套**：音频卡两个都标（只标 audioType 时"
     "系统按它推导出 mediaType=audio）；图像卡 mediaType=image；"
     "分镜视频卡 mediaType=video。"
-    # 2026-09-23 批10（事故 4444/P1-4）：**归属类目**这一级此前缺失——
-    # 模型有 audioType 字段、也知道它是「角色音色卡」，却不知道**该挂进哪个类目**；
-    # 4444 实跑 6 张 voice 卡全落 audioItems（独立 Audio_voice-* 组），
-    # 而契约要求挂在角色自己的 keyElements 组内（或下游按引用取音色锚点会落空）。
-    # 本句补齐「卡 → 宿主类目」的正面契约（与 CATEGORY_MEDIA_MATRIX 的
-    # keyElement 行「可放音频」、前端 isVoiceCard 同口径；不新增拒收闸）。
-    "角色的音色卡挂在该角色自己的 keyElement 组内"
-    "（音色卡与该角色图像卡同组，分镜按 shotRefs 引用该角色时自动取到音色锚点）。"
     # 2026-09-25 用户裁决（8888 取证，两条）：
     #   ①「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」；
     #   ②「设计阶段只规划音频，只在提示词撰写才建卡」。
     # 两个阶段的分工写成正面契约（不写禁令词，与 check_tool_descriptions 闸同口径）：
-    #   - 故事板设计：建音频**分组** + 在分组 desc 里写层设计（覆盖镜头/情绪/配器）；
+    #   - 故事板设计：建音频**分组** + 在分组 desc 里写层设计（内容以 Skill 音频章节为准）；
     #   - 提示词撰写：按该 desc 建音频卡（承载生成提示词与参数）。
-    # 模型可见面此前把 bgm/narration 与 voice 并列（本 hint 第 40-41 行），
+    # 模型可见面此前把 bgm/narration 与 voice 并列（本 hint 音频种类句），
     # 模型照契约在设计期建 BGM 卡、平台又按新口径拒收——契约须与闸机同源。
+    # 2026-09-27 去重批：「两步落账」是**唯一表述源**（其余提到它的地方一律改为
+    # 不重复描述——旧句 8 括注的前向指针已删）。
     "音频层（BGM/旁白）分两步落账：故事板设计阶段建音频分组、把层设计写进"
-    "分组的 desc（覆盖镜头范围 + 情绪基调 + 配器/语气方向）；音频卡在"
+    "分组的 desc（写什么以 Skill 音频章节为准）；音频卡在"
     "提示词撰写阶段按该 desc 创建（承载生成提示词与参数）。"
+    # 2026-09-30 事故 9999/参考图静默落空：refAssets 此前只列字段名、零形态契约，
+    # 模型只能猜（现场原话 "refAssets format — uncertain … Let me just try objects"），
+    # 猜成对象后被平台字符串化成 Python repr 串 ⇒ 前端图裂 + 生成时参考图
+    # 静默落空（实测 30/30 次生图 refs=0）。此句即那条缺失的正面契约（P2 约束下沉）。
+    "refAssets 填**媒体 URL 字符串数组**（如 [\"/workspace/assets/gen-xxx.png\"]）；"
+    "也可以填草稿 id（系统自动解析成该卡的媒体 URL）；"
+    "**推荐这两种写法**——填对象/结构体（形如 {type,name,url}）虽会被系统自动解包取 url，"
+    "但多绕一层、易出错。"
 )
 
 # group patch 合法字段枚举（2026-09-23 批10，事故 4444/P1-1）：
@@ -161,8 +164,7 @@ class CreateGroupInput(StrictToolInput):
     # （字段与落库保留：存量数据只读、前端零消费、音色锚点按组取与它无关）。
     element_type: str = Field("", description=(
         f"关键元素组的元素种类标注（可选；取值 {'/'.join(ops.ELEMENT_TYPES)}，"
-        "由你按元素语义自行判断，省略不影响任何链路；"
-        "角色的音色卡一律挂该角色自己的元素组内，与本字段填与无关）"))
+        "由你按元素语义自行判断，省略不影响任何链路）"))
     desc: str = Field("", description=(
         "分组描述（shot 类型：完整镜头设计写这里，唯一载体；引用用 [元素名] 令牌"
         "内联正文、系统自动解析挂参考；时长由 duration 字段承载；"
@@ -171,16 +173,13 @@ class CreateGroupInput(StrictToolInput):
         # 2026-09-25 用户裁决：「音频也要给 desc。写的地方和看的地方要对的上。」
         # 音频组的层设计唯一载体 = desc（建组写 desc、快照注入 desc、界面展示 desc，
         # 三处同字段）；历史上前端曾把描述写进 group.prompt 造成两份事实源，已统一。
-        # 2026-09-26 用户裁决：层设计的创作要求（情绪基调/配器/语气方向等）
-        # 归 Skill 章节唯一表述，工具句只留结构契约，不复述。
-        "audio 类型：音频层的设计写这里，唯一载体（写清覆盖哪些镜头范围；"
-        "每个音频分组即一个独立层、各有自己的组 ID；BGM 与旁白各成一组——"
-        "两者生成通道不同）"))
+        # 2026-09-26/27 用户裁决：层设计写什么（覆盖镜头/情绪/配器等）归 Skill
+        # 音频章节唯一表述，工具句只留结构契约（分组=独立层、BGM/旁白各成一组），不复述。
+        "audio 类型：音频层的设计写这里，唯一载体（每个音频分组即一个独立层、"
+        "各有自己的组 ID；BGM 与旁白各成一组——两者生成通道不同；"
+        "具体写什么以 Skill 音频章节为准）"))
     duration: str = Field("", description="时长（shot 类型用；整镜总时长，如 '12s'）")
-    summary: str = Field("", description=(
-        "shot 类型必填：简略的镜头描述与时长（与 desc 镜头内容一致），"
-        "如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'；"
-        "缺失或空整单拒收；其他组类型忽略此字段。"))
+    summary: str = Field("", description="shot 类型：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'")
     shot_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description=(
         "建组同时在该组内建一张卡（可选；只建组不带卡就省略本参数；"
@@ -283,7 +282,6 @@ class StoryboardCreateGroupTool(BaseTool):
         "完整镜头描述写在 desc 上，引用到的元素用 [元素名] 令牌写在描述里"
         "（系统会自动解析为引用并挂参考），也可用 shot_refs 显式指定。"
         "desc 中 [元素名] 令牌与裸名提及由系统自动解析为引用。"
-        "shot 类型必填 summary（简略的镜头描述与时长），缺失整单拒收打回重填；"
         "整镜时长写 duration 字段，summary 徽标可附（约Xs）仅供展示、"
         "不作时长来源（仅 duration 缺失时系统从 summary 兜底解析）。"
     )
@@ -398,7 +396,11 @@ class StoryboardCreateGroupTool(BaseTool):
             if draft_payload:
                 ops.append_draft(new_group, draft_payload, svc.state_dict)
 
-            svc.save()
+            # 落盘结果判定（事故 9999/2026-09-27 动作二②）：版本闸放弃写入时
+            # 不得静默回「执行成功」（假回执），必须回喂可行动的失败信封
+            _conflict = save_or_conflict(svc)
+            if _conflict is not None:
+                return _conflict
         result_data: Dict[str, Any] = {"group_id": new_id}
         if unmatched_tokens:
             _miss = "、".join(unmatched_tokens[:5]) + ("…" if len(unmatched_tokens) > 5 else "")
@@ -448,7 +450,9 @@ class StoryboardPatchDraftTool(BaseTool):
                     # 按顶部「全局设置」填充，硬参数不依赖规格文档）
                     cat = ops.category_for_group_type(str(group.get("group_type") or ""))
                     stamp_draft_spec_preference(svc.state_dict, draft, cat)
-                    svc.save()
+                    _conflict = save_or_conflict(svc)
+                    if _conflict is not None:
+                        return _conflict
                     return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id)})
         return ToolResult(
             success=False,
@@ -516,7 +520,9 @@ class StoryboardAddDraftTool(BaseTool):
             # 防前端默认首选供应商回填污染（参数栏与全局设置不一致）
             cat = ops.category_for_group_type(str(params.group_type or ""))
             stamp_draft_spec_preference(svc.state_dict, draft, cat)
-            svc.save()
+            _conflict = save_or_conflict(svc)
+            if _conflict is not None:
+                return _conflict
         return ToolResult(success=True, data={"draft_id": draft["id"]})
 
 
@@ -546,7 +552,9 @@ class StoryboardDeleteGroupTool(BaseTool):
                     conversation_ops.cleanup_scoped_threads_for_removed(
                         svc, removed_draft_ids, save=False,
                         stop_tasks=lambda ids: ports.task_stop_port().stop_bound_tasks(ids))
-                svc.save()
+                _conflict = save_or_conflict(svc)
+                if _conflict is not None:
+                    return _conflict
                 return ToolResult(success=True, data={"deleted": params.group_id})
         return ToolResult(
             success=False,
@@ -625,7 +633,9 @@ class StoryboardPatchGroupTool(BaseTool):
                         svc.state_dict, patch.get("shotRefs"))
                 changed, _ = ops.patch_group(group, patch)
                 if changed:
-                    svc.save()
+                    _conflict = save_or_conflict(svc)
+                    if _conflict is not None:
+                        return _conflict
                     return ToolResult(success=True, data={
                         "group_id": group.get("id", params.group_id),
                         "changed": sorted(patch),
@@ -679,7 +689,9 @@ class StoryboardDeleteDraftTool(BaseTool):
                     conversation_ops.cleanup_scoped_threads_for_removed(
                         svc, removed, save=False,
                         stop_tasks=lambda ids: ports.task_stop_port().stop_bound_tasks(ids))
-                    svc.save()
+                    _conflict = save_or_conflict(svc)
+                    if _conflict is not None:
+                        return _conflict
                     return ToolResult(success=True, data={
                         "deleted": removed,
                         "detail": f"已删除 {len(removed)} 张卡片：{', '.join(removed)}",
@@ -708,7 +720,9 @@ class StoryboardConfirmDraftTool(BaseTool):
             if found:
                 _, draft = found
                 ops.patch_draft(draft, {"tag": "已确认"}, svc.state_dict)
-                svc.save()
+                _conflict = save_or_conflict(svc)
+                if _conflict is not None:
+                    return _conflict
                 return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id), "tag": "已确认"})
         return ToolResult(
             success=False,

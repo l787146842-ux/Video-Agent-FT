@@ -25,6 +25,7 @@ from src.video_agent.tools.base import (
     ProviderInjectionContext,
     StrictToolInput,
     ToolResult,
+    save_or_conflict,
 )
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
@@ -308,7 +309,10 @@ class DocumentWriteTool(BaseTool):
                     d["revisions"] = int(d.get("revisions") or 0) + 1
                     if is_spec:
                         ensure_iron_rules_doc(svc.state_dict)
-                    svc.save()
+                    # 落盘结果判定（事故 9999/2026-09-27 动作二②）
+                    _conflict = save_or_conflict(svc)
+                    if _conflict is not None:
+                        return _conflict
                     return ToolResult(success=True, data={
                         "name": params.name, "action": "updated",
                         "revisions": int(d.get("revisions") or 0),
@@ -324,7 +328,10 @@ class DocumentWriteTool(BaseTool):
             })
             if is_spec:
                 ensure_iron_rules_doc(svc.state_dict)
-            svc.save()
+            # 落盘结果判定（事故 9999/2026-09-27 动作二②）
+            _conflict = save_or_conflict(svc)
+            if _conflict is not None:
+                return _conflict
         return ToolResult(success=True, data={"name": params.name, "action": "created", "revisions": 0})
 
 
@@ -912,8 +919,19 @@ class ImageGenerateTool(BaseTool):
                 draft_type=dtype,
             )
             submitted.append((draft, task_id))
-        svc.save()  # 持久化「生成中」标签与草稿参数回写
-        
+        # 落盘结果判定（事故 9999/2026-09-27 动作二②）——**本处刻意不返失败**：
+        # 生成任务**已提交**（外部副作用已发生、用户已计费），此处 save 只落
+        # 「生成中」标签与草稿参数回写，属提交后的记账降级；若返 ToolResult
+        # 失败，模型极可能重提 → **重复扣费**（比记账未落盘严重得多）。
+        # 故：不静默（打 WARNING + 随回执 detail 告知），但**不返失败**。
+        # 内存态持有新标签、下一次成功落盘即自愈；任务 writeback 亦会再保存。
+        _submit_persisted = svc.save()  # 持久化「生成中」标签与草稿参数回写
+        if not _submit_persisted:
+            logger.warning(
+                "[image_generate] 生成任务已提交，但「生成中」标签/草稿参数落盘被"
+                "版本闸放弃（同项目另一会话刚写过）；任务不受影响，记账将在下次"
+                "落盘或任务 writeback 时自愈")
+
         # 实际使用的供应商/模型回写草稿（imgUrl/tag 已由任务管线 writeback 处理）
         async with svc.lock:
             for draft, _ in submitted:
@@ -923,7 +941,11 @@ class ImageGenerateTool(BaseTool):
                 if model:
                     draft["imageModel"] = model
                     draft["model"] = model
-            svc.save()
+            # 同上：提交后记账，不因落盘冲突返失败（防重复扣费），只留痕
+            if not svc.save():
+                logger.warning(
+                    "[image_generate] 供应商/模型回写落盘被版本闸放弃"
+                    "（任务已提交、不受影响；下次落盘自愈）")
 
         # 提交即返回：结果由前端 SSE + 轮询跟踪，
         # 避免 N×600s 工具轮阻塞 agent 循环

@@ -514,7 +514,7 @@ def card_media_gate(
                 f"key_element_audio），收到 audioType={kind or '(未填)'!r}。"
                 "本次调用未执行、工作台保持原样。"
                 "BGM 与旁白分两步落账：本阶段建音频分组、把层设计写进分组 desc"
-                "（覆盖镜头范围等结构信息；情绪/配器等创作要求以 Skill 为准）；"
+                "（写什么以 Skill 音频章节为准）；"
                 "音频卡在提示词撰写阶段按该 desc 创建。"
             )
     return None

@@ -210,7 +210,7 @@ export async function generateAudio(): Promise<void> {
   const { group } = target;
   const layerDesc = audioLayerDesc(group);
   if (!layerDesc) {
-    showToast('该音频组还没有描述：请先在故事板设计阶段写入覆盖镜头/情绪/配器方向', 'warning');
+    showToast('该音频组还没有描述：请先在故事板设计阶段写入音频层设计（内容见 Skill 音频章节）', 'warning');
     return;
   }
 

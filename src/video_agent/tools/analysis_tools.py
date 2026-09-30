@@ -30,7 +30,7 @@ from typing import Type
 from pydantic import BaseModel, Field
 
 from src.video_agent.state.manager import StateManager
-from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
+from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult, save_or_conflict
 from src.video_agent.tools.manager import ToolManager
 
 
@@ -80,7 +80,11 @@ class ScriptAnalyzeTool(BaseTool):
         svc = StateManager.get_instance()
         async with svc.lock:
             svc.state_dict["analysis"] = payload
-            svc.save()
+            # 落盘结果判定（事故 9999/2026-09-27 动作二②）：版本闸放弃写入时
+            # 不得静默回「执行成功」（假回执），必须回喂可行动的失败信封
+            _conflict = save_or_conflict(svc)
+            if _conflict is not None:
+                return _conflict
         return ToolResult(success=True, data={
             "summary_chars": len(summary),
             "report_chars": len(payload["report"]),

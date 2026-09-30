@@ -9,9 +9,12 @@ FC Tool（tools/storyboard_tools.py）与动作执行器（core/action_executor.
 职责边界：本模块不加锁（调用方持 svc.lock）、不持久化（调用方 save/save_debounced）、
 不做 undo 快照（调用方 push_undo）。所有函数直接就地修改传入的 state_dict 结构。
 """
+import ast
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
+
+from loguru import logger
 
 from src.video_agent.state.models import (
     ALL_CATEGORIES,
@@ -510,17 +513,78 @@ def build_draft_id_set(state: Dict[str, Any]) -> set:
     return ids
 
 
+# ---------- refAssets 条目形态解包（2026-09-30，事故 9999/参考图静默落空） ----------
+# 病灶：模型把条目写成**对象**（`{"type": "image", "name": "...", "url": "..."}`），
+#   平台此前只用 `str(raw)` 粗暴字符串化 ⇒ 落库成 Python repr 串
+#   （`"{'type': 'image', 'name': '设定图·曹彬', 'url': '/workspace/assets/…'}"`）。
+#   该串既不是草稿 id 也不是媒体 URL，落进下面的分支 ③「原样保留」**永久留存**，
+#   后果两处（与 draft-id 形态同构，只是更难认）：
+#     ① 前端 `<img src="{'type'…">` 被 `safeUrl` 拦成空串 ⇒ 参考栏图裂、
+#        计数因去重失效而虚高（坏串与真 URL 永不相等）；
+#     ② 生成时该串被当 URL 塞进 `reference_images` ⇒ **参考图静默落空**：
+#        实测 9999 全部 30 次生图日志 `refs=0`，模型只拿到文字、角色全靠编。
+#   口径：**收得宽、存得严** —— 认对象（真 dict / JSON 串 / Python repr 串）并取其
+#   `url`；取不到 url 再退回其 `id`/`draftId` 走既有草稿 id 归一；两者皆无才丢弃
+#   （WARNING 留痕，不静默吞）。裸串仍走原三条判定，`"whatever"` 之类照旧保留。
+# 为何不是写口拒收：拒绝写会让模型连卡都建不成（形态属可无损归一，不属安全边界），
+#   与「未知引用由既有回喂通道告知」同档。
+_DICT_ENTRY_RE = re.compile(r"^\s*\{.*\}\s*$", re.S)
+
+
+def unwrap_ref_entry(raw: Any) -> Dict[str, str]:
+    """把一条 refAssets 条目解包为 `{"url": …, "id": …}`（解包不出则两者皆空）。
+
+    认三种形态（模型实测都出现过）：
+      1. 真 dict（工具入参未被字符串化时）；
+      2. JSON 对象串（`{"url": "…"}`，双引号）；
+      3. Python repr 串（`{'url': '…'}`，单引号 —— 本次事故的现场形态）。
+
+    第 3 种**不能**用 `json.loads`（单引号非法），故走 `ast.literal_eval`：
+    只解析字面量、不执行代码（无副作用面，比 eval 安全）。
+    """
+    if isinstance(raw, dict):
+        obj: Any = raw
+    else:
+        text = str(raw or "").strip()
+        if not _DICT_ENTRY_RE.match(text):
+            return {"url": "", "id": ""}
+        obj = None
+        try:
+            parsed = json.loads(text)
+            obj = parsed if isinstance(parsed, dict) else None
+        except Exception:  # noqa: BLE001 —— 单引号 repr 串在此必然失败，转 literal_eval
+            obj = None
+        if obj is None:
+            try:
+                parsed = ast.literal_eval(text)
+                obj = parsed if isinstance(parsed, dict) else None
+            except Exception:  # noqa: BLE001
+                obj = None
+        if obj is None:
+            return {"url": "", "id": ""}
+    url = str(obj.get("url") or obj.get("imgUrl") or "").strip()
+    rid = str(obj.get("id") or obj.get("draftId") or obj.get("draft_id") or "").strip()
+    return {"url": url, "id": rid}
+
+
 def normalize_ref_assets(
     state: Dict[str, Any], refs: Any,
 ) -> List[str]:
     """把 refAssets 归一到**媒体 URL**（写口唯一入口，去重保序留首）。
 
-    三条判定（按序）：
-      ① 条目是沙盒草稿 id 且该卡**已有媒体** ⇒ 落其 URL（本次修复的主路径）；
+    判定（按序）：
+      ⓪ 条目是**对象形态**（真 dict / JSON 串 / Python repr 串）⇒ 解包取 `url`；
+         无 `url` 再退回其 `id` 继续走 ①②；两者皆无 ⇒ 丢弃该条（不能拿 repr 串
+         当 URL 发出去），与「未命中即去记号留文字」同向、不静默吞用户输入；
+      ① 条目是沙盒草稿 id 且该卡**已有媒体** ⇒ 落其 URL；
       ② 条目是沙盒草稿 id 但该卡**尚无媒体**（图还没出）⇒ 丢弃该条
          （挂空 URL 无意义；与「未命中即去记号留文字」同向，不留误导性占位）；
-      ③ 其余（合法 URL / 外部链接 / 未知字符串）⇒ **原样保留**，不吞输入
+      ③ 其余（合法 URL / 外部链接 / 未知裸串）⇒ **原样保留**，不吞输入
          （用户手填的素材 URL 必须照常可用）。
+
+    ⚠ 关键分支次序：`str(raw)` 只能用于**裸串**。对象形态必须先解包、且丢弃判据
+    必须基于**解包后的 item**——若拿原串去匹配 `{…}`，会把已成功解包出的 URL
+    反判成"对象形态"而丢弃（本函数首版即踩此坑，实测 S1/S3 归一出空列表）。
     """
     if not refs:
         return []
@@ -530,9 +594,23 @@ def normalize_ref_assets(
     all_ids = build_draft_id_set(state)
     out: List[str] = []
     for raw in refs:
-        item = str(raw or "").strip()
-        if not item:
-            continue
+        is_obj_form = isinstance(raw, dict) or bool(
+            _DICT_ENTRY_RE.match(str(raw or "").strip()))
+        if is_obj_form:
+            unwrapped = unwrap_ref_entry(raw)
+            item = unwrapped["url"] or unwrapped["id"]
+            if not item:
+                logger.warning(f"[refAssets] 对象条目无可解析的 url/id，已丢弃：{raw!r}")
+                continue
+            if unwrapped["url"]:
+                # 已直接拿到 URL：不再当草稿 id 二次解释
+                if item not in out:
+                    out.append(item)
+                continue
+        else:
+            item = str(raw or "").strip()
+            if not item:
+                continue
         if item in with_media:
             value = with_media[item]
         elif item in all_ids:

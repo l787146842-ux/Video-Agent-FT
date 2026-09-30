@@ -136,3 +136,39 @@ class BaseTool(ABC):
         未声明者调度器不调用（provider_kind 空即 no-op）。
         """
         return None
+
+
+# ===== 写类工具的落盘结果判定（2026-09-27 批，事故 9999/2026-09-27 动作二②） =====
+#
+# 病灶：`StateManager.save()` **返回 bool**（版本闸放弃写入时 False，见
+# state/save_ops.py:64-71），但全部 12 处写类工具的 `svc.save()` **都不读返回值**，
+# 一律 `return ToolResult(success=True)`。于是版本闸静默丢弃写入时，模型拿到的
+# 仍是「执行成功」——**假回执**（与批级回滚同一类病：平台改动了状态而模型不知情）。
+# 9999 实跑日志中「放弃过期写入」出现 5 次，即至少 5 次「回执说成功、其实没落盘」。
+#
+# 口径（对齐 GOVERNANCE「错误信封必须抛错」+ P3 状态即数据）：落盘失败 =
+# 工具失败，必须回喂模型可行动的失败信封，**不得静默成功**。
+def save_or_conflict(svc: Any) -> Optional[ToolResult]:
+    """写类工具落盘：成功返回 None；版本闸放弃写入时返回结构化失败信封。
+
+    用法（写类工具体末尾，替换裸 `svc.save()`）::
+
+        if (conflict := save_or_conflict(svc)) is not None:
+            return conflict
+
+    并发契约（宪法 Rule 3）：同项目多实例并发写时，磁盘账本较新的实例赢，
+    本次写入被放弃——**这是拒绝而不是损坏**，故 error_code 用 `conflict`
+    （非 validation：入参本身没错；亦非 exception：非未捕获异常）。
+    retryable=False：原参盲重试仍会被同一版本闸拒绝，须先读回最新状态。
+    """
+    if svc.save():
+        return None
+    return ToolResult(
+        success=False,
+        error=("落盘冲突：磁盘上的项目状态比本实例更新（同项目另一会话/后台任务"
+               "刚写过），本次写入已被版本闸放弃、**未落盘**。既有工作台状态保持"
+               "原样，本次改动不生效。请先用 read_state_group 读回最新状态，"
+               "确认差异后重新提交。"),
+        error_code="conflict", retryable=False,
+    )
+

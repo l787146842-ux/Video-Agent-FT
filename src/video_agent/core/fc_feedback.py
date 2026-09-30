@@ -85,6 +85,13 @@ FAILURE_HINT_NON_RETRYABLE = _load_feedback_section(
     "FAILURE_HINT_NON_RETRYABLE", "该失败不宜原参盲重试：可向用户说明困难。")
 FAILURE_HINT_DEFAULT = _load_feedback_section(
     "FAILURE_HINT_DEFAULT", "可调整参数后重试一次，或先向用户说明困难。")
+# 版本冲突（2026-09-27 批，事故 9999/2026-09-27 动作二②）：写类工具落盘被版本闸
+# 放弃（StateManager.save() 返回 False）时的专属指引——与「不宜盲重试」不同，
+# 这里**必须先读回最新状态**才能继续（原参重试必被同一闸再拒）。
+FAILURE_HINT_CONFLICT = _load_feedback_section(
+    "FAILURE_HINT_CONFLICT",
+    "本次写入因版本冲突被放弃（同项目另一会话/后台任务刚写过）。"
+    "先 read_state_group 读回最新状态、确认差异后再重新提交，不要用原参直接重试。")
 # 可消化行识别：回喂正文行「- 工具名：执行成功…」（与 format_tool_results 一致）
 _DIGEST_LINE_RE = re.compile(r"^- ([A-Za-z_][A-Za-z0-9_]*)：执行成功")
 
@@ -469,6 +476,9 @@ def compose_failure_feedback(
         hint = FAILURE_HINT_REPEAT
     elif kind == "validation":
         hint = FAILURE_HINT_VALIDATION
+    elif kind == "conflict":
+        # 版本冲突（事故 9999/2026-09-27）：必须先读回最新状态，原参重试必被同一闸再拒
+        hint = FAILURE_HINT_CONFLICT
     elif retryable:
         hint = FAILURE_HINT_RETRYABLE
     elif kind in ("canvas", "other"):

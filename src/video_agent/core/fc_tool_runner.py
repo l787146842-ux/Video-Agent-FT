@@ -8,9 +8,10 @@
 执行分桶（五项修法批 3，按工具声明 deny-by-default）：连续 `parallel_safe`
 声明的调用进有界并行池（池上限 PARALLEL_POOL_LIMIT，asyncio 并发），
 其余调用独占串行（自成屏障）。结果与 SSE 事件按模型顺序提交；
-问即停（workflow_pause 永远独占）、批首 checkpoint、幂等账本、取消路径
-（已启动的跑完，未启动的随取消上抛终止）、独占失败回滚-中止纪律
-全部保持既有语义；并行组员均为只读，组内失败不级联。
+问即停（workflow_pause 永远独占）、幂等账本、取消路径
+（已启动的跑完，未启动的随取消上抛终止）保持既有语义；并行组员均为只读，
+组内失败不级联。批内单个调用失败**不连坐**其余调用（2026-09-27 批：批级
+整态回滚已退役，对齐 dsh「普通工具失败不中止轮次」）。
 
 execute() 返回 FCExecuteResult（结构化命名元组）：调用方按字段名取用，
 位置解包仍兼容（历史调用/测试不破坏），新增字段不再是隐性破坏。
@@ -29,7 +30,6 @@ from loguru import logger
 from src.video_agent.core.chat_port import ChatResponse
 from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
-from src.video_agent.core import batch_checkpoint
 from src.video_agent.core import ports
 from src.video_agent.core import provider_injection
 from src.video_agent.core import subagent as subagent_mod
@@ -147,8 +147,6 @@ class _BatchState:
     ctx: Any
     ledger: Any
     scope_auto_pause: bool
-    batch_cp: Any
-    batch_tools: Any
     paused_this_batch: bool = False
     applied: int = 0
     confirmation: str = ""
@@ -175,9 +173,6 @@ class _BatchState:
     tool_results: List[Dict[str, Any]] = field(default_factory=list)
     doc_written: bool = False
     docs_written: List[str] = field(default_factory=list)
-    # 五项修法批 3：当前提交是否属于并行桶成员（组内失败不级联，
-    # 不触发独占路径的回滚-中止判定）
-    parallel_member: bool = False
 
 
 class FCToolRunner:
@@ -587,7 +582,7 @@ class FCToolRunner:
                            on_event=None, on_status=None, tracer=None) -> str:
         """单调用提交段（原 execute 循环内派发后的逐调用后处理，语义逐行保持）：
         幂等记账 → 暂停槽断言 → 生成族记账 → 成败分支（账本/事件/trace/回喂）。
-        返回 "break"（问即停 / 回滚-中止）或 "continue"。"""
+        返回 "break"（问即停）或 "continue"。"""
         name = c.name
         args = c.args
         result = c.result
@@ -737,7 +732,7 @@ class FCToolRunner:
                 st.pause_break = True
             if name in ("document_write", "write_document"):
                 st.doc_written = True
-                # 即时同步进账本（与生成族记账同节拍）：循环中段的回滚判定读得到文档写标志，不留时序缺口；批末重复赋值同值无害
+                # 即时同步进账本（与生成族记账同节拍）：文档写标志随写即记，批末对账读得到；批末重复赋值同值无害
                 st.ledger.doc_written = True
                 doc_name = str(args.get("name") or args.get("key") or "").strip()
                 if doc_name:
@@ -897,19 +892,24 @@ class FCToolRunner:
                     retryable=bool(getattr(result, "retryable", False)),
                 ),
             })
-            # 批级检查点（批 6）：回滚触发边界排除未执行型拒收（闸机拒收/入参校验拒收零副作用，判定在 core/batch_checkpoint.py）；
-            # 仅确实执行过且失败的调用才过保守条件判定。回滚实际发生：失效轮内幂等账本（防同键命中陈旧成功缓存）
-            # 并中止本批后续调用（仿问即停：不得在已恢复状态上继续执行产生矛盾回喂）；
-            # 取消分支同理在穿透上抛前判定（见 _record_cancelled_call 接线点）。
-            # 并行桶成员不进本回滚-中止判定（五项修法批 3：组员均为只读，组内失败不级联）
-            if not st.parallel_member:
-                if not batch_checkpoint.is_unexecuted_rejection(gate_error, result):
-                    if batch_checkpoint.maybe_rollback_on_failure(
-                            StateManager.get_instance(), st.batch_cp, failed_tool=name,
-                            ledger=st.ledger, tool_names=st.batch_tools,
-                            tool_manager=self.tool_manager):
-                        self._idempotency.reset()
-                        return "break"
+            # 2026-09-27 批（事故 9999/2026-09-27，用户裁决退役）：**批级整态回滚已退役**。
+            # 旧机制（批 6「取消留半截态」，commit 94242cbf）在批内任一调用失败/取消时
+            # 把整份 state 恢复到批首——**同批已成功落盘的成员一并被抹**，且只留一条
+            # loguru WARNING，模型/用户皆不可见（9999 实证：6 调用批内 4 张卡成功落盘、
+            # 第 5 个失败 ⇒ 4 张全部蒸发，子代理据「成功」回执+空状态断言「未完成事项：无」
+            # ——假回执 → 假信念 → 假完工）。
+            # 退役依据（用户 2026-09-27 裁决①A「一个失败不连坐」）：
+            # ①该机制自设的前置条件（批内无 high 风险工具 / 无生成族成败 / 无文档写入）
+            #   已把所有外部副作用排除干净，剩下的**全是纯内部状态写入**；
+            # ②而单个写类工具的写入本就是原子的——全部 9 个 `async with svc.lock:`
+            #   块内 **await 计数为 0**，取消（只能在 await 点插入）打不断任何单个
+            #   工具的写入 ⇒「半截态」在单工具粒度上不成立；
+            # ③它诞生的 2026-08 是**串行时代**（并行池是后置的批 7，且以本机制为前置依赖），
+            #   「一串顺序动作没跑完就当没发生」的语义被原样套用到了「N 个独立写入」上，
+            #   爆炸半径随并行池放大而判定条件一字未改。
+            # 现语义（对齐 dsh `dsh-tools`：普通工具失败返回最终结果而**不中止轮次**）：
+            # 本调用失败照常回喂，**本批其余调用继续执行**，不连坐、不回滚、不中止。
+
         return "continue"
 
     async def _run_group_chunk(self, members: List[_CallCtx], st: _BatchState, *,
@@ -918,10 +918,11 @@ class FCToolRunner:
         结果与 SSE 事件按模型顺序提交（逐成员走同一 _commit_call）。
 
         取消语义（对齐 dsh：已启动的跑完）：gather 等齐整片——已启动成员
-        跑完者按真实结果提交，命中取消者记取消留痕，随后过保守回滚判定
-        并穿透上抛（片外未启动调用随上抛终止，外层 while 不再续跑）。
-        组内失败不级联（五项修法批 3：组员均为只读，失败只记失败回喂，
-        不触发回滚-中止）。"""
+        跑完者按真实结果提交，命中取消者记取消留痕，随后穿透上抛
+        （片外未启动调用随上抛终止，外层 while 不再续跑）。
+        组内失败不级联（五项修法批 3：组员均为只读，失败只记失败回喂）。
+        2026-09-27 批：取消不再恢复整态（批级回滚退役），已完成成员的
+        写入保留。"""
         to_run = [m for m in members if m.result is None and m.gate_error is None
                   and not m.cache_wait]
         outcomes: Dict[int, Any] = {}
@@ -931,51 +932,41 @@ class FCToolRunner:
                 return_exceptions=True)
             outcomes = {id(m): o for m, o in zip(to_run, _outs)}
         _first_cancel_exc: Optional[GenerationCancelled] = None
-        _first_cancel_member: Optional[_CallCtx] = None
         _first_exc: Optional[BaseException] = None
-        st.parallel_member = True
-        try:
-            for m in members:
-                if m.result is None and m.gate_error is None:
-                    if m.cache_wait:
-                        # 组内同键重复：此刻首现者已入账本，串行补跑命中缓存
-                        _cached = self._idempotency.check(m.idem_key)
-                        m.result = _cached if _cached is not None else (
-                            await self._dispatch_tool(m.name, m.args))
-                    else:
-                        _out = outcomes.get(id(m))
-                        if isinstance(_out, GenerationCancelled):
-                            self._record_cancel_ledger(m, st)
-                            await self._record_cancelled_call(
-                                m, on_event=on_event, tracer=tracer)
-                            if _first_cancel_exc is None:
-                                _first_cancel_exc = _out
-                                _first_cancel_member = m
-                            continue
-                        if isinstance(_out, BaseException):
-                            # invoke_tool 兜底之外的非取消异常（8888 委派失踪批·批 C，
-                            # G4 同类路径）：并行桶成员也不得零留痕——每个中断
-                            # 成员先记账，提交完其余成员后上抛首例。
-                            await self._record_interrupted_call(
-                                m, _out, on_event=on_event, tracer=tracer)
-                            if _first_exc is None:
-                                _first_exc = _out
-                            continue
-                        m.result = _out
-                _signal = await self._commit_call(
-                    m, st, on_event=on_event, on_status=on_status, tracer=tracer)
-                if _signal != "continue":
-                    break
-        finally:
-            st.parallel_member = False
+        for m in members:
+            if m.result is None and m.gate_error is None:
+                if m.cache_wait:
+                    # 组内同键重复：此刻首现者已入账本，串行补跑命中缓存
+                    _cached = self._idempotency.check(m.idem_key)
+                    m.result = _cached if _cached is not None else (
+                        await self._dispatch_tool(m.name, m.args))
+                else:
+                    _out = outcomes.get(id(m))
+                    if isinstance(_out, GenerationCancelled):
+                        self._record_cancel_ledger(m, st)
+                        await self._record_cancelled_call(
+                            m, on_event=on_event, tracer=tracer)
+                        if _first_cancel_exc is None:
+                            _first_cancel_exc = _out
+                        continue
+                    if isinstance(_out, BaseException):
+                        # invoke_tool 兜底之外的非取消异常（8888 委派失踪批·批 C，
+                        # G4 同类路径）：并行桶成员也不得零留痕——每个中断
+                        # 成员先记账，提交完其余成员后上抛首例。
+                        await self._record_interrupted_call(
+                            m, _out, on_event=on_event, tracer=tracer)
+                        if _first_exc is None:
+                            _first_exc = _out
+                        continue
+                    m.result = _out
+            _signal = await self._commit_call(
+                m, st, on_event=on_event, on_status=on_status, tracer=tracer)
+            if _signal != "continue":
+                break
         if _first_cancel_exc is not None:
-            # 取消穿透：过保守条件判定（同独占路径），已跑完成员的真实结果已提交
-            if batch_checkpoint.maybe_rollback_on_cancel(
-                    StateManager.get_instance(), st.batch_cp,
-                    cancelled_tool=_first_cancel_member.name if _first_cancel_member else "",
-                    ledger=st.ledger, tool_names=st.batch_tools,
-                    tool_manager=self.tool_manager):
-                self._idempotency.reset()
+            # 取消穿透（2026-09-27 批：批级回滚退役，此处不再做整态恢复——
+            # 已跑完成员的真实结果已提交且**保留**；取消只中止未启动的调用，
+            # 不撤销已完成的工作）
             raise _first_cancel_exc
         if _first_exc is not None:
             raise _first_exc
@@ -995,8 +986,9 @@ class FCToolRunner:
 
         执行分桶（五项修法批 3）：连续 parallel_safe 声明的调用进有界并行池
         （池上限 PARALLEL_POOL_LIMIT），其余调用独占串行（自成屏障）。
-        问即停（workflow_pause 永远独占）、批首 checkpoint、幂等账本、
-        取消路径、独占失败回滚-中止纪律全部保持既有语义。
+        问即停（workflow_pause 永远独占）、幂等账本、取消路径保持既有语义。
+        2026-09-27 批（事故 9999/2026-09-27）：**批级整态回滚退役**——批内
+        单个调用失败不再连坐同批其余调用（对齐 dsh「普通工具失败不中止轮次」）。
         """
         self._selected_draft_id = selected_draft_id or ""
         self._selected_type = selected_type or ""
@@ -1020,13 +1012,8 @@ class FCToolRunner:
         # workflow_pause 分属两个批，短问句仍需带上真实阶段名
         batch_tool_names: set = set(getattr(self, "_turn_tool_names", ()))
         last_stage_label = str(getattr(self, "_turn_stage_label", "") or "")
-        # 批级检查点（批 6）：本批含写类/中高危工具时批首打快照，失败/取消回滚判定全在 core/batch_checkpoint.py
-        _batch_cp = batch_checkpoint.take_checkpoint() if batch_checkpoint.batch_has_risky_tool(
-            response, self.tool_manager) else None
-        _batch_tools = batch_checkpoint.batch_tool_names(response)
         st = _BatchState(
             ctx=ctx, ledger=ledger, scope_auto_pause=scope_auto_pause,
-            batch_cp=_batch_cp, batch_tools=_batch_tools,
             batch_tool_names=batch_tool_names, last_stage_label=last_stage_label,
         )
         self._turn_tool_names = st.batch_tool_names
@@ -1079,13 +1066,8 @@ class FCToolRunner:
                 except GenerationCancelled:
                     self._record_cancel_ledger(c, st)
                     await self._record_cancelled_call(c, on_event=on_event, tracer=tracer)
-                    # 取消留半截态修复（批 6）：穿透上抛前过保守条件判定（不吞异常）；
-                    # 回滚实际发生时失效轮内幂等账本（防同键重试命中陈旧成功缓存）
-                    if batch_checkpoint.maybe_rollback_on_cancel(
-                            StateManager.get_instance(), st.batch_cp, cancelled_tool=c.name,
-                            ledger=st.ledger, tool_names=st.batch_tools,
-                            tool_manager=self.tool_manager):
-                        self._idempotency.reset()
+                    # 2026-09-27 批（事故 9999/2026-09-27）：批级回滚退役，
+                    # 取消不再恢复整态——已完成成员的写入保留（不因取消而撤销）。
                     raise
                 except Exception as exc:
                     # 8888 委派失踪批·批 C：非取消异常（如 run_subagent 派发因上游

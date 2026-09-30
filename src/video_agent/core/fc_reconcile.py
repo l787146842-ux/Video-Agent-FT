@@ -4,7 +4,7 @@
 三段结构：闸机裁决（fc_gates）→ 执行（fc_tool_runner）→ 批末对账（本模块）。
 
 对账只承载卡片注入类结论（阶段完成审阅卡）；客观账本（BatchLedger）
-的生成成败字段另供 batch_checkpoint 取消回滚判定。C1a 裁决 2026-08-31：
+的生成成败字段为批末对账事实面。C1a 裁决 2026-08-31：
 防虚报客观探针（虚报覆盖改写）退役——工具执行主路径与 ToolResult 回喂保留。
 规格硬边界/规格接管已随用户裁决 2026-08-31（D-08 清偿）退役：
 规格交互归 Skill 散文 + 模型自主暂停。
@@ -33,7 +33,8 @@ class BatchLedger:
     docs_written: List[str] = field(default_factory=list)
     structure_created: bool = False
     structure_kinds: Set[str] = field(default_factory=set)
-    # 生成类工具本批成败跟踪（batch_checkpoint 取消回滚判定依据）
+    # 生成类工具本批成败跟踪（批末对账事实面；2026-09-27 批：批级回滚退役后
+    # 不再供回滚判定，字段保留因其为对账客观账本的既有语义）
     gen_failed_err: str = ""
     gen_succeeded: bool = False
     # 待对账输出（执行段累积，对账结论可覆盖）

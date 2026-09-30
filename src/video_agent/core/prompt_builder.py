@@ -593,7 +593,8 @@ def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
     注入，而子级 `skill_name=""`（`planner._launch_subagent`），永远拿不到。
     即：子级拿到的是「详见第 6 章」而第 6 章不在书里。
     子级的自足声明唯一源 = `prompts/planner/subagent.md::DELEGATION_CONTEXT`
-    （随任务下发，含分批纪律——见 A3），本段不再对子级重复。
+    （随任务下发，含**写入分批**纪律——见 A3；2026-09-27 裁决后仅约束写入，
+    不含思考），本段不再对子级重复。
     """
     if not context.use_studio_context:
         return ""

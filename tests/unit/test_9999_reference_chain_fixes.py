@@ -173,11 +173,130 @@ class TestRefAssetsNormalization:
         assert changed is True and dropped == []
         assert draft["refAssets"] == ["/a/chengxin.png"]
 
+
+# =====================================================================
+# ②b refAssets **对象形态**归一（2026-09-30 事故 9999/参考图静默落空）
+# =====================================================================
+class TestRefAssetsDictForm:
+    """现场：`proj-1790513490-8468602e`（9999）11 张分镜表格图卡 39 条 refAssets
+    **全部**是 Python repr 串形态、合法 URL 0 条：
+
+        "{'type': 'image', 'name': '设定图·曹彬', 'url': '/workspace/assets/gen-….png'}"
+
+    模型当时无形态契约可依（工具描述只列字段名），自述原话
+    "refAssets format — uncertain … Let me just try objects with url+type+name"；
+    平台 `str(raw)` 粗暴字符串化后落进分支③「原样保留」**永久留存**。
+
+    不修会怎样（两条实测后果）：
+    1. 前端 `safeUrl()` 拦成空串 ⇒ 参考栏图裂；`refAssetName` 对 33 字符的残尾
+       越过 32 阈值回落到 `参考素材N`，且坏串与真 URL 永不相等 ⇒ 计数虚高
+       （4 条坏串 + 4 个 @ 提及 = 徽章 8，实为 4）；
+    2. 生成时该串被当 URL 塞进 `reference_images` ⇒ **参考图静默落空**：
+       实测 9999 全部 30 次生图日志 `refs=0`，模型只拿到文字、角色全靠编。
+    """
+
+    @pytest.fixture
+    def state(self):
+        return {
+            "keyElements": [
+                {"id": "ke-1", "title": "Element_曹彬",
+                 "drafts": [dict(build_draft_dict({"label": "设定图·曹彬"}, draft_id="d-k1"),
+                                 imgUrl="/a/caobin.png")]},
+                {"id": "ke-2", "title": "Element_程心",
+                 "drafts": [dict(build_draft_dict({"label": "设定图·程心"}, draft_id="d-k2"),
+                                 imgUrl="/a/chengxin.png")]},
+            ],
+            "shots": [], "audioItems": [],
+        }
+
+    # ---- 三种对象形态都要认 ----
+
+    def test_python_repr_string_form(self, state):
+        """现场形态：模型写对象 → 平台 str() 成单引号 repr 串。"""
+        raw = "{'type': 'image', 'name': '设定图·曹彬', 'url': '/a/caobin.png'}"
+        assert ops.normalize_ref_assets(state, [raw]) == ["/a/caobin.png"]
+
+    def test_json_string_form(self, state):
+        """双引号 JSON 串形态同命。"""
+        raw = '{"type": "image", "name": "设定图·曹彬", "url": "/a/caobin.png"}'
+        assert ops.normalize_ref_assets(state, [raw]) == ["/a/caobin.png"]
+
+    def test_real_dict_form(self, state):
+        """真 dict 形态（工具入参未被字符串化时）同命。"""
+        raw = {"type": "image", "name": "设定图·曹彬", "url": "/a/caobin.png"}
+        assert ops.normalize_ref_assets(state, [raw]) == ["/a/caobin.png"]
+
+    def test_imgUrl_key_variant(self, state):
+        """键名写成 imgUrl 也认（模型可能照抄草稿字段名）。"""
+        assert ops.normalize_ref_assets(
+            state, [{"imgUrl": "/a/caobin.png"}]) == ["/a/caobin.png"]
+
+    # ---- url 缺失时退回 id ----
+
+    def test_object_without_url_falls_back_to_draft_id(self, state):
+        """对象只给草稿 id ⇒ 退回既有草稿 id 归一（落到该卡媒体 URL）。"""
+        assert ops.normalize_ref_assets(state, [{"type": "image", "id": "d-k1"}]) == ["/a/caobin.png"]
+        assert ops.normalize_ref_assets(state, [{"draftId": "d-k2"}]) == ["/a/chengxin.png"]
+
+    def test_object_without_url_or_id_is_dropped(self, state):
+        """url/id 都解不出 ⇒ 丢弃（绝不能拿 repr 串当 URL 发出去）。"""
+        assert ops.normalize_ref_assets(state, [{"type": "image", "name": "无名"}]) == []
+
+    # ---- 与既有三条判定共存，不回归 ----
+
+    def test_mixed_forms_dedup_to_one(self, state):
+        """去重跨形态生效：对象形态与真 URL 指同一张图只留一条。"""
+        out = ops.normalize_ref_assets(state, [
+            "{'type': 'image', 'url': '/a/caobin.png'}",
+            "/a/caobin.png",
+            {"url": "/a/caobin.png"},
+        ])
+        assert out == ["/a/caobin.png"]
+
+    def test_plain_string_still_preserved(self, state):
+        """回归钉：裸串仍走原三条判定，"whatever" 照旧保留（不吞用户输入）。"""
+        assert ops.normalize_ref_assets(state, ["whatever"]) == ["whatever"]
+        assert ops.normalize_ref_assets(state, ["/uploads/a.png"]) == ["/uploads/a.png"]
+
+    def test_brace_text_without_url_is_not_sent_as_url(self, state):
+        """反例守卫：形如 `{}` 的串不再被当 URL 原样发出（本次缺陷的直接病灶）。"""
+        out = ops.normalize_ref_assets(state, ["{'foo': 'bar'}"])
+        assert out == [], "对象形态解不出 url 却仍被当 URL 保留 = 缺陷未修"
+
     def test_append_draft_normalizes(self, state):
-        """写口覆盖：`ops.append_draft` 新建卡即归一（建组附带 / 新增卡路径）。"""
-        group = {"id": "g1", "drafts": []}
-        draft = ops.append_draft(group, {"label": "x", "refAssets": ["d-k1"]}, state)
-        assert draft["refAssets"] == ["/a/chengxin.png"]
+        """写口覆盖：`ops.append_draft` 建卡即 URL（建卡路径，与 patch 路径同引）。"""
+        group = {"id": "shot-9", "title": "Shot_测试", "drafts": []}
+        draft = ops.append_draft(
+            group,
+            {"label": "运镜轨迹图·S9",
+             "refAssets": ["{'type': 'image', 'name': '设定图·曹彬', 'url': '/a/caobin.png'}"]},
+            state)
+        assert draft["refAssets"] == ["/a/caobin.png"]
+
+    # ---- 端到端：参考图必须真的进 reference_images ----
+
+    def test_end_to_end_refs_reach_generation(self, state):
+        """端到端：对象形态落库后，提示词引用应真正解析成参考图 URL。
+
+        修复前的实测结果：坏串占满参考槽位 ⇒ refs 前 4 条是 repr 串，
+        真实图被挤到第 5 条且其余引用静默降级为纯文字。"""
+        from src.video_agent.core.prompt_refs import (
+            build_storyboard_media_map, resolve_prompt_mentions,
+        )
+        # 模拟写口归一后的落库值
+        stored = ops.normalize_ref_assets(state, [
+            "{'type': 'image', 'name': '设定图·曹彬', 'url': '/a/caobin.png'}",
+            "{'type': 'image', 'name': '设定图·程心', 'url': '/a/chengxin.png'}",
+        ])
+        assert stored == ["/a/caobin.png", "/a/chengxin.png"]
+
+        mm = build_storyboard_media_map(state)
+        eff, refs = resolve_prompt_mentions(
+            "Reference images attached:\n- Image 1: for @曹彬\n- Image 2: for @程心",
+            stored, mm, max_refs=5)
+        assert refs == ["/a/caobin.png", "/a/chengxin.png"]
+        assert not any("'type'" in r for r in refs), "repr 串仍混进参考图列表"
+        assert "[参考图1：曹彬]" in eff and "[参考图2：程心]" in eff
 
 
 # =====================================================================
