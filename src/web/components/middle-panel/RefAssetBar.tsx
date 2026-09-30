@@ -12,7 +12,7 @@ import { safeUrl } from '@/lib/utils';
 import { storyboardMediaMap, mentionNamesIn } from '@/lib/prompt-mentions';
 import { uploadRefFile } from '@/lib/ref-upload';
 import {
-  boundAssetTitle, refAssetType, refAssetName, videoThumb,
+  refAssetType, refAssetName, videoThumb,
 } from '@/lib/prompt-ref-utils';
 import { RefAssetPickerModal, type RefAssetItem } from './RefAssetPickerModal';
 import type { DraftRecord } from '@/types';
@@ -117,19 +117,11 @@ export function RefAssetBar(props: {
         onDrop={onRefDrop}
       >
         <div class="ref-thumbs flex-wrap">
-          {/* 分镜：绑定元素参考（只读 chips，不显示标题文字） */}
-          <Show when={state.selectedType === 'shot'}>
-            <div class="shot-refs">
-              <For each={props.refAssets().filter((u) => boundAssetTitle(u, state.keyElements))}>
-                {(url) => (
-                  <span class="shot-ref-chip">
-                    <img src={safeUrl(url)} alt="" />
-                    {boundAssetTitle(url, state.keyElements)}
-                  </span>
-                )}
-              </For>
-            </div>
-          </Show>
+          {/* 2026-09-30 用户裁决：删「分镜绑定元素参考」只读胶囊行（Element_xxx 那排）。
+              它与下方缩略图渲染同一份 refAssets（仅多一层「能否回查到关键元素」的过滤），
+              观感上是一条重复的长条；用户要求只保留方形引用缩略图。
+              分镜的「引用哪些元素」语义仍由左面板 ShotRefsChips（带「引用:」标签、可增删）
+              与提示词框内的内联图块承担，此处不丢信息。 */}
 
           {/* 自有参考素材（按类型渲染，可删） */}
           <For each={props.refAssets()}>

@@ -38,7 +38,6 @@ vi.mock('@/api/upload', () => ({
   uploadFiles: async (_files: File[]) => [{ name: 'up.png', kind: 'image', url: '/assets/up.png' }],
 }));
 vi.mock('@/lib/prompt-ref-utils', () => ({
-  boundAssetTitle: () => null,
   refAssetType: (url: string) => (url.endsWith('.mp4') ? 'video' : url.endsWith('.mp3') ? 'audio' : 'image'),
   refAssetName: (_url: string, idx: number) => `参考素材 ${idx + 1}`,
   videoThumb: (u: string) => u,
@@ -195,5 +194,21 @@ describe('参考素材栏添加入口不受数量限制（台账 #16）', () => 
     ));
     const badge = container.querySelector('.ref-count-badge') as HTMLElement;
     expect(badge.title).toContain('已加载参考素材 1 个');
+  });
+
+  it('分镜卡不渲染「绑定元素参考」只读胶囊行，只留方形缩略图（2026-09-30 用户裁决）', () => {
+    // 现场：9999 的 S11「运镜轨迹图」参考栏里，同一组 refAssets 被画两遍——
+    // 三枚只读胶囊（`.shot-refs > .shot-ref-chip`，带 `Element_xxx` 文字）
+    // + 三张方形缩略图（`.ref-thumb-wrap`）。用户裁决：删胶囊、留方图。
+    // 防翻案：本钉锁死 `.ref-thumbs` 下**不得**再出现胶囊行。
+    const refs = ['/assets/a.png', '/assets/b.png'];
+    const rec = seedShotDraft(refs);
+    const { container } = render(() => (
+      <RefAssetBar rec={() => rec} refAssets={() => refs} maxRefs={() => Infinity} />
+    ));
+    expect(container.querySelector('.ref-thumbs .shot-refs')).toBeNull();
+    expect(container.querySelectorAll('.shot-ref-chip')).toHaveLength(0);
+    // 方图仍在（删胶囊不得连带删缩略图）
+    expect(container.querySelectorAll('.ref-thumb-wrap')).toHaveLength(2);
   });
 });
