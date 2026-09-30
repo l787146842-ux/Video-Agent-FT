@@ -168,6 +168,8 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **回归钉**：`RefAssetBar-no-limit.test.tsx` +1 条（`分镜卡不渲染「绑定元素参考」只读胶囊行，只留方形缩略图`：断言 `.ref-thumbs .shot-refs` 为 null、`.shot-ref-chip` 数 0、而 `.ref-thumb-wrap` 仍为 2 ⇒ 删胶囊不得连带删缩略图；防翻案）。
 - **验证**：定向 vitest 11 passed；全量 vitest **125 文件 / 1057 passed**（原 1056 + 本批 1 条）；`tsc --noEmit` + eslint 干净；`npm run build` 成功且 size gate 380.61 kB ≤ 400 kB；新包 `AgentLayout-DB1M3RHZ.js` 内 `shot-ref-chip` 仅剩左面板 `ShotRefsChips` 两处（参考栏胶囊模板已消失）；`acceptance.py --quick` **15/15 PASS**。
 - **待用户目测**（宪法 §3.1）：已构建 `static/dist/`，请刷新页面后到分镜卡目测「参考栏只剩方形缩略图」。
+- **同日更正（用户追问「flova 的 skill 跟本项目的一样啊」后复核）**：上一轮报告 §1.5 写「本地 SKILL.md 与 Flova 留档**逐字节相同**（`IDENTICAL = True`）」——**该结论只对分镜表格图模板那一段成立**。本轮用 `difflib` 全文件复算：本地 9594 字符/277 行、Flova 9455 字符/258 行，**整文件 `IDENTICAL = False`**，≥8 行公共块仅 12 段（最长 23 行 = 表格图模板段 `sha=5129dd37d51bee10`，两侧同值）。明确差异：① 头部 frontmatter（本地 `name/description` vs 其宿主 `skill_name/skill_description`）；② 工具名已按本项目工具面改写（`storyboard_patch_draft`/`image_generate`/`generate_video`/`document_write` vs `media_generator`/`text_editor`/`storyboard_designer`/`video_assembler`）；③ 部分段落被平台化改写。⇒ 「模板正文相同」成立、「整份 Skill 相同」不成立；后续对比必须指明**比的是哪一段**。取证脚本 `.tmp_probe/9999b/13_skill_cmp.py`。
+- **同日环境留痕**：`.pytest_tmp/run`（2026-09-27 15:49 遗留目录）**不可读不可删**（`Remove-Item` → 拒绝访问、`dir` 列不出内容），而 `.pytest_tmp` 下新建目录可建可删；`diagnose-windows-sandbox-acl` 判定 **NOT_THIS_CLASS**（无包 ACE、`WRITE_DAC`/`WRITE_OWNER` 均在）⇒ 非沙箱 ACL 类问题，属遗留目录本身。绕行 = `--basetemp=.pytest_tmp/run_<新名>`（`pytest.ini` 的 `addopts` 原值不动）。
 
 ### 2026-09-26 · 工具描述与容器契约修订批（用户 12 条逐裁）+ 历史计划书卷面清理 + 仓库迁移
 
