@@ -16,9 +16,9 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型（script_analyze）
 2. 将全局制作参数写入 制片规格.md（画幅比例、目标时长、影像风格基调、输出语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**
 3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_designer**
-4. 生成所有 key_element 设定图（角色三视图、场景四视图）：提示词先经 storyboard_patch_draft 写入草稿 → **image_generate**
-5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考：提示词先经 storyboard_patch_draft 写入草稿 → **image_generate**
-6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video：视频提示词先经 storyboard_patch_draft 写入草稿，再调用 **generate_video**
+4. 生成所有 key_element 设定图（角色三视图、场景四视图）：提示词先写入草稿 → **media_generator**
+5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考：提示词先写入草稿 → **media_generator**
+6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video：视频提示词先写入草稿，再调用 **generate_video**
 7. 生成所有 audio_layer 音频资产（台词、BGM、旁白）→ 由系统音频生成通道按各 audio_layer 类型产出（无需工具调用）
 8. 按 Storyboard 顺序组装时间线，完成音画同步与剪辑输出——由用户在工作台操作，Agent 引导即可（无对应工具调用）
 

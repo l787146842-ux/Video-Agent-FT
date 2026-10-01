@@ -8,9 +8,8 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 2. 生成故事板（关键元素、镜头列表、音频层）→ storyboard_designer。故事板准备就绪后，扫描当前上下文，查找用户提供或之前生成的、与故事板条目匹配的任何资产（例如元素图像、背景音乐）。对于每个匹配项，在进行生成步骤之前，将资产登记到相应的故事板参考字段
 3. 设置元素：
 - 如果用户已经上传了元素资源（例如角色图像或引用的参考角色），直接将其登记为相应 key_elements 草稿的参考资产。
-- 否则，为所有元素生成图像（提示词先经 storyboard_patch_draft 写入草稿）→ image_generate。
-4. 为每个镜头生成首帧图（start_frame；提示词先经 storyboard_patch_draft 写入草稿）→ image_generate
-5. 参考步骤4的首帧图生成视频：视频提示词先经 storyboard_patch_draft 写入草稿，再调用 **generate_video**
+- 否则，为所有元素生成图像（提示词先写入草稿）→ **media_generator**。
+4. 为每个镜头生成首帧图（start_frame；提示词先写入草稿）→ **media_generator**5. 参考步骤4的首帧图生成视频：视频提示词先写入草稿，再调用 **generate_video**
 6. 生成 BGM 音频层 → 由系统音频生成通道产出（无需工具调用）
 7. 全片时间线组装与导出由用户在工作台操作，Agent 引导即可（无对应工具调用）
 
