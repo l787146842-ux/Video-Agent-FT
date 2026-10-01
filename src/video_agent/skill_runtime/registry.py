@@ -32,7 +32,12 @@ PIPELINE_CAPABILITY_TOOLS = (
     "storyboard_key_elements",
     "storyboard_shots",
     "storyboard_audio",
-    "write_media_prompt",
+    # 2026-10-01 媒体生成支（步骤3，用户裁决「一个阶段名」）：原 `write_media_prompt`
+    # 在此位上。Skill 里没有「提示词编写」这个流程节点（<planner> 第 4/5/6 步名字
+    # 都是「生成」），故能力词与委派阶段名一并收敛为 `media_generate`（媒体生成），
+    # 对齐 Flova 的 `<media_generator>` 执行单元。旧名仍作 CAPABILITY_TOOL_STAGES
+    # 的**兼容别名键**保留（存量调用可解析 prompt_draft 章节），但不再是能力词。
+    "media_generate",
     "audio_generate",
     "video_assembler",
 )
@@ -43,6 +48,8 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "storyboard_key_elements": ("storyboard_ke",),
     "storyboard_shots": ("storyboard_shot",),
     "storyboard_audio": ("storyboard_audio",),
+    "media_generate": ("generation", "prompt_draft"),
+    # 兼容别名（本项目旧名）：不再是能力词，但保留键位使 tool_sections 可解析。
     "write_media_prompt": ("prompt_draft",),
     "audio_generate": ("generation",),
     "video_assembler": ("assembly",),
@@ -57,6 +64,18 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     # 注意：上面三个**旧能力名逐字保留**——它们仍喂着 available_tools/
     # scan_skills lint/音频闸/stage_probes（能力面），只是不再出现在委派枚举里。
     "storyboard_design": ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
+    # 2026-10-01 媒体生成支（步骤3，用户裁决「一个阶段名」）：**媒体生成**阶段。
+    # 病灶：Skill 把「分镜表格图需包含四大要素（含景别与时长标注）」写在
+    # `<media_generator>`（→ generation 章），把「具体提示词写法」写在
+    # `<write_media_prompt>`（→ prompt_draft 章）；而旧委派阶段只注入 prompt_draft
+    # ⇒ **写表格图提示词的那只手读不到「要包含什么」**，11/11 张卡全漏「时长」。
+    # Flova 的形态是「媒体生成环节内部再走写提示词子步骤」（其转录 flova 10.md
+    # 「它不是一个独立的项目阶段」），两章归同一执行单元。
+    # ⇒ 本阶段**同时注入两章**：generation（要什么）+ prompt_draft（怎么写）。
+    # 与 Flova `<media_generator>` 单元对齐，且不再有它明确否定的独立提示词阶段。
+    # 按 Skill 步骤各派一次（步骤 4/5/6 之间有用户确认与产物依赖，无法合并），
+    # 由主代理的 `current_step` 划界——注入内容三次相同，故一个阶段名即可。
+    "media_generate": ("generation", "prompt_draft"),
 }
 
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
@@ -78,7 +97,13 @@ STAGE_LABELS: Dict[str, str] = {
     "storyboard_audio": "音频层",
     # 2026-09-22 批6（Q5）：合并委派阶段的展示名（三章一章做完，一张卡）。
     "storyboard_design": "故事板设计",
-    "write_media_prompt": "提示词编写",
+    # 2026-10-01 媒体生成支（步骤3）：Skill 里没有「提示词编写」这个流程节点
+    # （<planner> 第 4/5/6 步名字都是「生成」），故展示名对齐 Skill 与 Flova
+    # 的 `<media_generator>` = 「媒体生成」。
+    # 旧名 `write_media_prompt` 作为**兼容别名**保留映射（存量会话/前端缓存
+    # 仍可能带旧 stage 值），但不再出现在委派枚举里。
+    "media_generate": "媒体生成",
+    "write_media_prompt": "媒体生成",
     "audio_generate": "音频生成",
     "video_assembler": "组装导出",
     "image_generate": "生图",

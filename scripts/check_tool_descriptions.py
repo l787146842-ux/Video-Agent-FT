@@ -43,7 +43,7 @@ SCAN_DIR = ROOT / "src" / "video_agent" / "tools"
 PIPELINE_STAGE_KINDS: Set[str] = {
     "script_analyze",
     "storyboard_design",
-    "write_media_prompt",
+    "media_generate",
 }
 
 # 禁令/否定句模式（说明层禁令 = 反模式，2026-09-12 裁决）

@@ -45,7 +45,13 @@ def test_save_registers_and_delete_unregisters():
     entry = registry.get_entry("demo")
     assert entry is not None
     # 只有对应章节存在的管线能力才会登记（探针口径）
-    assert entry.available_tools == ["storyboard_key_elements", "audio_generate"]
+    # 2026-10-01 媒体生成支（步骤3）：原 audio_generate 在此位；能力词收敛为
+    # media_generate（其章节 = generation + prompt_draft），旧名降为兼容别名。
+    # 顺序 = PIPELINE_CAPABILITY_TOOLS 声明序（media_generate 在 audio_generate 前）。
+    # 两者都能由 `<generation>` 章支撑：media_generate 取二章（本桩只有其一），
+    # audio_generate 仍作能力词映射 generation（喂 lint/音频闸/stage_probes）。
+    assert entry.available_tools == [
+        "storyboard_key_elements", "media_generate", "audio_generate"]
     assert "关键元素规范" in registry.tool_sections("demo", "storyboard_key_elements")
     assert registry.tool_sections("demo", "script_analyze") == ""
 

@@ -136,7 +136,7 @@ def test_stage_tools_mapping():
     """stage_tools 返回各阶段生产工具集（_STAGE_TOOLS 单一源）。"""
     assert stage_tools("script_analyze") == frozenset(
         {"read_uploaded_doc", "script_analysis_report"})
-    assert stage_tools("write_media_prompt") == frozenset(
+    assert stage_tools("media_generate") == frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"})
     # 2026-09-22 批6（Q5）：故事板三阶段合并为一个委派阶段，工具集 = 三并集
     # （原 key_elements/shots/audio 三份，含批0 回归修复补的 add_draft）。
@@ -160,7 +160,7 @@ def test_stage_tools_mapping():
 
 def test_main_agent_orchestrator_surface(svc):
     """主代理纯编排（2026-09-19）：生产轮锁掉 5 个执行写入工具，保留
-    读工具/媒体生成；委派集 = 素材分析 + 故事板设计 + 提示词撰写。"""
+    读工具/媒体生成；委派集 = 素材分析 + 故事板设计 + 媒体生成。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
@@ -174,8 +174,10 @@ def test_main_agent_orchestrator_surface(svc):
     assert "read_skill" not in excluded
     assert "read_uploaded_doc" not in excluded
     # 批6（Q5）：委派面三阶段（故事板三合一）
+    # 2026-10-01 媒体生成支（步骤3）：第三阶段名由 write_media_prompt 收敛为
+    # media_generate（媒体生成）——Skill 无「提示词编写」流程节点。
     assert PIPELINE_STAGE_KINDS == frozenset({
-        "script_analyze", "storyboard_design", "write_media_prompt"})
+        "script_analyze", "storyboard_design", "media_generate"})
 
 
 def test_main_agent_deny_subset_of_stage_tools():
@@ -219,9 +221,9 @@ def test_stage_child_face_equals_declared_tools(svc):
             f"{sorted(stage_tools(stage) & MAIN_AGENT_DENY)}")
         # 故事板写入四件套里，未声明的必须不可见（2222 越界的直接通道）
         assert not ((visible_pro_write & sb_write) - stage_tools(stage))
-    # 反向钉：write_media_prompt 正是用 add/patch_draft 的阶段，不得被误收
-    assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
-    assert "storyboard_patch_draft" not in child_deny_set("write_media_prompt")
+    # 反向钉：media_generate 正是用 add/patch_draft 的阶段，不得被误收
+    assert "storyboard_add_draft" not in child_deny_set("media_generate")
+    assert "storyboard_patch_draft" not in child_deny_set("media_generate")
 
 
 def test_stage_deny_never_starves_declared_tools():
@@ -250,7 +252,7 @@ def test_stage_card_media_declaration():
     """声明表单一事实源：故事板设计阶段允许 {audio, video}，image 仍拒。
 
     用户裁决（2026-09-21 批4）不变：角色/场景/道具的图像卡（含壳）与提示词
-    归 write_media_prompt 阶段。
+    归 media_generate 阶段。
     2026-09-22 批6（Q5）：键随故事板三阶段合并改为 storyboard_design，
     允许集 = 三原子阶段产出并集——audio（关键元素阶段的音色卡）
     + video（分镜阶段的 shot 卡，实跑取证 26 次 create_group 全 shot+video）。
@@ -261,7 +263,7 @@ def test_stage_card_media_declaration():
     assert "image" not in stage_card_media("storyboard_design"), (
         "image 卡归提示词撰写阶段（2026-09-21 用户裁决），合并不放开跨阶段产物")
     # 未登记阶段不受限（空集 = 维持现状，不额外收紧）
-    for stage in ("write_media_prompt", "script_analyze", ""):
+    for stage in ("media_generate", "script_analyze", ""):
         assert stage_card_media(stage) == frozenset(), \
             f"阶段 {stage} 不应受建卡媒体类型限定"
     # 三个旧原子阶段已退出委派面 ⇒ 不再受限（不再有独立的 ke 阶段）
@@ -287,7 +289,7 @@ def test_card_media_gate_rejects_image_card_in_storyboard_design():
     err = card_media_gate(ctx, "storyboard_add_draft",
                           {"draft": {"mediaType": "image"}})
     assert err and "只允许 mediaType=audio/video" in err
-    assert "write_media_prompt" in err, "拒收文案须指明该去哪里做"
+    assert "media_generate" in err, "拒收文案须指明该去哪里做"
     assert "未执行" in err and "保持原样" in err, "缺状态保留声明"
     # 音色卡与分镜卡放行（合并阶段的两类合法产物）
     assert card_media_gate(ctx, "storyboard_add_draft",
@@ -422,7 +424,7 @@ def test_stage_card_media_reaches_gate_ctx_end_to_end(svc):
 
     # 子代理轮 + 其它阶段 → 不受限
     ctx_prompt = PlannerContext(
-        skill_name=SKILL, subagent_depth=1, subagent_stage="write_media_prompt")
+        skill_name=SKILL, subagent_depth=1, subagent_stage="media_generate")
     planner._apply_stage_card_media(ctx_prompt)
     assert runner.stage_card_media == frozenset()
     assert card_media_gate(runner._gate_ctx(), "storyboard_add_draft",
@@ -464,7 +466,7 @@ def test_stage_card_audio_types_declaration():
     assert stage_card_audio_types("storyboard_design") == frozenset({"voice"})
     assert set(STAGE_CARD_AUDIO_TYPES) <= set(PIPELINE_STAGE_KINDS)
     # 未登记阶段不受限（维持现状，与 stage_card_media 同款默认）
-    assert stage_card_audio_types("write_media_prompt") == frozenset()
+    assert stage_card_audio_types("media_generate") == frozenset()
     assert stage_card_audio_types("") == frozenset()
 
 
@@ -537,7 +539,7 @@ def test_stage_card_audio_types_reaches_gate_ctx_end_to_end(svc):
 
     # 其它阶段 / 主代理轮 → 该维度不受限
     planner._apply_stage_card_media(PlannerContext(
-        skill_name=SKILL, subagent_depth=1, subagent_stage="write_media_prompt"))
+        skill_name=SKILL, subagent_depth=1, subagent_stage="media_generate"))
     assert runner.stage_card_audio_types == frozenset()
     assert card_media_gate(runner._gate_ctx(), "storyboard_add_draft",
                            {"draft": {"audioType": "bgm"}}) is None

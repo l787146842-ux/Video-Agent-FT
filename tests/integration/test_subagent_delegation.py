@@ -183,13 +183,18 @@ async def test_zero_action_stop_ends_in_one_round(svc, fakestop_off):
 
 async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     """阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离；2026-09-19 主代理
-    纯编排批：委派集 = 素材分析 + 故事板三阶段 + 提示词撰写）端到端：
-    委派带 stage=write_media_prompt
-    → 子级任务文本精准携带该阶段章节全文，storyboard_shots 章节探针零在场
-    （跨阶段污染根除）；子级真建组落账、只回摘要；子线程 meta 记阶段名。
-    用真实 Skill（data/skills）验证章节切割。"""
-    # 客观前置：分镜结构已由 storyboard_shots 阶段建好（结构属上一阶段），
-    # write_media_prompt 只往既有草稿卡里写提示词——与 2222 实跑同序。
+    纯编排批：委派集 = 素材分析 + 故事板三阶段 + 媒体生成）端到端：
+    委派带 stage=media_generate
+    → 子级任务文本精准携带该阶段章节全文（generation + prompt_draft **两章**），
+    storyboard_shots 章节探针零在场（跨阶段污染根除）；子级真建组落账、只回摘要；
+    子线程 meta 记阶段名。用真实 Skill（data/skills）验证章节切割。
+
+    2026-10-01 媒体生成支（步骤3）：本用例同时钉死**根因闭合**——
+    旧阶段 write_media_prompt 只注入 prompt_draft 一章，而「分镜表格图需包含
+    四大要素（含景别与时长标注）」写在 generation 章 ⇒ 写表格图提示词的手
+    读不到「要包含什么」，9999 实测 11/11 张卡全漏「时长」。新阶段两章并注。"""
+    # 客观前置：分镜结构已由 storyboard_design 阶段建好（结构属上一阶段），
+    # media_generate 只往既有草稿卡里写提示词——与 2222 实跑同序。
     svc.state_dict["shots"] = [{
         "id": "grp-s01", "title": "Shot_S01 开场", "group_type": "shot",
         "desc": "【空间锚点 / 舱内】固定参照物：舷窗。人物动作与对白：程心苏醒。"
@@ -197,14 +202,14 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
         "summary": "含内部剪辑（约10s）", "shotRefs": ["星环号球形舱"], "drafts": [],
     }]
     adapter = _ScriptedAdapter([
-        # 1) 父：委派媒体提示词编写阶段
+        # 1) 父：委派媒体生成阶段
         {"tool": "run_subagent", "args": {
             "task": "为已建分镜编写媒体提示词",
-            "stage": "write_media_prompt"}},
+            "stage": "media_generate"}},
         # 2) 子：真调本阶段工具把提示词写进既有草稿卡。
-        #    2026-09-21 批0（事故 2222/Q5）：write_media_prompt 的 _STAGE_TOOLS
+        #    2026-09-21 批0（事故 2222/Q5）：media_generate 的 _STAGE_TOOLS
         #    = {add_draft, patch_draft}——建组不属本阶段（分镜结构由
-        #    storyboard_shots 阶段建好），故改用 add_draft 落卡。
+        #    storyboard_design 阶段建好），故改用 add_draft 落卡。
         {"tool": "storyboard_add_draft", "args": {
             "group_id": "current", "group_type": "shot",
             "draft": {"label": "S01 提示词", "mediaType": "video", "genType": "video",
@@ -213,7 +218,7 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
         # 3) 子：摘要收尾
         {"text": "已为 1 组分镜写入提示词。"},
         # 4) 父：向用户交代
-        {"text": "提示词编写已由子代理完成。"},
+        {"text": "媒体提示词已由子代理完成。"},
     ])
     planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=ToolManager)
     result = await planner.handle_message(
@@ -225,20 +230,26 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     drafts = [d for g in shots for d in (g.get("drafts") or [])]
     assert drafts, "stage 子级写提示词未落账"
     assert "Medium waist shot" in str(drafts[0].get("prompt") or "")
-    assert "提示词编写已由子代理完成" in (result.text or "")
+    assert "媒体提示词已由子代理完成" in (result.text or "")
 
     # ② 章节隔离：子级首轮模型调用的 user 消息（= build_subagent_task 包装文本）
-    #    含 write_media_prompt 章节真身探针，零含 storyboard_shots 章节探针
+    #    含本阶段章节真身探针，零含 storyboard_shots 章节探针
     #   （真实 Skill 文本切割）；落流 user/message 是原始任务书（只读记录首行）
     threads = svc.subagent_threads()
     assert len(threads) == 1
     scope = svc.get_conversation_scope(threads[0]["conversation_id"])
-    assert scope.get("subagent_kind") == "stage:write_media_prompt"
+    assert scope.get("subagent_kind") == "stage:media_generate"
     child_first = adapter.calls[1]
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
-    assert "本次委派阶段：提示词编写" in task_text
-    assert "内切镜时长估算" in task_text, "write_media_prompt 章节未精准注入"
+    assert "本次委派阶段：媒体生成" in task_text
+    assert "内切镜时长估算" in task_text, "prompt_draft 章节未注入"
+    # ③ **根因闭合钉**（2026-10-01 媒体生成支步骤3）：generation 章同批注入——
+    #    「四大要素/景别与时长标注」必须在场，否则表格图漏「时长」复发（9999 现场）。
+    assert "四大要素" in task_text, (
+        "generation 章节未随 media_generate 注入——分镜表格图「四大要素」"
+        "（含景别与时长标注）再次读不到，9999 漏时长根因复发")
+    assert "景别与时长标注" in task_text
     assert "分镜语法三件套" not in task_text, "storyboard_shots 章节泄漏进子代理"
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
 

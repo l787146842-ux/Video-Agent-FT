@@ -485,13 +485,14 @@ def card_media_gate(
             "本次调用未执行、工作台保持原样。"
             + (
                 # 2026-09-23 批5（D-1 裁决）：关键元素设计阶段不建卡、只建分组；
-                # 图像卡全归 write_media_prompt。本句把「该去哪做 + 音色卡怎么标」
+                # 图像卡全归媒体生成阶段。本句把「该去哪做 + 音色卡怎么标」
                 # 一并交代（音色卡用 audioType=voice，即 Skill 的 key_element_audio）。
+                # 2026-10-01 媒体生成支（步骤3）：阶段名收敛为 media_generate。
                 "本阶段（故事板设计）产出关键元素分组、角色音色卡"
                 "（mediaType=audio 且 audioType=voice，即 Skill 明文的 key_element_audio）"
                 "与分镜卡（mediaType=video）；"
-                "角色/场景/道具的图像卡与提示词属提示词撰写阶段，"
-                "请在委派 write_media_prompt 阶段时创建。"
+                "角色/场景/道具的图像卡与提示词属媒体生成阶段，"
+                "请在委派 media_generate 阶段时创建。"
                 if allowed == frozenset({"audio", "video"}) else ""
             )
         )

@@ -31,7 +31,9 @@ def describe_action(
     if name in ("storyboard_design",):
         # 2026-09-22 批6（Q5）：合并委派阶段（关键元素+分镜+音频一次做完）
         return "拆解故事板（关键元素/分镜/音频层一次落账）"
-    if name in ("write_media_prompt",):
+    if name in ("media_generate", "write_media_prompt"):
+        # 2026-10-01 媒体生成支（步骤3）：阶段名收敛为「媒体生成」（Skill 无
+        # 「提示词编写」流程节点）；旧名保留兼容分支。
         return "按 Skill 提示词写法分批编写草稿提示词"
     if name in ("audio_generate",):
         return "生成音频规划或绑定用户已上传音频"

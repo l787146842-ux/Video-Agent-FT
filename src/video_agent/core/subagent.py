@@ -119,7 +119,17 @@ STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({
 PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
     "script_analyze",
     "storyboard_design",
-    "write_media_prompt",
+    # 2026-10-01 媒体生成支（步骤3，用户裁决「一个阶段名」）：原 `write_media_prompt`。
+    # 依据 = Skill 自己的流程：<planner> 第 4/5/6 步名字都是「生成」，写提示词只是
+    # 冒号后的前置动作，根本没有「提示词编写」这个流程节点；Flova 也明确它不是
+    # 独立阶段（其宿主说明「媒体生成环节内部完成提示词准备……不是一个独立的项目
+    # 阶段」）。合并后该阶段**同时注入 generation + prompt_draft 两章**，使
+    # 「分镜表格图需包含四大要素（含景别与时长标注）」与「提示词怎么写」同时到手
+    # ——这正是 9999 表格图 11/11 漏「时长」的根因所在。
+    # 三次委派（步骤 4 设定图 / 5 表格图 / 6 视频）注入内容相同，由主代理
+    # `current_step` 划界；它们之间有用户确认与产物依赖（表格图卡要引用已生成的
+    # 设定图 URL），物理上无法并成一次委派。
+    "media_generate",
 })
 
 # 阶段执行器必备工具集（正向设计单一事实源）：每个可委派阶段的子代理在其
@@ -147,7 +157,7 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
          # 不再需要「删光整类目再重建」（4444 为此删 22 建 22、耗时 261.6s）
          "storyboard_patch_group",
          "storyboard_add_draft", "storyboard_patch_draft"}),
-    "write_media_prompt": frozenset(
+    "media_generate": frozenset(
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
 
@@ -176,8 +186,9 @@ MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
 # 背景：`storyboard_key_elements` 的产出是**元素组 + 角色音色卡**
 # （`key_element_audio`，mediaType=audio；Skill 明文「角色的声音特征单独登记为
 # key_element_audio，与角色元素绑定」）。而"角色三视图/场景四视图/道具图"是
-# **图像提示词的产物**，其卡壳与提示词同归 `write_media_prompt` 阶段
-# （用户 2026-09-21 裁决：图像卡含壳全部归提示词阶段）。
+# **图像提示词的产物**，其卡壳与提示词同归媒体生成阶段
+# （用户 2026-09-21 裁决：图像卡含壳全部归提示词阶段；阶段名 2026-10-01 收敛为
+#  `media_generate`，理由见 PIPELINE_STAGE_KINDS 注释）。
 # 故 key_elements 建卡只允许 audio：图像卡在此阶段被拒收（见 fc_gates）。
 #
 # 为什么用"允许集"而不是"禁止集"：本表回答"这个阶段能建什么卡"（正向声明，
@@ -193,7 +204,7 @@ MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
 #   - video ← shots 的分镜组卡（实跑取证 proj-1790073823 该阶段 26 次
 #     create_group 全为 group_type=shot + mediaType=video）。
 # **image 仍被拒**——用户 2026-09-21 裁决不变：角色/场景/道具的图像卡与提示词
-# 同归 `write_media_prompt` 阶段（图像卡含壳全部归提示词阶段）。合并只拓宽了
+# 同归媒体生成阶段（图像卡含壳全部归提示词阶段）。合并只拓宽了
 # 「同一件事的三种产物」，没有放开跨阶段产物。
 STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
     "storyboard_design": frozenset({"audio", "video"}),
@@ -210,7 +221,7 @@ STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
 # 那**不是模型越权**——`_DRAFT_FIELDS_HINT` 把 bgm/narration 与 voice 并列，
 # 模型是照契约执行的；口径冲突在平台侧。
 #
-# 承接：BGM/旁白卡由 `write_media_prompt`（提示词撰写）阶段创建——该阶段
+# 承接：BGM/旁白卡由 `media_generate`（媒体生成）阶段创建——该阶段
 # 未登记建卡限定（不受限），且工具集含 `storyboard_add_draft`，本就够用。
 #
 # 形态选择（与 `STAGE_CARD_MEDIA` 同为正向允许集，不合并成一张表）：

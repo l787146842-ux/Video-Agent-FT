@@ -73,12 +73,15 @@ def _fake_child(captured: dict):
 def test_resolve_stage_enum_and_fallback():
     # 2026-09-22 批6（Q5，用户裁决）：故事板三阶段在**委派面**合并为
     # storyboard_design（关键元素+分镜+音频一次派完，不再分三趟）。
+    # 2026-10-01 媒体生成支（步骤3，用户裁决「一个阶段名」）：原 write_media_prompt
+    # 收敛为 media_generate（媒体生成）——Skill 里没有「提示词编写」这个流程节点
+    # （<planner> 第 4/5/6 步名字都是「生成」），对齐 Flova 的 <media_generator>。
     assert resolve_stage("script_analyze") == "script_analyze"
-    assert resolve_stage("write_media_prompt") == "write_media_prompt"
+    assert resolve_stage("media_generate") == "media_generate"
     assert resolve_stage("storyboard_design") == "storyboard_design"
     assert resolve_stage(" storyboard_design ") == "storyboard_design"
     assert PIPELINE_STAGE_KINDS == frozenset({
-        "script_analyze", "storyboard_design", "write_media_prompt",
+        "script_analyze", "storyboard_design", "media_generate",
     })
     # 三个旧原子阶段从**委派面**退役（模型没有猜错空间，2222/Q3b 教训）：
     # 它们仍是能力名（喂 available_tools/lint/音频闸），但不可再作为委派 stage。
@@ -86,6 +89,9 @@ def test_resolve_stage_enum_and_fallback():
                    "storyboard_audio"):
         assert resolve_stage(legacy) == "", (
             f"{legacy} 仍在委派面——批6 已合并为 storyboard_design（Q5）")
+    # 2026-10-01：旧名 write_media_prompt 同批从委派面退役（防回潮钉）
+    assert resolve_stage("write_media_prompt") == "", (
+        "write_media_prompt 仍在委派面——媒体生成支已收敛为 media_generate")
     # 未知/空 → 回落通用（不阻断委派）
     assert resolve_stage("不存在") == ""
     assert resolve_stage("") == ""
@@ -120,13 +126,13 @@ def test_merged_stage_card_media_covers_audio_and_video():
 
     - audio ← 关键元素阶段的角色音色卡（key_element_audio）；
     - video ← 分镜阶段的 shot 卡（实跑取证：26 次 create_group 全 shot+video）；
-    - image 仍归 write_media_prompt（用户 2026-09-21 裁决不变）。
+    - image 仍归 media_generate（用户 2026-09-21 裁决不变；阶段名于 2026-10-01 收敛）。
     """
     from src.video_agent.core.subagent import stage_card_media
     assert stage_card_media("storyboard_design") == frozenset({"audio", "video"})
     assert "image" not in stage_card_media("storyboard_design"), (
         "image 卡归提示词撰写阶段（2026-09-21 用户裁决），合并不放开跨阶段产物")
-    assert stage_card_media("write_media_prompt") == frozenset()  # 未登记=不受限
+    assert stage_card_media("media_generate") == frozenset()  # 未登记=不受限
 
 
 def test_merged_stage_injection_deduplicates_one_to_many_chapters():
@@ -165,23 +171,23 @@ def test_stage_deny_drops_read_skill_only():
     本阶段落点工具（script_analysis_report 等）不在 deny ⇒ 子代理拿得到。"""
     # 2026-09-21 批0：带 stage 的子级额外 deny 的 = read_skill + 本阶段未声明的
     # MAIN_AGENT_DENY 工具（交互类 confirm/media_to_chat 无阶段认领，恒 deny）。
-    assert child_deny_set("write_media_prompt") == (
+    assert child_deny_set("media_generate") == (
         SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
-        | (MAIN_AGENT_DENY - stage_tools("write_media_prompt")))
+        | (MAIN_AGENT_DENY - stage_tools("media_generate")))
     # 通用委派（无 stage）不并入 MAIN_AGENT_DENY：无阶段即无阶段边界
     assert child_deny_set("") == SUBAGENT_TOOL_DENY
     assert child_deny_set("未知阶段") == SUBAGENT_TOOL_DENY
-    for deny in (child_deny_set(""), child_deny_set("write_media_prompt")):
+    for deny in (child_deny_set(""), child_deny_set("media_generate")):
         assert "run_subagent" in deny            # 防递归
         assert "image_generate" in deny and "generate_video" in deny  # 花钱留主线程
         assert "workflow_pause" in deny          # 子级不确认
     # 阶段落点工具必须授予子代理（1111 实证 script_analysis_report 未授予断链）
     assert "script_analysis_report" not in child_deny_set("script_analyze")
     # 本阶段**声明**的工具必须授予
-    assert "storyboard_add_draft" not in child_deny_set("write_media_prompt")
-    assert "storyboard_patch_draft" not in child_deny_set("write_media_prompt")
-    # 未声明的则收走：write_media_prompt 不建组（提示词写进既有草稿卡）
-    assert "storyboard_create_group" in child_deny_set("write_media_prompt")
+    assert "storyboard_add_draft" not in child_deny_set("media_generate")
+    assert "storyboard_patch_draft" not in child_deny_set("media_generate")
+    # 未声明的则收走：media_generate 不建组（提示词写进既有草稿卡）
+    assert "storyboard_create_group" in child_deny_set("media_generate")
     # 2026-09-22 批6（Q5）：合并阶段持有三原子阶段工具并集 ⇒ 建组/建卡/改卡
     # 三件事在一次委派内全拿得到（此前分三趟派，工具面也分三份）。
     # 2026-09-23 批2（Q3）：delete_draft 一并授予（建错卡可撤销）。
@@ -197,9 +203,11 @@ def test_stage_deny_drops_read_skill_only():
 
 
 def test_build_subagent_task_stage_header():
-    msg = build_subagent_task("拆解剧本为分镜", stage="write_media_prompt")
+    msg = build_subagent_task("拆解剧本为分镜", stage="media_generate")
     # 2026-09-21 批I（事故 4444/Q6①）：展示标签口径 = 英文 tag 直译
-    assert "本次委派阶段：提示词编写" in msg            # STAGE_LABELS 展示标签
+    # 2026-10-01 媒体生成支（步骤3）：阶段展示名 = 「媒体生成」（旧「提示词编写」退役，
+    # 理由见 registry.STAGE_LABELS 注释：Skill 里没有该流程节点）
+    assert "本次委派阶段：媒体生成" in msg             # STAGE_LABELS 展示标签
     # P1-D/R3（2026-09-16）：阶段标注只留事实行，旧解释性括号措辞退役
     assert "章节即产出规范的全部依据" not in msg
     assert "（系统已注入该阶段 Skill 章节全文" not in msg
@@ -251,13 +259,13 @@ def test_staged_empty_task_gets_platform_goal():
 def test_current_step_annotation_rendered():
     """批7（D-7）：主代理下发的「本次步骤」必须出现在任务书里。"""
     msg = build_subagent_task(
-        "", stage="write_media_prompt", current_step="第 4 步：为角色写图像提示词")
+        "", stage="media_generate", current_step="第 4 步：为角色写图像提示词")
     assert "本次步骤：第 4 步：为角色写图像提示词" in msg
 
 
 def test_current_step_absent_renders_no_empty_line():
     """未下发步骤时不出空标注行（不留「本次步骤：」空壳）。"""
-    msg = build_subagent_task("", stage="write_media_prompt")
+    msg = build_subagent_task("", stage="media_generate")
     assert "本次步骤" not in msg
 
 
@@ -289,20 +297,20 @@ async def test_launch_stage_injects_section_precisely(svc, monkeypatch):
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "拆解剧本为分镜", PlannerContext(subagent_depth=0, skill_name=SKILL),
-        stage="write_media_prompt")
+        stage="media_generate")
 
-    assert seen == {"skill": SKILL, "tool": "write_media_prompt"}
+    assert seen == {"skill": SKILL, "tool": "media_generate"}
     msg = captured["msg"]
     assert SHOTS_SECTION in msg                       # 章节全文在场
-    assert f"注入 Skill 章节（{SKILL} · write_media_prompt）" in msg
-    assert "本次委派阶段：提示词编写" in msg              # 阶段标注行（批I 直译口径）
+    assert f"注入 Skill 章节（{SKILL} · media_generate）" in msg
+    assert "本次委派阶段：媒体生成" in msg               # 阶段标注行（批I 直译口径）
     assert sd.calls == 0                              # 未走全文截断回落
     assert "章节内容截断" not in msg
     # 工具面 deny + 子会话 meta 记 stage
-    assert captured["ctx"].subagent_deny == child_deny_set("write_media_prompt")
+    assert captured["ctx"].subagent_deny == child_deny_set("media_generate")
     child_cid = captured["ctx"].session_conversation_id
     assert svc.get_conversation_scope(child_cid).get("subagent_kind") \
-        == "stage:write_media_prompt"
+        == "stage:media_generate"
 
 
 async def test_launch_stage_missing_section_falls_back(svc, monkeypatch):
@@ -314,7 +322,7 @@ async def test_launch_stage_missing_section_falls_back(svc, monkeypatch):
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "拆解", PlannerContext(subagent_depth=0, skill_name=SKILL),
-        stage="write_media_prompt")
+        stage="media_generate")
     assert sd.calls == 1
     assert "章节内容截断" in captured["msg"]
 

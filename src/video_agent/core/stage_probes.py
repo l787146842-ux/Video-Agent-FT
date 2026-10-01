@@ -265,7 +265,10 @@ _PLATFORM_TOOL_STAGE: Dict[str, str] = {
     "storyboard_confirm_draft": "structure",
     "storyboard_media_to_chat": "structure",
     "read_draft": "structure",
-    # 提示词编写/媒体生成：结构完成后才开放（ke_media 前置=[structure]）
+    # 媒体生成：结构完成后才开放（ke_media 前置=[structure]）。
+    # 2026-10-01 媒体生成支（步骤3）：委派阶段名收敛为 media_generate；
+    # 旧名 write_media_prompt 保留映射（存量会话/前端缓存可能仍带该 stage 值）。
+    "media_generate": "ke_media",
     "write_media_prompt": "ke_media",
     "image_generate": "ke_media",
     "generate_video": "ke_media",

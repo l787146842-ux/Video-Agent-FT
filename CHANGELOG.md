@@ -36,6 +36,58 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-01 · D-24 媒体生成支清偿批：生成章节统一 `<media_generator>` + 委派阶段收敛为「媒体生成」（用户裁决三步）
+
+- **立项（用户 9999 追问「分镜表格图提示词为什么没按 skill 要求生成」）**：对照 Flova 转录
+  （`C:\Users\ASUS\Desktop\flova参考\06 flova\`）查证后定性——**不是 Skill 没写，是写这张表的那次委派读不到写这条要求的那一章**。
+  用户裁决三条：① 所有生成章节合并为一个 `<media_generator>` 媒体生成章节；② planner 生成步骤对应章节全部改为
+  `<media_generator>`；③ **所有 skill**；并追加确认「一个阶段名」（非一阶段名/三阶段名二选一）。
+- **根因（实证）**：Skill 把「分镜表格图需包含四大要素（含**景别与时长标注**）」写在 `<image_generate>`（→ `generation` 章），
+  把「具体提示词写法」写在 `<write_media_prompt>`（→ `prompt_draft` 章）。而旧委派阶段 `write_media_prompt` 经
+  `CAPABILITY_TOOL_STAGES` 只注入 `prompt_draft` 一章 ⇒ **写表格图提示词的那只手读不到「要包含什么」**。
+  实测：`section_for("write_media_prompt")` = 3385 字，`'四大要素' in sec` = **False**；`section_for("image_generate")`
+  = **0 字（无人注入）**。9999 现场 11/11 张卡 grep「时长」0 命中，与此完全吻合。
+  Flova 的形态是「媒体生成环节内部再走写提示词子步骤」（其转录原文「它不是一个独立的项目阶段，也不是主代理单独
+  派发的独立执行环节」）——**两章归同一执行单元**，我们把它拆成了两个阶段、且只发了一半。
+- **本批改动（三批 commit）**：
+  - **步骤 1a（`c4d80801`）**：16 包生成标签统一。14 个包把 `<image_generate>`/`<generate_video>`/`<audio_generate>`
+    连续块合并为单个 `<media_generator>`（`剧情短片音色参考` 的孤立 `<generation>` 更名对齐）；`宣言式概念短片`/
+    `新-Skill` 本就是该形态，零改动。**正文逐字不改**；落盘前在内存中对 16 包全量复算证明**字节中性**
+    （`SECTION_TAG_STAGES` 早已把四个 tag 映射到同一 `generation` 阶段键，`split_skill_sections` 又是 `.strip()` +
+    `"\n\n".join`）⇒ 落盘后 `recut_skill_sections_golden --check` 对 15 个已收录包**差异 0**，golden 文件未被改动。
+  - **步骤 2（`3416b037`）**：D-24「媒体生成支」**本体清偿**。planner 内 **R1 箭头回写 ×20**（`→ **image_generate**`/
+    `→ **generate_video**`，粗体与非粗体两形态 → `→ **media_generator**`）、**R2 生成前置内联去工具名 ×28**
+    （「先经 storyboard_patch_draft 写入草稿」→「先写入草稿」；该工具在 `MAIN_AGENT_DENY` 内、**主代理物理调不到**，
+    planner 是主代理读本，点名它属「散文宣称了不存在的授权」）。影响面实测**只落 `planning` 章**（14 条 golden
+    差异全为 planning，越界 0）。明确不动：`→ **document_write**`（规格步，用户裁决保留）、
+    `→ **storyboard_designer**`/`**video_assembler**`（本就是真实章节 tag）、非箭头的句中工具提及
+    （不属 D-24 ①② 范围，且主代理确实持有 `generate_video`，表述为真）。
+  - **步骤 3（本批）**：平台侧阶段收敛。`PIPELINE_STAGE_KINDS` 的 `write_media_prompt` → **`media_generate`**（展示名
+    「媒体生成」）；`CAPABILITY_TOOL_STAGES["media_generate"] = ("generation", "prompt_draft")` ⇒ **两章并注**。
+    实测新阶段注入面 **3385 → 4463 字**，`'四大要素'`/`'景别与时长标注'`/`'机位示意'`/`'分镜表格图提示词模板'`
+    **四项全部到手**（旧阶段四项全 False）⇒ **根因闭合**。旧名作**兼容别名**保留（`STAGE_LABELS`/`SECTION_TAG_STAGES`/
+    `_PLATFORM_TOOL_STAGE`/`action_descriptions`），存量会话与前端缓存不破。
+- **「一个阶段名」的依据（用户裁决点）**：Skill `<planner>` 第 4/5/6 步名字**都是「生成」**，写提示词只是冒号后的前置动作，
+  **没有「提示词编写」这个流程节点** ⇒ 三个阶段名是平台发明的。步骤 4/5/6 之间有用户确认与产物依赖
+  （表格图卡须引用**已生成**的设定图 URL；Skill 依赖链 `6→4,5`），**物理上无法并成一次委派**；
+  三次委派注入内容相同，由主代理 `current_step` 划界 ⇒ 一个键即可。
+- **门禁与测试**：`check_stage_face_consistency` 的豁免表理由更新（`audio_generate` 由「章节不可注入」收敛为
+  「其 generation 章节已由 `media_generate` 注入」——本闸最初记录的洞其**媒体生成部分已清偿**；`video_assembler`
+  仍属未清偿）；`check_tool_descriptions` 阶段名单同步；前端 `skill-structure.ts` 加 `media_generate` 标签。
+  更新 6 个测试文件的旧阶段断言（`test_subagent_stage`/`test_production_prune`/`test_gate_canaries`/
+  `test_prompt_sections_subagent_prune`/`test_subagent_run_subagent`/`test_skill_runtime`）+
+  **新增根因闭合钉**（`tests/integration/test_subagent_delegation.py`：断言子级任务文本内 `四大要素` 与
+  `景别与时长标注` 在场——防 9999 漏时长复发）。
+- **验收**：`acceptance.py --quick` 15/15 全绿；全量 `acceptance.py` 除 pytest 外逐步 PASS，
+  pytest **41 failed / 2701 passed**（41 = D-22 环境项 `NO_PROXY` 含 `[::1]`，全部落在 4 个网络文件，**零新增失败**）；
+  vitest 125 文件 / 1057 passed；`npm run build` 成功、size gate 380.61 kB ≤ 400 kB；`run_eval_pipeline` 退出码 0。
+- **环境留痕（D-22 同族，非本批引入）**：`.pytest_tmp/run` 遗留目录不可读不可删，致 `acceptance.py` 的 pytest 步骤
+  **1.0s 秒红**；本轮实测 `takeown`/`icacls`/`rmdir` 均拒绝访问，**重命名父目录 `.pytest_tmp` 可行**（已执行），
+  重建空目录后 pytest 正常跑满 48.8s ⇒ 该「秒红」是环境项而非代码回归（下次遇到先查此条）。
+- **未做（边界）**：未动 `data/skills` 正文（步骤 1a/2 只碰外壳标签与 planner 字段，逐字节可验证）；
+  `D-28`（表格图模板加时长槽位）仍按用户裁决**不动 Skill**——本批走的是「让要求送达」而非「改 Skill」；
+  真跑验证（重生成 1 张表格图卡看时长是否落地）留待用户实跑。
+
 ### 2026-09-27 · 事故 9999 批级回滚退役 + 平台改写可见性批（用户裁决①A/②A/③A）
 
 - **事故现场（`proj-1790513490-8468602e`，项目名 9999，21:04）**：子代理在一个响应里发了

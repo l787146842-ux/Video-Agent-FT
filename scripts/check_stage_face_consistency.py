@@ -45,15 +45,26 @@ sys.path.insert(0, str(ROOT))
 # 能力面出现、委派面没有的名字 —— 逐条登记豁免 + 理由。
 # 纪律：只减不增。批6 合并遗留项待 D-8 裁决（补进委派面 / 显式登记不注入），
 # 裁决落地后本表应随之收缩。
+#
+# 2026-10-01 媒体生成支（步骤3）更新：本闸最初记录的洞——「4 个 Skill 章节因
+# 能力面有名字、委派面没有而**永远无法注入执行者**」——其**媒体生成部分已清偿**：
+# `generation` 章现由可委派阶段 `media_generate`（媒体生成）注入。
+# 因此下表的 `audio_generate` 理由由「章节不可注入」收敛为「能力词非委派阶段，
+# 其章节已随 media_generate 注入」。条目**仍保留**是因为它作为能力词确实不在
+# 委派面（`available_tools` 口径不变）；`video_assembler` 仍属未清偿
+# （组装阶段按 Skill 由用户在工作台操作，无对应委派工具）。
 CAPABILITY_ONLY_EXEMPT: Dict[str, str] = {
     "storyboard_key_elements": "批6 合并遗留：已并入 storyboard_design（章节仍由 capability 名定位）",
     "storyboard_shots": "批6 合并遗留：同上",
     "storyboard_audio": "批6 合并遗留：同上",
-    "audio_generate": "D-8 待裁决：章节不可注入（无承载章节，见 D-24）",
-    "video_assembler": "D-8 待裁决：章节不可注入（影响 16/16 Skill，见 D-24）",
+    "audio_generate": "能力词（供 available_tools 探针）；其 generation 章节已由 media_generate 阶段注入（2026-10-01 媒体生成支）",
+    "video_assembler": "D-8 待裁决：组装阶段无对应委派工具（Skill 规定由用户在工作台操作），章节不注入",
 }
 
 # 委派面出现、能力面没有的名字 —— 合并阶段的合法别名（有意为之，非漂移）。
+# 委派面出现、能力面没有的名字 —— 合并阶段的合法别名（有意为之，非漂移）。
+# 注：`media_generate` **不在**此列——它同时是能力词（PIPELINE_CAPABILITY_TOOLS），
+# 断言 1 直接成立，无需别名豁免。
 DELEGATE_ONLY_ALLOWED: Set[str] = {"storyboard_design"}
 
 

@@ -125,9 +125,9 @@ async def test_dispatch_intercepts_run_subagent():
 
     # 阶段执行器（2026-09-15 试点；R4 批后委派集只余两阶段）：stage 透传给 launcher
     res_s = await runner._dispatch_tool(
-        "run_subagent", {"task": "T2", "stage": "write_media_prompt"})
+        "run_subagent", {"task": "T2", "stage": "media_generate"})
     assert res_s.success is True
-    assert seen["stage"] == "write_media_prompt"
+    assert seen["stage"] == "media_generate"
 
     # 未装配（子级内 / 关开关）→ 明确失败，不静默
     runner.subagent_launcher = None

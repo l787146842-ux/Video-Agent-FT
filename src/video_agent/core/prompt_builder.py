@@ -682,10 +682,10 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     system 中段凭空出现整段，击穿前缀缓存——本段内容极小且极少变化，
     常驻的字节稳定性收益大于 context rot 代价。"""
     if getattr(context, "subagent_depth", 0):
-        # 子代理仅故事板/提示词阶段注入「仅分镜最大时长」行（拆镜/写提示词需知时长上限），
+        # 子代理仅故事板/媒体生成阶段注入「仅分镜最大时长」行（拆镜/写提示词需知时长上限），
         # 其余子代理阶段维持不注入（无消费方，且省稳定前缀字节）
         if getattr(context, "subagent_stage", "") in (
-                "storyboard_design", "write_media_prompt"):
+                "storyboard_design", "media_generate"):
             return pb.build_global_settings_note(duration_only=True)
         return ""
     if not context.use_studio_context:
