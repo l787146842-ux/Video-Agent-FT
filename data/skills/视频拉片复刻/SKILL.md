@@ -51,7 +51,7 @@ description: 拉片复刻用户上传的参考视频，提取关键参考帧并�
 - **旁白：** 如果参考视频有旁白或对话，请在音频层（audio_layers）（类型为 `narration`）中设计旁白或对话，包含内容、声音/语调和时间范围；如果存在 `voice_reference` 资产，请将其链接到 `layout_instruction` 或注释中，以便后续对齐。
 </storyboard_designer>
 
-<generate_video>
+<media_generator>
 **元素生成**
 - **图像：** 如果用户已指定了元素的资产（例如产品图像、角色图像），请直接使用；不要重新生成。否则，对角色、场景、道具使用 **TextToImage**（或项目约定）。对于同一个角色的多种状态，使用参考第一张图像的 **ImageToImage** 以保持一致性。分辨率与渠道遵循全局设置；建议对角色进行多视图处理，以便跨镜头保持一致性，并为每个视图分配单独的 `asset_id` 并分别生成。
   - 模型与分辨率按全局设置的默认渠道填写。角色元素优先使用**三视图**（正面/侧面/背面）以支持跨镜头的一致性。
@@ -60,13 +60,11 @@ description: 拉片复刻用户上传的参考视频，提取关键参考帧并�
 
 **最终镜头视频生成**
 - 使用 **generate_video**（MultiModalToVideo 多模态参考通道），模型与分辨率按全局设置的默认渠道填写。同时参考该镜头的**元素图像**和**关键帧图像**。
-</generate_video>
 
-<audio_generate>
 **旁白和 BGM**
 - **旁白：** 内容、声音、语调和时间安排严格按照分镜脚本执行；如果存在“语音参考”资产，生成时请与之对齐。
 - **BGM：** 风格和节奏与制片规格/参考视频匹配；时长和范围按照分镜脚本执行。
-</audio_generate>
+</media_generator>
 
 <write_media_prompt>
 **图像生成提示词 (TextToImage, ImageToImage)**

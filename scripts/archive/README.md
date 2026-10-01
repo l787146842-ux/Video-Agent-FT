@@ -31,6 +31,7 @@
 | migrate_manifests_to_frontmatter.py | 任务#5：16 个外置 JSON sidecar 声明迁入 Skill 文档头部 YAML frontmatter（flow.steps/step_stages/dependencies 三键废除不迁；已执行完毕，data/skills_manifests/ 随迁删除） |
 | migrate_manifests_v3.py | 任务#34 B1：manifest v2→v3 幂等迁移（schema_version/requires_inputs/pause_points 只加不删）；默认目录 data/skills_manifests 已随任务#5 frontmatter 合一删除，仅 --dir 演练可用（test_sidecar_schema_v3 兜底） |
 | migrate_zombie_step_keys.py | 三维审查修复收尾批：清除 Skill frontmatter flow 下步骤号僵尸键（stage_executors/step_done_conditions/step_short_titles）存量（dry-run 默认，--apply 真删）；已执行完毕（test_zombie_step_keys 锁源同值+幂等兜底，2026-08-25 归档） |
+| migrate_media_generator_merge.py | D-24 媒体生成支（2026-10-01 归档）：14 个 Skill 的 `<image_generate>`/`<generate_video>`/`<audio_generate>`（含孤立 `<generation>`）合并为单一 `<media_generator>`，**正文逐字不改**（对 golden 逐字节中性）；dry-run 默认、--apply 落盘，已执行完毕 |
 | migrate_ref_assets_to_urls.py | 9999 三问批（2026-09-26 归档）：把草稿 `refAssets` 里的**草稿 id** 归一到媒体 URL（实测 79 条全是 id 形态）；**未执行**（用户裁决「只修代码，存量不管」），apply 前须停服务 |
 | migrate_9999_sheet_refs.py | 9999 三问批（2026-09-26 归档）：给 11 张「分镜表格图」卡按 `shotRefs` 补规范引用记号（`<<<image_名称>>>`）+ 参考图；**未执行**（同上裁决），dry-run 实测 11/11 全解析；幂等（已含记号的卡自动跳过） |
 

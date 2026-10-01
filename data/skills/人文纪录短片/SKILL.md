@@ -88,27 +88,23 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 - 不以对白驱动叙事。
 </storyboard_designer>
 
-<image_generate>
+<media_generator>
 **元素图/首帧图生成（每个镜头的 start_frame）**
 - 工具：**TextToImage/ImageToImage**，模型与分辨率按全局设置的默认渠道填写
 - 首帧图须与 Storyboard 镜头描述的景别、光线、主体姿态一致，作为视频生成的视觉锚点。
 - 若用户已上传参考图（人物 / 场景），将其注册为 asset_id 并绑定至对应 Storyboard 元素或镜头槽位，优先用于替代生成。
-</image_generate>
 
-<generate_video>
 **镜头视频生成**
 - 工具：**generate_video**（FirstFrameToVideo 首帧驱动通道），模型与分辨率按全局设置的默认渠道填写
 - 以对应镜头的 start_frame 作为首帧输入。
-</generate_video>
 
-<audio_generate>
 **音频层生成**
 - 旁白（如有）：由系统音频生成通道（text_to_narration 旁白通道）产出，具体渠道与模型由全局设置决定，本文档不指定
 - BGM：由系统音频生成通道（text_to_instrumental 纯音乐通道）产出，具体渠道与模型由全局设置决定，本文档不指定；风格描述为极简器乐 / 环境音景；不生成歌词类音乐。
 
 **失败处理**
 - 若音频生成失败，优先在同一渠道内重试；不要自动切换至其他工具，停止并告知用户。
-</audio_generate>
+</media_generator>
 
 <write_media_prompt>
 **首帧提示词**

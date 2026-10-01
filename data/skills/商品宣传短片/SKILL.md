@@ -51,14 +51,14 @@ description: 制作商品宣传短片，先编写制片规格（标题、类型�
 - **旁白：** 如果使用配音或旁白来解释或引导故事，请在此处设计（类型为 `narration`）。定义声音特征、基调和确切的脚本；使用 `layout_instruction` 将其限定在相关的镜头中。
 </storyboard_designer>
 
-<generate_video>
+<media_generator>
 **元素资产生成**
 - **图像：** 使用 **TextToImage** 生成场景，设置视觉基调，锁定产品颜色/材质、特征、调色板等。使用 **ImageToImage** 获取变体的参考。模型与分辨率按全局设置的默认渠道填写。
 
 **最终镜头视频生成**
 - 使用 **generate_video**（MultiModalToVideo 多模态参考通道），模型与分辨率按全局设置的默认渠道填写。
 - 每个镜头的参考输入：**元素资产** — 该镜头中出现的所有产品、场景和道具的元素图像。
-</generate_video>
+</media_generator>
 
 <write_media_prompt>
 **图像生成提示词 (TextToImage, ImageToImage)**

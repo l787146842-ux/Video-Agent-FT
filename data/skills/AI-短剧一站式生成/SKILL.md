@@ -115,7 +115,7 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 - 视频生成阶段视频本身**不内嵌 BGM**（在 audio_layer 独立生成后于组装阶段混音）；台词/音效可在视频生成时内嵌。
 </storyboard_designer>
 
-<image_generate>
+<media_generator>
 **key_element 设定图生成**
 
 - 使用 **TextToImage** 生成所有角色和场景设定图，模型与分辨率按全局设置的默认渠道填写。
@@ -129,23 +129,19 @@ description: 一站式生成短剧，按顺序确认关键信息后推进流程�
 - 使用 **ImageToImage**，模型与分辨率按全局设置的默认渠道填写；同时上传该 shot 涉及的角色三视图和场景四视图作为 reference_image，确保画风/角色/场景一致。
 - 分镜表格图需包含四大要素：运镜轨迹箭头（推进/拉远/环绕/升降/跟随/固定各用不同颜色区分）、每切镜的中文动作说明、景别与时长标注、机位示意（相机图标+虚线轨迹）。
 - 具体提示词写法见下方「媒体提示词」章节。
-</image_generate>
 
-<generate_video>
 **分镜视频生成**
 
 - 使用 **generate_video**（MultiModalToVideo 多模态参考通道），模型与分辨率按全局设置的默认渠道填写。
 - 每个 shot 的参考输入默认包含：该镜涉及的所有角色 key_element 图像 + 对应场景 key_element 图像。
 - 仅当本镜与上一镜的连续性极强（如同一动作的延续、无剪切的场景推进）时，额外添加上一镜的 final_shot 视频作为 reference_video；**通常不加视频参考**，避免模型过度继承上一镜构图而削弱本镜的运镜设计。
 - 每个 shot 视频生成时，将对应角色的 key_element_audio 作为音频条件，保持角色音色跨镜一致。
-</generate_video>
 
-<audio_generate>
 **音频生成**
 
 - BGM（music 类型）：由系统音频生成通道（text_to_instrumental 纯音乐通道）产出，模型与分辨率按全局设置的默认渠道填写（注意：提示词中知名音乐人名字排除在外）。
 - 旁白（narration 类型）：由系统音频生成通道（text_to_narration 旁白通道）产出，模型与分辨率按全局设置的默认渠道填写。
-</audio_generate>
+</media_generator>
 
 <write_media_prompt>
 **内切镜时长估算（视频提示词撰写前）**
