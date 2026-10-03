@@ -46,6 +46,38 @@ Agent 按手册推进「故事 → 剧本 → 分镜 → 关键帧 → 视频 / 
 
 Skill 是产品数据源而非代码：用户可在工作台直接编辑、保存带版本留痕，**改文档即改流程**。
 
+## Agent 自动完成的制作环节
+
+选定 Skill 后，下列环节由 Agent 自动完成，不需要人工整理素材或拼提示词：
+
+- **自动拆分剧本** —— 读完剧本自动拆出关键元素（角色 / 场景 / 道具）、逐镜分镜列表与音频层，
+  落成故事板草稿卡；角色音色单独登记为音色卡并与该角色绑定。
+- **自动写视频提示词** —— 按 Skill 规定的写法为每个镜头撰写视频提示词，要素按 Skill 要求补齐
+  （如分镜表格图的运镜轨迹、景别与时长标注、机位示意）。
+- **自动引用媒体素材** —— 分镜通过引用关系挂到对应关键元素上；生成时自动把该元素的概念图
+  作为参考图、音色卡作为参考音频传给模型，不必手工挑图。
+
+## 界面预览
+
+左：故事板（关键元素 / 分镜 / 音频）· 中：画布 · 右：对话与子代理进度。
+
+<table width="100%">
+  <tr>
+    <td width="50%"><img src="docs/images/studio-key-elements.webp" alt="关键元素与角色设定"></td>
+    <td width="50%"><img src="docs/images/studio-concept-art.webp" alt="概念图生成"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>关键元素：角色设定卡与批量生成入口</sub></td>
+    <td align="center"><sub>概念图生成：阶段完成，等待确认</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/studio-storyboard-video.webp" alt="分镜与视频提示词"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>分镜与视频提示词：分镜卡标出引用的关键元素，右侧子代理正逐镜撰写提示词</sub></td>
+  </tr>
+</table>
+
 ## 外部画布（infinite-canvas）
 
 画布是本项目**使用的外部项目**，代码不在本仓库内、独立迭代：
