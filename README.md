@@ -106,17 +106,6 @@ python scripts/acceptance.py           # 批末全量：GATES + SUITES + RATCHET
 
 前端：`npm run dev` / `build` / `check`（tsc + eslint）/ `test`。
 
-## 文档索引
-
-| 文档 | 内容 |
-|---|---|
-| [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 架构宪法（AI 协作最高优先级约束）；§十一 为后端文件地图 |
-| [AGENTS.md](AGENTS.md) | 改动前必读、分层验证 |
-| [docs/GOVERNANCE.md](docs/GOVERNANCE.md) | 治理条款唯一家 |
-| [docs/配置说明.md](docs/配置说明.md) | 各配置源的权威关系与加载优先级 |
-| [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌 / 视觉 / 交互强制规范 |
-| [CHANGELOG.md](CHANGELOG.md) | 裁决 / 批次 / 事故历史留痕唯一家 |
-
 ## 环境与安全
 
 - 复制 `.env.example` 为根目录 `.env` 配置运行参数（端口、画布地址、安全开关等），
