@@ -36,6 +36,50 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-02 · Flova planner 整体替换批：10 个 Skill 的 `<planner>` 按基准改写（用户裁决）
+
+- **立项（用户 9999 追问「现在 planner 章节里面好多后面都没有箭头了」+ 给出基准）**：用户指令
+  「`C:\Users\ASUS\Desktop\skill` 这是 flova 的 skill，根据这个 skill 把 planner 章节的全部替换，
+  **除了箭头后面的 `script_analyze` 和 `document_write`**」，并附四条逐项裁决。
+  本批把上一批（D-24 媒体生成支）只做了「箭头字段回写」的范围，扩到**整章以 Flova 为基准重写**。
+- **范围（用户裁决：只替换 Flova 本身有箭头的文件）**：改写 **10 个**（3D国漫古装 / AI-短剧一站式生成 /
+  人文纪录 / 剧情短片音色参考 / 叙事驱动的美学视频 / 商品宣传 / 多人对话访谈 / 故事驱动型视频 /
+  视频拉片复刻 / 音乐MV需上传音乐）；跳过 **6 个**——古风甜宠短剧、宣言式概念短片、未来科幻真人电影、
+  李安美学风格短片（Flova 版**零箭头**，替换反而会让现有箭头消失）、水墨风格武侠短片（同上）、
+  `新-Skill`（Flova 无对应文件）。**实测依据**：Flova 15 个 planner 中只有 10 个含箭头，
+  其中「未来科幻真人电影」我方现有箭头而 Flova 无 ⇒ 照字面全量替换会**倒退**，故收窄。
+- **规则（四条用户裁决逐条落地）**：
+  1. **箭头目标映射**：`resource_prepare_and_analyze`→`script_analyze`、`text_editor`→`document_write`
+     （**用户指定保留原样**）；`image_generate`/`generate_video`/`audio_generate`/`bind_asset`→
+     `media_generator`（用户裁决统一映射）——不重新引入 D-24「箭头指向我方不存在章节」的病。
+     另有正文**交叉引用** `write_the_prompt`→`write_media_prompt`。匹配用词边界正则，
+     **箭头/粗体/正文提及全形态一网打尽**（实测 flova 里 `text_editor` 9 处粗体箭头 + 1 处非粗体箭头，
+     `resource_prepare_and_analyze` 另有 1 处非箭头交叉引用——首轮弱规则漏掉的就是这些，已回滚重做）。
+  2. **模型参数剥离**：范围内 10 个文件实测**无**写死模型参数（Flova 的写死参数集中在被跳过的
+     水墨/李安/未来科幻三个文件）；脚本内置 fail-loud 兜底，命中即中止交人工，**不静默删改**。
+  3. **平台特有块整段替换、一并删除**（用户裁决）：如剧情短片的【能力边界（必读）】整块、
+     人文纪录的「建立制片规格.md的指南」整段等，均随 Flova 版覆盖。
+  4. **规格名归一**：`Final_Video_Spec(.md)` → `制片规格(.md)`。**有意的单点偏离**（已在脚本内注明）：
+     平台 `is_spec_doc_name` 两名皆认，但本项目存量项目（9999 等）与 `DEFAULT_SKILL_DOC`／协议段
+     均用「制片规格.md」，若改回 Flova 名会让模型在**既有项目**里另建第二份规格文档。
+- **用户问题 1 的答复（「planner 里好多步骤后面没有箭头」）**：改后流程节内步骤箭头覆盖率——
+  3D 8/8、AI 8/8、人文 7/7、剧情 7/8（仅「剧本获取（二选一）」无箭头，该步本就是分支说明而非工具步骤）、
+  商品 6/6、多人 7/7、叙事 6/6、故事 6/6、拉片 7/7、音乐MV 7/7。**未替换的 5 个维持原状**
+  （按用户裁决「只替换 Flova 本身有箭头的文件」，不在本批范围）。
+- **影响面实证**：内存复算 16 包 → 受影响阶段**只有 `planning`**（14 条 golden 差异全为 planning，
+  越界 0）；**章节键集合全部不变**；替换后 **flova 专名零残留**
+  （`Final_Video_Spec`/`resource_prepare_and_analyze`/`text_editor`/`bind_asset`/`write_the_prompt`/
+  `multimodal_analyze_tool` 全 0；唯一 3 处落在范围外的 `新-Skill`）。
+  每包末尾有**双对账断言**（箭头目标必须落在我方真实章节内 + 专名残留为 0），任一不满足即 fail-loud 拒绝落盘。
+- **验收**：`check_skill_anchor_lint` PASS；`check_stage_face_consistency` PASS；
+  `check_tool_descriptions` PASS；`run_eval_pipeline` 退出码 0；
+  `tests/fixtures/skill_sections_golden.json` 按规程重采（14 条 planning 指纹，保留原覆盖范围）；
+  全量 pytest **41 failed / 2701 passed**（41 = D-22 环境项，全落 4 个网络文件，**零新增失败**）；
+  `acceptance.py --quick` **15/15 全绿**。
+- **归档**：`scripts/archive/migrate_planner_to_flova.py`（dry-run 默认、`--apply` 落盘；
+  改后复跑 = 16/16 零改动，幂等），已登记 `scripts/archive/README.md`。
+- **未做（边界）**：未新增/修改任何测试（实测确认无测试钉住 planner 正文）；未替换的 5 个 skill 保持原状。
+
 ### 2026-10-01 · D-24 媒体生成支清偿批：生成章节统一 `<media_generator>` + 委派阶段收敛为「媒体生成」（用户裁决三步）
 
 - **立项（用户 9999 追问「分镜表格图提示词为什么没按 skill 要求生成」）**：对照 Flova 转录
