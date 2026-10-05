@@ -13,6 +13,7 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.web.skill_docs import (
     lint_skill_content,
     split_skill_sections,
+    split_skill_sections_labeled,
 )
 
 _SPLIT_TOOLS = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
@@ -51,8 +52,49 @@ def test_new_split_tags_map_independently():
     assert "音频节" in secs["storyboard_audio"]
 
 
-# ---------- 2. 标题式映射 ----------
+# ---------- 1b. labeled 解析（注入面保留章界；2026-10-04 事故 9999） ----------
 
+def test_labeled_split_preserves_tag_and_heading_marks():
+    """labeled 版保留原始标记；纯正文版与 labeled 版**同源同内容**（P1）。
+
+    2026-10-04 事故 9999：注入面原先只给纯正文，多章拼接后章界不可见，
+    子代理误判「写法那章没注入」而漏执行散文要求。labeled 版专供注入面。
+    """
+    tag_content = (
+        "<media_generator>\n生成要求：四大要素\n</media_generator>\n"
+        "<write_media_prompt>\n写法模板\n</write_media_prompt>\n"
+    )
+    blocks = split_skill_sections_labeled(tag_content)
+    gen = blocks["generation"][0]
+    assert gen["head"] == "<media_generator>"
+    assert gen["tail"] == "</media_generator>"
+    assert gen["body"].strip() == "生成要求：四大要素"
+    assert blocks["prompt_draft"][0]["head"] == "<write_media_prompt>"
+
+    # 同源等价：纯正文 = labeled 的 body 拼接（逐字）
+    plain = split_skill_sections(tag_content)
+    assert plain["generation"].strip() == gen["body"].strip()
+    assert plain["prompt_draft"].strip() == "写法模板"
+
+    # 标题式：head = 原始标题行（含 #），tail 为空
+    heading_content = "# 标题式\n> 调用规则：测试\n\n## 提示词写法\n写法正文\n"
+    hblocks = split_skill_sections_labeled(heading_content)
+    assert hblocks["prompt_draft"][0]["head"] == "## 提示词写法"
+    assert hblocks["prompt_draft"][0]["tail"] == ""
+    assert hblocks["prompt_draft"][0]["body"].strip() == "写法正文"
+
+    # 一对多：同一节复制到三个 stage 键（检索面语义不变）
+    one2many = split_skill_sections_labeled(
+        "<storyboard_designer>\n故事板整节\n</storyboard_designer>\n")
+    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
+        assert one2many[stage][0]["body"].strip() == "故事板整节"
+
+    # 空 / 未知标签不报错
+    assert split_skill_sections_labeled("") == {}
+    assert split_skill_sections_labeled("<unknown_tool>\n正文\n</unknown_tool>\n") == {}
+
+
+# ---------- 2. 标题式映射 ----------
 def test_heading_storyboard_design_maps_to_all_split_stages():
     content = (
         "# 标题式\n> 调用规则：测试\n\n"

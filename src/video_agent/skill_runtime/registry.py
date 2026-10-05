@@ -73,6 +73,9 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     # 「它不是一个独立的项目阶段」），两章归同一执行单元。
     # ⇒ 本阶段**同时注入两章**：generation（要什么）+ prompt_draft（怎么写）。
     # 与 Flova `<media_generator>` 单元对齐，且不再有它明确否定的独立提示词阶段。
+    # 2026-10-05 二次取证更正：两章并注**必要但不充分**——9999 在同注入面下仍
+    # 11/11 漏「时长」（同夜两跑：20:11 读了已确认范本故带时长、21:29 未读则全漏）。
+    # 另一层根因 = 注入时章界被剥掉致子代理误判注入面（见 `labeled_section_for`）。
     # 按 Skill 步骤各派一次（步骤 4/5/6 之间有用户确认与产物依赖，无法合并），
     # 由主代理的 `current_step` 划界——注入内容三次相同，故一个阶段名即可。
     "media_generate": ("generation", "prompt_draft"),
@@ -127,6 +130,9 @@ class SkillEntry:
     content: str
     # stage → 章节原文（split_skill_sections 产出）
     sections: Dict[str, str] = field(default_factory=dict)
+    # stage → 章节条目（split_skill_sections_labeled 产出）：保留原始标签/标题，
+    # 供注入面渲染章界（P1：与 sections 同一份解析，只是多留标记）。
+    section_blocks: Dict[str, List[Dict[str, str]]] = field(default_factory=dict)
     @property
     def manifest(self) -> Optional[Dict[str, dict]]:
         """manifest 声明活读：frontmatter 唯一源，注册不快照，
@@ -171,6 +177,40 @@ class SkillEntry:
                 continue
             seen.add(body)
             parts.append(body)
+        return "\n\n".join(parts).strip()
+
+    def labeled_section_for(self, tool: str) -> str:
+        """该能力声明对应的章节全文，**保留原始章节标记**（注入面用）。
+
+        与 `section_for` 同源同语义（去重规则一致：同一段正文只出现一次），
+        唯一区别是每节前还原其原始标签/标题行（`<media_generator>` /
+        `## 提示词写法`），使多章拼接后**章界对模型可见**。
+
+        **2026-10-04 事故 9999**：原注入面只给纯正文，子代理看不出手里有
+        两章——而 `<media_generator>` 章内写着「具体提示词写法见下方
+        「媒体提示词」章节」，它据此误判该章未注入，退化为「只填模板槽位」，
+        11/11 张分镜表格图全漏「景别与时长标注」。本方法只还原标记，
+        **不改任何章节正文、不新增要求**（非 prose 方案）。
+        """
+        stages = CAPABILITY_TOOL_STAGES.get(tool) or ()
+        parts: List[str] = []
+        seen: set = set()
+        for s in stages:
+            for item in self.section_blocks.get(s) or []:
+                body = item.get("body", "")
+                if not body or not body.strip():
+                    continue
+                # 与 section_for 同一去重口径：同 body 只注入一次
+                if body in seen:
+                    continue
+                seen.add(body)
+                head = (item.get("head") or "").strip()
+                tail = (item.get("tail") or "").strip()
+                if head:
+                    blocks = f"{head}\n{body}" + (f"\n{tail}" if tail else "")
+                else:
+                    blocks = body
+                parts.append(blocks)
         return "\n\n".join(parts).strip()
 
     @property
@@ -267,11 +307,16 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     # SkillEntry.manifest 属性活读，注册不快照。章节解析只对剥离声明块
     # 后的正文（YAML 头不是 Skill 正文，不得混入章节/探针）。
     content = frontmatter.strip_frontmatter(doc.get("content") or "")
+    # 章节解析：正文面（sections）与注入面（section_blocks）**同一份解析**
+    # （P1 单一事实源）——labeled 版多留原始标签/标题，供注入渲染章界；
+    # 端口未提供 labeled 实现时回落纯正文（章界退化为现状，不阻断注册）。
+    labeled = getattr(sd, "split_skill_sections_labeled", None)
     return SkillEntry(
         slug=slug,
         name=doc.get("name") or slug,
         content=content,
         sections=sd.split_skill_sections(content),
+        section_blocks=(labeled(content) if callable(labeled) else {}),
     )
 
 
@@ -499,6 +544,24 @@ def tool_sections(skill_name: str, tool: str) -> str:
     entry = resolve_entry(skill_name)
     if entry is None:
         return ""
+    return entry.section_for(tool)
+
+
+def labeled_tool_sections(skill_name: str, tool: str) -> str:
+    """同 `tool_sections`，但保留原始章节标记（子代理注入面唯一入口）。
+
+    两函数共用同一解析与去重口径；选用哪个由消费面语义决定：
+    - `tool_sections`：检索/探针面（能力真值、lint、测试探针）→ 纯正文；
+    - `labeled_tool_sections`：**注入面** → 章界可见（2026-10-04 事故 9999）。
+
+    实现缺失 section_blocks（如测试桩端口未提供 labeled 解析）时，
+    自动回落纯正文，保证调用方零分支、委派永不阻断。
+    """
+    entry = resolve_entry(skill_name)
+    if entry is None:
+        return ""
+    if entry.section_blocks:
+        return entry.labeled_section_for(tool)
     return entry.section_for(tool)
 
 

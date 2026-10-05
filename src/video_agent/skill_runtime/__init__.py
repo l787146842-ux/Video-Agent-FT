@@ -13,6 +13,7 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.skill_runtime.registry import (
     SkillEntry,
     get_entry,
+    labeled_tool_sections,
     list_entries,
     refresh_skill,
     register_skill,
@@ -28,6 +29,7 @@ __all__ = [
     "registry",
     "SkillEntry",
     "get_entry",
+    "labeled_tool_sections",
     "list_entries",
     "refresh_skill",
     "register_skill",

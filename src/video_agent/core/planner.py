@@ -61,7 +61,7 @@ from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.progress import emit_event_card
 from src.video_agent.skill_runtime.registry import (
-    STAGE_LABELS, fallback_skill_from_state, tool_sections,
+    STAGE_LABELS, fallback_skill_from_state, labeled_tool_sections,
 )
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_contract, workflow_runtime
@@ -543,12 +543,16 @@ class Planner:
         # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）：
         # 带 stage → 精准注入该阶段章节全文（不截断；章节缺失回落全文截断）；
         # 不带 stage → 现状全文前 8000 字截断（通用委派零改动）。
+        # 2026-10-04 事故 9999：注入面走 **labeled** 版（保留 <tag>/标题行），
+        # 使多章拼接后章界可见——原先只给纯正文，子代理误判「写法那章没给我」
+        # （实为两章已并注），退化为只填模板槽位，11/11 张表格图漏「景别与时长标注」。
+        # 只还原标记，不改章节正文、不加要求。
         parent_skill = str(getattr(parent_ctx, "skill_name", "") or "").strip()
         if parent_skill and self._skill_docs is not None:
             injected = ""
             if resolved_stage:
                 try:
-                    injected = tool_sections(parent_skill, resolved_stage)
+                    injected = labeled_tool_sections(parent_skill, resolved_stage)
                 except Exception as _e:
                     logger.warning("[Subagent] 阶段章节取读失败（回落全文截断）: {}", _e)
                     injected = ""

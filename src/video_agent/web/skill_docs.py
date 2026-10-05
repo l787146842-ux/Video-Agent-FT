@@ -100,26 +100,37 @@ def _stage_from_heading(heading: str) -> Union[str, Tuple[str, ...]]:
     return ""
 
 
-def split_skill_sections(content: str) -> Dict[str, str]:
-    """把 Skill 全文拆成 阶段 → 章节文本（同阶段多节合并）。
+def split_skill_sections_labeled(content: str) -> Dict[str, List[Dict[str, str]]]:
+    """把 Skill 全文拆成 阶段 → [章节条目]（同阶段多节按原文顺序保留）。
 
-    支持两种格式：
-    1. 外部导出原生 <tag>…</tag> 章节（tag 按 SECTION_TAG_STAGES 映射到阶段）；
-    2. 本地改写的 Markdown 标题式（按 _HEADING_STAGE_HINTS 关键字兜底，
-       未映射标题下的正文沿用上一个已识别阶段）。
-    未识别章节不返回（全文本就整体注入，本函数只服务于分阶段聚焦再强调）。
+    与 `split_skill_sections` **同一份解析实现**（P1 单一事实源），唯一区别是
+    **保留每节的来源标记**，条目形如：
+
+        {"head": "<media_generator>", "body": "……正文……", "tail": "</media_generator>"}
+
+    - `<tag>` 格式：head/tail = 原始标签行；
+    - Markdown 标题格式：head = 原始标题行（含 `#`），tail = ""。
+
+    **为什么需要它**（2026-10-04 事故 9999）：子代理阶段章节注入原先只给
+    `split_skill_sections` 的纯正文（标签被剥掉），多章拼接后**看不出章界**；
+    而 `<media_generator>` 章内写着「具体提示词写法见下方「媒体提示词」章节」——
+    子代理据此误判「写法那章没注入」，退化为「只填模板槽位」，11/11 张
+    分镜表格图全漏「景别与时长标注」（散文要求不落地）。保留原始标记后
+    两章边界可见，误判面消失。
     """
     content = content or ""
-    collected: Dict[str, List[str]] = {}
+    collected: Dict[str, List[Dict[str, str]]] = {}
 
-    def _add(stage: Union[str, Tuple[str, ...]], body: str) -> None:
+    def _add(stage: Union[str, Tuple[str, ...]], head: str, body: str,
+             tail: str) -> None:
         body = (body or "").strip()
         if not body:
             return
         stages = stage if isinstance(stage, tuple) else (stage,)
         for s in stages:
             if s:
-                collected.setdefault(s, []).append(body)
+                collected.setdefault(s, []).append(
+                    {"head": head, "body": body, "tail": tail})
 
     # 1) <tag> 章节（外部导出原生格式）
     tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
@@ -127,9 +138,11 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     found_tag = False
     for m in tag_re.finditer(content):
         found_tag = True
-        _add(SECTION_TAG_STAGES.get(m.group("tag").lower(), ""), m.group("body"))
+        tag = m.group("tag").lower()
+        _add(SECTION_TAG_STAGES.get(tag, ""), f"<{tag}>", m.group("body"),
+             f"</{tag}>")
     if found_tag:
-        return {k: "\n\n".join(v) for k, v in collected.items()}
+        return collected
 
     # 2) Markdown 标题兜底（A1/M4 两级制：## 优先切点，全文无 ## 时回落 ###；
     ### 及以下不再单独切分，与前端 skill-structure.ts 同构）
@@ -143,9 +156,9 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     _inherit_run = 0
     _inherit_warned = False
     for i in range(1, len(parts), 2):
-        heading = parts[i].lstrip("#").strip()
+        head = parts[i]
         body = parts[i + 1] if i + 1 < len(parts) else ""
-        mapped = _stage_from_heading(heading)
+        mapped = _stage_from_heading(head.lstrip("#").strip())
         if mapped:
             stage_now = mapped
             _inherit_run = 0
@@ -158,8 +171,26 @@ def split_skill_sections(content: str) -> Dict[str, str]:
                     f"（沿用「{stage_now}」），章节可能归错阶段：请核查该 Skill 的标题体系"
                 )
                 live_metrics.record_degradation("skill_docs.heading_fallback")
-        _add(stage_now, body)
-    return {k: "\n\n".join(v) for k, v in collected.items()}
+        _add(stage_now, head, body, "")
+    return collected
+
+
+def split_skill_sections(content: str) -> Dict[str, str]:
+    """把 Skill 全文拆成 阶段 → 章节文本（同阶段多节合并）。
+
+    支持两种格式：
+    1. 外部导出原生 <tag>…</tag> 章节（tag 按 SECTION_TAG_STAGES 映射到阶段）；
+    2. 本地改写的 Markdown 标题式（按 _HEADING_STAGE_HINTS 关键字兜底，
+       未映射标题下的正文沿用上一个已识别阶段）。
+    未识别章节不返回（全文本就整体注入，本函数只服务于分阶段聚焦再强调）。
+
+    本函数是**检索/探针面**（available_tools 真值判定、能力闸、lint），
+    故只回正文；需要保留章界标记的注入面走 `split_skill_sections_labeled`。
+    """
+    return {
+        k: "\n\n".join(item["body"] for item in v)
+        for k, v in split_skill_sections_labeled(content).items()
+    }
 
 
 def list_skill_sections(content: str) -> List[Dict[str, Any]]:

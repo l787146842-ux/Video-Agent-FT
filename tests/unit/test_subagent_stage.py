@@ -164,6 +164,49 @@ def test_merged_stage_injection_deduplicates_one_to_many_chapters():
         "合并形态下三个能力名与合并名应取到同一段正文（存量委派名的兼容面）")
 
 
+def test_labeled_injection_keeps_chapter_boundaries():
+    """**2026-10-04 事故 9999 回归钉**：注入面必须保留原始章节标记（章界可见）。
+
+    病灶：`_launch_subagent` 原先注入 `tool_sections` 的**纯正文**——多章拼接后
+    章界被剥掉；而 `<media_generator>` 章内写着「具体提示词写法见下方「媒体提示词」
+    章节」，子代理据此误判「写法那章没注入」（实为两章已并注），退化为「只填模板
+    槽位」，11/11 张分镜表格图全漏「景别与时长标注」。**同夜 20:11 那次先读了
+    已确认范本故带时长；21:29 那次没读，就漏了**——要求在场而未被执行的实证。
+
+    本钉锁两件事：①标记在场（章界可见）；②**除标记外与纯正文逐字等价**
+    （不得借机改章节正文、不得新增要求——非 prose 方案）。
+    """
+    import re
+
+    from src.video_agent.skill_runtime import registry as reg
+
+    slug = "AI-短剧一站式生成"
+    labeled = reg.labeled_tool_sections(slug, "media_generate")
+    plain = reg.tool_sections(slug, "media_generate")
+
+    # ① 两章标记齐备（章界对模型可见）
+    for mark in ("<media_generator>", "</media_generator>",
+                 "<write_media_prompt>", "</write_media_prompt>"):
+        assert mark in labeled, f"注入面缺章节标记 {mark}——章界不可见，9999 误判面复发"
+    # 关键要求仍在场（防「换了函数、要求丢了」）
+    assert "四大要素" in labeled and "景别与时长标注" in labeled
+
+    # ② 去标记后与纯正文**逐字等价**：修复只还原标记，不改正文、不加要求
+    stripped = re.sub(r"(?m)^</?[a-z_]+>\s*$", "", labeled)
+    stripped = re.sub(r"\n{3,}", "\n\n", stripped).strip()
+    assert stripped == plain, (
+        "labeled 注入与纯正文不等价——本修复只应还原章节标记，"
+        "不得改动章节正文或新增要求（非 prose 方案）")
+
+    # ③ 去重口径与 section_for 一致（一对多映射仍只注入一次）
+    probe = "单 shot 内切镜数量建议"
+    merged = reg.labeled_tool_sections(slug, "storyboard_design")
+    assert merged.count(probe) == 1, "labeled 注入把一对多章节复制了多次"
+
+    # ④ 端口无 labeled 实现时回落纯正文（委派永不阻断）
+    assert reg.labeled_tool_sections("不存在的技能", "media_generate") == ""
+
+
 def test_stage_deny_drops_read_skill_only():
     """2026-09-15 1111 批（对齐 dsh inherit∩restrict）：子级面 = 主代理面 − deny。
     stage 追加 deny read_skill（断跨阶段预读）+ 本阶段未声明的委派专属写入工具
@@ -286,12 +329,16 @@ def test_generic_delegation_without_task_still_builds():
 # ---------- _launch_subagent 装配 ----------
 
 async def test_launch_stage_injects_section_precisely(svc, monkeypatch):
-    """带 stage：精准注入该阶段章节全文（不截断、不走 get_skill_doc 全文路径）。"""
+    """带 stage：精准注入该阶段章节全文（不截断、不走 get_skill_doc 全文路径）。
+
+    2026-10-04 事故 9999：注入面改用 `labeled_tool_sections`（保留章界标记），
+    本用例的 patch 点同批对齐——防「注入面换函数但测试仍钉旧函数」的假绿。
+    """
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
     seen = {}
     monkeypatch.setattr(
-        pmod, "tool_sections",
+        pmod, "labeled_tool_sections",
         lambda skill, tool: seen.update(skill=skill, tool=tool) or SHOTS_SECTION)
     sd = _FakeSkillDocs(content="X" * 9000)  # 若走截断路径必出现 9000 字全文
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
@@ -317,7 +364,7 @@ async def test_launch_stage_missing_section_falls_back(svc, monkeypatch):
     """Skill 无该阶段章节：回落现行全文 8000 截断路径（委派不阻断）。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
-    monkeypatch.setattr(pmod, "tool_sections", lambda skill, tool: "")
+    monkeypatch.setattr(pmod, "labeled_tool_sections", lambda skill, tool: "")
     sd = _FakeSkillDocs(content="Y" * 9000)
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
@@ -336,7 +383,7 @@ async def test_launch_without_stage_keeps_current_behavior(svc, monkeypatch):
     def _boom(skill, tool):
         raise AssertionError("通用委派不应触发阶段章节取读")
 
-    monkeypatch.setattr(pmod, "tool_sections", _boom)
+    monkeypatch.setattr(pmod, "labeled_tool_sections", _boom)
     sd = _FakeSkillDocs(content="Z" * 9000)
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(

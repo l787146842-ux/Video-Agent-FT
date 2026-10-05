@@ -36,6 +36,58 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-05 · 事故 9999 二次取证批：阶段章节注入保留章界（labeled 注入；非 prose）
+
+- **立项（用户 9999 追问「为什么分镜表格图提示词没按 skill 要求生成」+ 出示 Flova 成品图，裁决选 A）**：
+  二次取证（`reports/9999-表格图提示词二次取证-20261004/`）推翻 D-28「2026-10-01 上游根因闭合」的结项口径。
+- **取证核心（同夜两次委派、同 stage、同注入面、相隔 1h20m，产出相反）**：
+  - 20:11 那次（`conv-1791115916-c8b9ece1`）：推理中「四大要素」**2 次**、先 `read_draft` 抄了已被用户确认的
+    S8 范本（该卡每格带「约3s」）⇒ **10/10 张卡每格带时长**；
+  - 21:29 那次（`conv-1791120591-7151a0bf` + `conv-1791120785-320fb409`）：推理中「四大要素」**0 次**、
+    未读任何范本 ⇒ **11/11 张全漏「时长」**；两跑落库标签分别为 `运镜轨迹图·S*` / `分镜表格图·S*`。
+  - **⇒ 要求在场而未被执行**。「两章并注」（2026-10-01）**必要但不充分**。
+- **根因（结构性，非模型任性）**：`_launch_subagent` 注入的是 `tool_sections` 的**纯正文**——多章拼接后
+  **章界被剥掉**；而 `<media_generator>` 章内写着「具体提示词写法见下方「媒体提示词」章节」，
+  子代理据此误判「写法那章没注入」（实为两章已并注），退化为「只填模板槽位」，
+  散文要求（四大要素含景别与时长标注）不再当硬要求。**其推理原文**：
+  "the injected chapter is 'media_generate' … The prompt writing method refers to the write_media_prompt
+  chapter, **which I'm not authorized to read (not injected)**."
+- **改动（三步，全部为「还原既有信息/口径」，零新增要求）**：
+  1. `web/skill_docs.py`：新增 `split_skill_sections_labeled`（**注入面唯一解析器**），
+     与 `split_skill_sections` 同一份实现，只是每节多留 `{head, body, tail}`；
+     `split_skill_sections` 改为**由它派生**（`"\n\n".join(body)`）⇒ P1 单一事实源，两者不可能漂移。
+  2. `skill_runtime/registry.py`：`SkillEntry` 增 `section_blocks` 字段与 `labeled_section_for`
+     （去重口径与 `section_for` 一致）；新增模块级 `labeled_tool_sections`（端口无 labeled 实现时
+     回落纯正文，**委派永不阻断**）。
+  3. `core/planner.py`：`_launch_subagent` 注入面改用 `labeled_tool_sections`（**唯一调用点**，G4）。
+- **等价性实证（防「借机改正文」）**：① 去标记后与旧纯正文**逐字节等价**（`media_generate` 4543→4463 字，
+  差额恰为 6 行标记）；② 旧算法**独立重实现**后对全部 **16 个真实 Skill** 比对 `split_skill_sections`
+  **16/16 逐字节一致**（检索面/能力面零漂移）；③ golden `recut_skill_sections_golden --check` 差异只余
+  `新-Skill`（**既有覆盖面缺口**，该包不在快照内，与本批无关，git 无改动）。
+- **回归钉（带事故编号）**：`test_subagent_stage.py::test_labeled_injection_keeps_chapter_boundaries`
+  （标记齐备 + 去标记逐字等价 + 去重口径 + 未注册回落）+
+  `test_skill_section_mapping.py::test_labeled_split_preserves_tag_and_heading_marks`
+  （tag/标题两形态标记 + 一对多沿用 + 空/未知不报错）+
+  `test_subagent_delegation.py` 端到端 **③b 章界可见钉**（真 Skill 走真链路断言两章标记在场）。
+  同批修 `test_subagent_stage.py` 三处 **patch 点**（`pmod.tool_sections` → `pmod.labeled_tool_sections`）
+  ——注入面换函数而测试仍钉旧函数会成假绿（**该三例在本批首次跑即转红，即此钉起效**）。
+- **验收**：`acceptance.py --quick` **15/15 全绿（退出码 0）**；定向 8 文件 **62 passed**；
+  全量 pytest（经 `scripts/pytest_local.py` 清 D-22 环境项）**41 failed / 2703 passed**
+  ——41 全落 4 个网络文件（`test_openai_compat` 27 / `test_reasoning_passthrough` 7 /
+  `test_adapter_stream_protocol` 4 / `test_cached_tokens_telemetry` 3），**与 D-22 基线一致、零新增失败**，
+  通过数 2701 → 2703（本批 +2 条回归钉）；`check_prompt_literals` / `check_legacy_orchestration` /
+  `run_eval_pipeline` 全退出码 0。
+- **未做（边界）**：`data/skills/` **零改动**（G1，用户裁决「Skill 不能改」成立）；
+  未新增任何闸机（遵 GOVERNANCE §五）；未改模板、未加时长槽位（D-28 候选 1 维持否决）；
+  **未补「要求填时长」的 prose**（G3 禁区 + 本轮已证要求本就在场，补复述只会加第二份事实源）。
+- **存量处置**：9999 现存 11 张卡仍是漏时长的那版（`分镜表格图·S1–S11`）。按用户「只修代码，存量不管」
+  同口径**不动**；**复审 = 用户实跑重写 1 张卡，看每格是否带时长**（勿重跑 11 张）。
+- **环境留痕（D-22 同族，本机）**：`acceptance.py --quick` 与 pytest 一度全红于
+  `.pytest_tmp` 下 **PermissionError（WinError 5）**——`diagnose-windows-sandbox-acl` 判定
+  `PRECONDITION`（缺 `WRITE_OWNER`），已授权非受限运行修复并 `verified` 通过（备份与回滚命令见
+  `.tmp_probe/9999c/acl/`）；另遗留 `pytest_tmp_old_451415443/`（改名绕行产物）**本机不可删**，
+  属同一环境类，已登记不影响仓库。
+
 ### 2026-10-02 · Flova planner 整体替换批：10 个 Skill 的 `<planner>` 按基准改写（用户裁决）
 
 - **立项（用户 9999 追问「现在 planner 章节里面好多后面都没有箭头了」+ 给出基准）**：用户指令

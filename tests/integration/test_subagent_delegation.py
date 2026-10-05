@@ -250,6 +250,15 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
         "generation 章节未随 media_generate 注入——分镜表格图「四大要素」"
         "（含景别与时长标注）再次读不到，9999 漏时长根因复发")
     assert "景别与时长标注" in task_text
+    # ③b **章界可见钉**（2026-10-04 事故 9999）：两章并注时必须**保留原始章节
+    #     标记**，否则子代理看不出手里有两章——而 generation 章内写着「具体提示词
+    #     写法见下方「媒体提示词」章节」，它据此误判该章未注入，退化为「只填模板
+    #     槽位」，11/11 张表格图全漏「景别与时长标注」。
+    assert "<media_generator>" in task_text and "</media_generator>" in task_text, (
+        "generation 章标记被剥掉——子代理无法看出章界，误判注入面而漏执行散文要求"
+        "（2026-10-04 事故 9999）")
+    assert "<write_media_prompt>" in task_text and "</write_media_prompt>" in task_text, (
+        "prompt_draft 章标记被剥掉——章界不可见，9999 误判面复发")
     assert "分镜语法三件套" not in task_text, "storyboard_shots 章节泄漏进子代理"
     assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
 
