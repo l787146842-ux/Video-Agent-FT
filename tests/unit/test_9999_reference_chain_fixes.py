@@ -433,3 +433,46 @@ class TestPromptMentionMediaMap:
         mm = build_storyboard_media_map(self._state())
         _eff, refs = resolve_prompt_mentions("@[艾AA] 特写", [], mm, max_refs=5)
         assert refs == ["/a/aa.png"]
+
+
+# =====================================================================
+# ⑥ 正文内联引用契约（2026-10-06，事故 9999 / 用户裁决 A）
+# =====================================================================
+class TestInlineReferenceContract:
+    """模型必须被告知「把参考图与正文的对应关系写进正文」（@元素名 就地写）。
+
+    病灶（9999 现场）：模型把参考图集中列在提示词**尾部**（Skill 模板的
+    `Reference images attached: - Image 1: ...` 形态），正文零记号；生成时平台
+    只能把尾部那几行改写成 `[参考图N：名称]` ⇒ 图发出去了（实测 3 张全发），
+    但「第几张图对应谁」与画面描述**对不上号**。对照 Flova 实产：它把指代就地
+    写在正文里（`... silhouette of image_1 [Element_程心_三视图 img] ...`）。
+
+    本契约是 A 方案（用户裁决）的平台侧落点：不动 Skill，只补模型可见的正面契约。
+    """
+
+    def test_draft_fields_hint_carries_inline_mention_contract(self):
+        from src.video_agent.tools import storyboard_tools as st
+        hint = st._DRAFT_FIELDS_HINT
+        assert "@元素名" in hint, (
+            "draft 字段契约缺「正文内联 @元素名」——模型无从知道该写内联记号，"
+            "9999 尾部清单病复发")
+        assert "参考图与正文的对应关系" in hint, "契约缺因果说明（为什么写进正文）"
+
+    def test_contract_reaches_all_three_prompt_writing_inputs(self):
+        """三个写提示词的入参（建组内联卡 / 改卡 / 加卡）都要带该契约。
+
+        G4：同类调用路径全覆盖——漏一处，那条路径写出的提示词就仍是尾部清单形态。
+        """
+        import inspect
+
+        from src.video_agent.tools import storyboard_tools as st
+        for cls_name in ("CreateGroupInput", "PatchDraftInput", "AddDraftInput"):
+            src = inspect.getsource(getattr(st, cls_name))
+            assert "_DRAFT_FIELDS_HINT" in src, f"{cls_name} 未引用契约 hint"
+
+    def test_contract_text_is_positive_not_prohibition(self):
+        """契约须为**正面写法**（写什么），不写成禁令（check_tool_descriptions 口径）。"""
+        from src.video_agent.tools import storyboard_tools as st
+        hint = st._DRAFT_FIELDS_HINT
+        for banned in ("禁止", "不得", "严禁"):
+            assert banned not in hint, f"契约含禁令词 {banned!r}（应为正面写法）"

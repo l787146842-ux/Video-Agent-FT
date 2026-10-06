@@ -135,3 +135,75 @@ def test_escaped_placeholder_not_parsed_as_element_token():
     assert parse_element_tokens(raw) == [], "转义占位不是元素引用"
     # 对偶：真实令牌仍正常提取
     assert parse_element_tokens("镜头里出现 [程心] 与 [星环号]") == ["程心", "星环号"]
+
+
+# ---------- 正文内联引用批（2026-10-06，事故 9999 / 用户裁决 A） ----------
+# 病灶：名称捕获字符集 `[^\s@＠\[\]]+` 排除面太窄 ⇒ 中文标点被吞进名称，
+# 查表落空、**静默去记号留文字**（不报错不回喂）。实测 13 类常见后接字符里
+# 只有空白/换行能解析，`@程心，` / `@程心。` / `@程心）` / `@程心说` 全失败——
+# 而中文正文里标点紧跟才是常态。本组钉死修复且防回潮。
+
+def test_at_mention_survives_following_cjk_punctuation():
+    """中文标点紧跟 @名称 不得被吞进名称（修复前：查表落空、记号静默消失）。"""
+    for tail in ("。", "，", "、", "：", "；", "！", "？", ")", "）", "/", "|"):
+        resolved, refs = resolve_prompt_mentions(f"看向 @程心{tail}", [], MEDIA_MAP)
+        assert refs == ["http://m/1.png"], (
+            f"@程心{tail} 未挂上参考图——标点被吞进名称（2026-10-06 事故 9999 复发）")
+        assert "[参考图1：程心]" in resolved, f"@程心{tail} 未就地重写"
+        assert tail in resolved, f"尾部标点 {tail!r} 被吞掉了（必须原样保留）"
+
+
+def test_at_mention_survives_trailing_prose_without_space():
+    """中文连写（无空格）也要命中：`看向@程心说` → 名称切在「说」之前。"""
+    resolved, refs = resolve_prompt_mentions("看向@程心说", [], MEDIA_MAP)
+    assert refs == ["http://m/1.png"], "无空格连写时 @名称 应仍被识别"
+    assert "[参考图1：程心]说" in resolved
+    assert "说" in resolved, "名称之后的正文不得丢失"
+
+
+def test_at_mention_longest_match_prefers_full_name_with_punctuation():
+    """对偶：**名字本身带标点**时必须整名命中，不得被截短。
+
+    防止为实现上一条而把名称切得过狠（如 `艾AA（AA）` 被切成 `艾AA` 查不到）。
+    """
+    m = {
+        "艾AA（AA）": {"url": "http://m/aa.png", "kind": "image"},
+        "艾AA": {"url": "http://m/aa2.png", "kind": "image"},
+    }
+    resolved, refs = resolve_prompt_mentions("特写 @艾AA（AA）。", [], m)
+    assert refs == ["http://m/aa.png"], "带括注的全名应整名命中（最长优先）"
+    assert "[参考图1：艾AA（AA）]" in resolved
+    assert resolved.endswith("。"), "句末标点保留"
+
+
+def test_at_mention_unmatched_still_strips_mark_keeps_text():
+    """未命中语义不变：去记号、留文字（含尾部标点），不报错。"""
+    resolved, refs = resolve_prompt_mentions("参考 @不存在的人，继续。", [], MEDIA_MAP)
+    assert refs == []
+    assert resolved == "参考 不存在的人，继续。", "未命中不得吞掉标点或正文"
+
+
+def test_at_mention_inline_marker_sits_where_element_is_mentioned():
+    """**A 方案的目标形态钉**：位置标记必须**就地**出现在元素提及处。
+
+    这是与「尾部罗列图片清单」的本质区别（9999 现场：图发出去了，但第 N 张图
+    对应谁的信息全挤在文末，与画面对不上号）。
+    """
+    prompt = ("Panel 1: 全景，@程心 与 @AA 飘出；"
+              "Panel 2: 近景，@程心 侧脸。")
+    mm = dict(MEDIA_MAP)
+    mm["AA"] = {"url": "http://m/aa.png", "kind": "image"}
+    resolved, refs = resolve_prompt_mentions(prompt, [], mm)
+    assert refs == ["http://m/1.png", "http://m/aa.png"]
+    # 标记就地：在 Panel 1 / Panel 2 各自的分句内，而不是被挪到文末
+    p1, p2 = resolved.split("Panel 2:")
+    assert "程心" in p1 and "[参考图" in p1, "Panel 1 内应就地出现标记"
+    assert "[参考图1：程心]" in p2, "Panel 2 复用同序号且就地"
+    assert not resolved.rstrip().endswith("]"), "标记不得被集中挪到文末"
+
+
+def test_bracket_notation_single_group_unchanged():
+    """防回潮：`<<<image_名称>>>` 有闭合定界符，行为与修复前逐字一致。"""
+    resolved, refs = resolve_prompt_mentions("<<<image_程心>>>。", [], MEDIA_MAP)
+    assert refs == ["http://m/1.png"]
+    assert resolved == "[参考图1：程心]。"

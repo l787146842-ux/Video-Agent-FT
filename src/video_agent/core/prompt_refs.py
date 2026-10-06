@@ -32,12 +32,45 @@ from src.video_agent.state.storyboard_ops import element_name_variants
 #      反斜杠），原正则要求裸 `image_` → 连匹配都不成立、整段原样进入生成请求。
 #      现容许 `image` 与 `_` 之间存在可选反斜杠。
 #   两条都不改变「未命中即去记号留文字」的既有语义。
+#
+# 2026-10-06 事故 9999/正文内联引用批（用户裁决 A）：**名称捕获不得吞标点**。
+# 病灶：字符集 `[^\s@＠\[\]]+` 排除面太窄 ⇒ 中文标点被吞进名称，查 map 落空、
+# 静默去记号留文字。实测 13 类常见后接字符里只有空白/换行 2 类能解析：
+# `@程心，` / `@程心。` / `@程心）` / `@程心说` **全部失败**——而中文正文里
+# 标点紧跟才是常态。修法见 `_match_longest_name`（最长前缀回退），
+# 既不吞标点、也不误伤名字本身带标点的元素（如 `艾AA（AA）`）。
 _MENTION_RE = re.compile(
     r"<<<\s*image\\?_([^<>]+?)\s*>>>"
     r"|[@＠]\[?([^\s@＠\[\]]+)\]?"
 )
 
 _KIND_LABEL = {"image": "参考图", "video": "参考视频", "audio": "参考音频"}
+
+
+def _match_longest_name(raw: str, media_map: Dict[str, Dict[str, str]]) -> Tuple[str, str]:
+    """把 @ 捕获到的原始串解析为 (命中的名称, 未消费的尾部)。
+
+    2026-10-06 事故 9999/正文内联引用批：`_MENTION_RE` 的名称捕获是**贪婪**的
+    （只要不是空白/@/方括号就吞），故 `@程心，` 捕获出 `程心，`、`@程心说`
+    捕获出 `程心说`，两者查 map 都落空 ⇒ **静默去记号留文字**（不报错、不回喂），
+    正文里的引用大面积失效而不自知。
+
+    本函数按**最长前缀回退**解析：从整串开始逐字符缩短，首个命中 media_map 的
+    即为名称，其余部分原样归还给调用方（拼回提示词，不丢字）。
+
+    这样同时成立：
+    - `@程心，` → 命中 `程心`，尾部 `，` 保留（标点不再被吞）；
+    - `@艾AA（AA）` → 若全串就是 map 键则整体命中（名字自带标点不被截断）；
+    - `@不存在` → 无命中，返回 ("", 原串) 交调用方走既有「去记号留文字」语义。
+
+    复杂度 O(len(raw)) 次 dict 查表，名称长度量级，可忽略。
+    """
+    s = raw or ""
+    while s:
+        if s in media_map:
+            return s, raw[len(s):]
+        s = s[:-1]
+    return "", raw or ""
 
 
 def media_of_draft(d: Dict[str, Any]) -> Tuple[str, str]:
@@ -127,19 +160,27 @@ def resolve_prompt_mentions(
         return refs.index(url) if url in refs else -1
 
     def replace(m: re.Match) -> str:
-        name = (m.group(1) or m.group(2) or "").strip()
-        info = media_map.get(name)
+        raw = (m.group(1) or m.group(2) or "").strip()
+        # 2026-10-06 事故 9999：@ 式走「最长前缀回退」，避免中文标点被吞进名称
+        # （<<<image_>>> 式有闭合定界符，名称天然无歧义，原样查表即可）。
+        tail = ""
+        if m.group(2) is not None:
+            name, tail = _match_longest_name(raw, media_map)
+            info = media_map.get(name) if name else None
+        else:
+            name = raw
+            info = media_map.get(name)
         if not info:
-            return name  # 未命中：去掉记号，保留文字
+            return name + tail  # 未命中：去掉记号，保留文字（含标点尾部）
         url = info["url"]
         idx = index_of(url)
         if idx < 0:
             if len(refs) >= max_refs:
-                return name  # 超限：无法随请求发送，仅保留文字
+                return name + tail  # 超限：无法随请求发送，仅保留文字
             refs.append(url)
             idx = len(refs) - 1
         label = _KIND_LABEL.get(info.get("kind", "image"), "参考图")
-        return f"[{label}{idx + 1}：{name}]"
+        return f"[{label}{idx + 1}：{name}]" + tail
 
     resolved = _MENTION_RE.sub(replace, prompt or "")
     return resolved, refs
