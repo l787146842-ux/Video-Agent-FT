@@ -260,3 +260,57 @@ def test_11111_downgrade_prefix_mismatches_feedback_marker():
         "若前缀已统一，请更新本钉并在 CHANGELOG 留痕"
     assert _is_feedback_msg(msg) is False, \
         "若 _is_feedback_msg 已能识别降级消息，请更新本钉并留痕"
+
+
+# ---------- 2026-10-06 时间段落批（事故编号：9999） ----------
+
+
+def test_9999_time_range_contract_on_both_write_paths():
+    """镜内分段的时间写法契约必须同时落在**两条写口**上（G4 同类路径全覆盖）。
+
+    病灶（9999 现场）：Skill `:130` 只写裸词「时长标注」，**未定义形态** ⇒
+    模型自由发挥成「约4s」单值近似；对照 Flova 实产写的是累计时间轴
+    `0-6s / 6-14s / 14-22s`（首尾相接、覆盖整镜）。
+    本契约只补**形态**（平台侧），不动 Skill。
+
+    G4：`storyboard_create_group`（建组）与 `storyboard_patch_group`（改分组）
+    是同一件事的两条写口，漏一处则该路径仍写「约4s」。
+    """
+    from src.video_agent.tools.storyboard_tools import (
+        PatchGroupInput, _GROUP_FIELDS_HINT,
+    )
+    key = "若本镜标注时间"
+    assert key in _GROUP_FIELDS_HINT, (
+        "改分组写口缺时间范围契约——patch_group 路径仍会写「约4s」")
+    assert key in str(CreateGroupInput.model_fields["desc"].description or ""), (
+        "建组写口（CreateGroupInput.desc）缺时间范围契约")
+    # patch 写口经 hint 拼装，须真能到达模型可见面
+    assert key in str(PatchGroupInput.model_fields["patch"].description or ""), (
+        "PatchGroupInput.patch 的描述未带上契约（hint 未接上）")
+
+
+def test_9999_time_range_contract_is_conditional_not_mandatory():
+    """契约是**条件式**（「若本镜标注时间」），表达"要标就按这个格式标"。
+
+    用户裁决措辞原话：「若本镜标注时间，按「0-6s」这类时间范围写
+    （各段首尾相接、合计等于 duration）」——不强制必须标时间，
+    只约束**标注时的形态**。
+    """
+    from src.video_agent.tools.storyboard_tools import _GROUP_FIELDS_HINT
+    assert "若本镜标注时间" in _GROUP_FIELDS_HINT
+    assert "0-6s" in _GROUP_FIELDS_HINT, "缺格式示例"
+    assert "首尾相接" in _GROUP_FIELDS_HINT, "缺连续性判据"
+    assert "合计等于 duration" in _GROUP_FIELDS_HINT, "缺与 duration 的关系"
+
+
+def test_9999_time_range_contract_not_restating_skill():
+    """P1：本契约**不是复述 Skill**——Skill 全文无此形态表述。
+
+    若将来 Skill 自行补上同款逐字模板，本句应改为指针或删除（届时更新本钉）。
+    """
+    from pathlib import Path as _P
+    sk = _P("data/skills/AI-短剧一站式生成/SKILL.md").read_text(encoding="utf-8")
+    for kw in ("0-6s", "首尾相接", "时间范围"):
+        assert kw not in sk, (
+            f"Skill 已含 {kw!r}——本平台句已成复述（P1 违规），"
+            "应改为指针或删除并留痕")
