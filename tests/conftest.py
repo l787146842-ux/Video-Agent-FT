@@ -134,6 +134,25 @@ def set_global_setting():
 
 
 @pytest.fixture(autouse=True)
+def _storage_singleton_isolation(tmp_path):
+    """事故 1111 二次同类口：Storage 全局单例逐测试隔离到临时工作区。
+
+    根因同 `_state_singleton_isolation`——`storage.get_storage()` 惰性建成
+    `LocalStorageAdapter(ASSETS_DIR)`（**生产** `workspace/assets/`），任何
+    直接调 `persist_data_uri` / `persist_remote_image` 的用例都会把文件写进
+    真实素材目录。实测：`test_persist_data_uri_valid` 每跑一次即在
+    `workspace/assets/` 落一个 70 字节占位图（本机累计千余个）。
+    该夹具把单例钉到 tmp，测试读写全部落临时目录，生产素材目录零污染。
+    """
+    from src.video_agent import storage as storage_mod
+
+    storage_mod.reset_storage()
+    storage_mod._storage_instance = storage_mod.LocalStorageAdapter(tmp_path / "_singleton_assets")
+    yield
+    storage_mod.reset_storage()
+
+
+@pytest.fixture(autouse=True)
 def _degradation_watchdog(request):
     """批5 劣化即红守卫（全 tests/ 覆盖：unit + integration）。
 

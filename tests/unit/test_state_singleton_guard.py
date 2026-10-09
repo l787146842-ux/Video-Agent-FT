@@ -128,3 +128,51 @@ def test_1111_create_task_bound_explicit_workspace_still_works(tmp_path):
         assert bound.active_project_id == pid
     finally:
         StateManager.release_task_bound(token)
+
+
+# ---------- ⑥ 同类口：Storage 单例不得落生产素材目录（G4） ----------
+
+def test_1111_storage_singleton_does_not_touch_production_assets(monkeypatch):
+    """同类事故口：`get_storage()` 惰性单例必须已被夹具钉到临时目录。
+
+    与 1111 同族——「全局单例静默落到生产 workspace」。实测
+    `test_persist_data_uri_valid` 每跑一次即在 `workspace/assets/` 落一个
+    70 字节占位图（本机累计千余个）。本钉断言 conftest 的
+    `_storage_singleton_isolation` 确实生效：落盘不指向生产素材目录。
+    """
+    from src.video_agent.storage import get_storage
+    from src.video_agent.utils.paths import ASSETS_DIR
+
+    st = get_storage()
+    prod = ASSETS_DIR.resolve()
+    actual = getattr(st, "_assets_dir", None)
+    assert actual is not None, "LocalStorageAdapter 应暴露落盘目录"
+    actual = actual.resolve()
+    assert actual != prod, f"Storage 单例仍指向生产素材目录：{actual}"
+    assert prod not in actual.parents, f"Storage 落盘目录在生产目录内：{actual}"
+
+    # 端到端反证：经该单例真落一个文件，生产目录不新增
+    before = {p.name for p in prod.iterdir()} if prod.is_dir() else set()
+    st.save(b"\x89PNG\r\n\x1a\nprobe", "gen-1111-guard-probe.png", "image/png")
+    after = {p.name for p in prod.iterdir()} if prod.is_dir() else set()
+    assert not (after - before), f"生产素材目录被写入：{after - before}"
+
+
+def test_1111_persist_data_uri_writes_no_production_asset():
+    """端到端：`persist_data_uri` 落盘不得触碰生产素材目录（事故复现路径）。"""
+    import base64
+
+    from src.video_agent.adapters.openai_compat import persist_data_uri
+    from src.video_agent.utils.paths import ASSETS_DIR
+
+    prod = ASSETS_DIR.resolve()
+    before = {p.name for p in prod.iterdir()} if prod.is_dir() else set()
+
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+    )
+    url = persist_data_uri(f"data:image/png;base64,{base64.b64encode(png).decode()}")
+
+    assert url.startswith("/workspace/assets/gen-"), "URL 契约不变"
+    after = {p.name for p in prod.iterdir()} if prod.is_dir() else set()
+    assert not (after - before), f"生产素材目录被写入：{after - before}"

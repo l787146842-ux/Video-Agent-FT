@@ -84,6 +84,16 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
   `workspace/sessions/` 78 个项目目录 235 文件（约 184.4 MB）同属已删项目残留——
   根因是**素材文件名不含项目 ID**、删项目只删 `projects/<pid>/` 不动 `assets/`，
   故「前端删项目」无法连带清理，需单独裁决清理口径。
+- **同类口一并收口（G4，2026-10-09 同日追加）**：清点残留时发现**第二个同族泄漏面**
+  ——`storage.get_storage()` 惰性单例同样直建 `LocalStorageAdapter(ASSETS_DIR)`
+  （**生产** `workspace/assets/`）。实测 `test_persist_data_uri_valid` **每跑一次
+  即在生产素材目录落一个 70 字节占位图**（本机累计千余个，即上条「1368 个假图」的
+  持续来源）。修法比照既有 `_state_singleton_isolation`：`tests/conftest.py` 新增
+  autouse 夹具 **`_storage_singleton_isolation`** 把单例钉到 `tmp_path`，测试读写
+  全落临时目录、生产素材目录零污染。回归钉 +2 条（`get_storage()` 不指向生产目录
+  且落盘不新增文件 / `persist_data_uri` 端到端不触碰生产目录）。
+  **验证**：全量 pytest **2794 passed / 0 failed**，且跑完后生产 `assets/` 新增
+  **0** 个文件（改前每轮 +1 起）。
 
 ### 2026-10-09 · 制作参数同口径批：分辨率/时长/画幅也以卡为唯一事实源（用户裁决「其他都要做，分辨率这些都要」；`max_shot_duration` 除外）
 
