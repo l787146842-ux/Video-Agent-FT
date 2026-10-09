@@ -16,6 +16,7 @@ from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.config import settings
 from src.video_agent.core.provider_config import (
     CLI_PROTOCOLS,
+    first_image_model,
     get_api_key,
     get_api_key_async,
     get_provider_config,
@@ -250,13 +251,22 @@ async def generate_image_via_provider(
 
     # 空模型兜底（彻底修复「model not register: ''/MissingParameter」）：
     # 模型解析优先级：规格文档指定（LLM action 参数）→ 预览框草稿参数
-    # （action_executor 已按此链传入）→ 供应商配置的第一个图片模型
+    # （action_executor 已按此链传入）→ 供应商配置的第一个图片模型。
+    #
+    # 2026-10-09 事故 1111（模型静默换名）：本兜底是**最后防线**，不是常规通道
+    # ——上游 `image_generate` 已按「显式 → 全局设置 → 草稿自带」解析过一轮，
+    # 走到这里还为空说明三级全落空。取列表首位是**猜**，故必须 WARNING 留痕：
+    # 旧实现静默取值，全局设置里的 gemini-3.1-flash-image 被换成列表首位的
+    # gemini-3-pro-image（网关无额度）而全程无任何告警。
     cfg0 = await get_provider_config_async(provider_id)
     if cfg0 and not model:
-        defaults = [m for m in (cfg0.get("image_models") or []) if m]
-        if defaults:
-            model = defaults[0]
-            logger.info(f"[Generation] 模型未指定，回退供应商 '{provider_id}' 默认模型: {model}")
+        fallback_model = first_image_model(provider_id)
+        if fallback_model:
+            model = fallback_model
+            logger.warning(
+                f"[Generation] 模型三级回退（显式/全局设置/草稿自带）全部落空，"
+                f"兜底取供应商 '{provider_id}' 首个图片模型: {model}"
+                f"（若与全局设置不一致，请检查该供应商的图片模型列表顺序）")
 
     # ① 尝试画布路由（画布在线；带参考图时跳过，画布不接收参考图）
     if not refs:

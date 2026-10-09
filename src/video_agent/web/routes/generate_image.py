@@ -14,7 +14,7 @@ from loguru import logger
 from src.video_agent.exceptions import GenerationError, VideoAgentError
 from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 from src.video_agent.state.manager import StateManager
-from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES_TUPLE
+from src.video_agent.state.models import CAT_SHOTS, ALL_CATEGORIES_TUPLE
 # 2026-09-23 批10（事故 4444/P0-A）：shotRefs 解析唯一入口 = ops.find_ref_group
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.utils import gen_id
@@ -152,20 +152,13 @@ async def batch_generate_image(body: BatchImageGenRequest):
     svc = StateManager.get_instance()
     state = svc.state_dict
 
-    # 确定目标 drafts
-    targets: List[tuple] = []  # (group, draft)
-    if body.target in ("all_keyElements", "all_keyelements"):
-        for g in state.get(CAT_KEY_ELEMENTS, []):
-            for d in g.get("drafts", []):
-                if (d.get("prompt") or "").strip():
-                    targets.append((g, d))
-    elif body.target in ("all_shots", "all_shot"):
-        for g in state.get(CAT_SHOTS, []):
-            for d in g.get("drafts", []):
-                if (d.get("prompt") or "").strip():
-                    targets.append((g, d))
-    else:
-        # 逗号分隔的 draft_id
+    # 确定目标 drafts（2026-10-09 事故 1111：种类判据与 Agent 轨同源
+    # ops.batch_media_targets——批量概念图不得把音色卡一并拉去生图）
+    targets: List[tuple] = [
+        (g, d) for g, d, _t in ops.batch_media_targets(state, body.target, media_type="image")
+    ]
+    if not targets and not ops.is_batch_media_target(body.target):
+        # 逗号分隔的 draft_id（定点批量：由用户显式指定，不套种类过滤）
         ids = [x.strip() for x in body.target.split(",") if x.strip()]
         for cat in ALL_CATEGORIES_TUPLE:
             for g in state.get(cat, []):

@@ -805,6 +805,60 @@ def collect_drafts(
     return []
 
 
+# 批量生成 target 关键字 → 状态类别（写口与闸机同引，防两套目标集）
+BATCH_MEDIA_TARGETS: Dict[str, str] = {
+    "all_keyelements": CAT_KEY_ELEMENTS,
+    "all_shots": CAT_SHOTS,
+    "all_shot": CAT_SHOTS,
+}
+
+
+def is_batch_media_target(target: str) -> bool:
+    """target 是否为批量关键字（大小写不敏感）。
+
+    关键字集合的**唯一判定入口**：调用方不得各自内联拷贝那张表或用
+    `target in BATCH_MEDIA_TARGETS` 直接判——键是小写，而模型常传
+    `all_keyElements`（驼峰），直接判会假阴性并走进定点 draft_id 分支。
+    """
+    return str(target or "").strip().lower() in BATCH_MEDIA_TARGETS
+
+
+def batch_media_targets(
+    state: Dict[str, Any], target: str, media_type: str = "image",
+) -> List[Tuple[Dict[str, Any], Dict[str, Any], str]]:
+    """收集批量生成的 (group, draft, draft_type) 三元组；**只收该媒体种类的卡**。
+
+    2026-10-09 事故 1111：旧实现按类别收集、只判「有无提示词」而**不判媒体种类**
+    ⇒ `all_keyElements` 把同组内的音色卡（mediaType=audio）一并拉去生图
+    （1111 实测 15 个任务 = 10 图 + 5 音色，音色描述词被当画面提示词送出）。
+    种类判据唯一源 = `infer_media_type`（与 build_draft_dict / 闸机同源）。
+
+    写口（image_generate 工具）与闸机（gen_confirm_gate）**必须同引本函数**：
+    两处各自收集会让「闸机校验的目标集」≠「工具实际提交的目标集」。
+
+    返回三元组（`draft_type` ∈ keyElement/shot）供提交管线标注任务归属；
+    target 非批量关键字（具体 draft_id）时返回空列表，由调用方走各自的定点路径。
+    """
+    cat_key = BATCH_MEDIA_TARGETS.get(str(target or "").strip().lower(), "")
+    if not cat_key:
+        return []
+    want = str(media_type or "").strip().lower()
+    draft_type = "shot" if cat_key == CAT_SHOTS else "keyElement"
+    out: List[Tuple[Dict[str, Any], Dict[str, Any], str]] = []
+    for group in state.get(cat_key, []) or []:
+        if not isinstance(group, dict):
+            continue
+        for draft in group.get("drafts", []) or []:
+            if not isinstance(draft, dict):
+                continue
+            if not (draft.get("prompt") or "").strip():
+                continue  # 无提示词的卡不参与生成（既有口径）
+            if want and infer_media_type(draft) != want:
+                continue
+            out.append((group, draft, draft_type))
+    return out
+
+
 def resolve_shot_refs(
     state: Dict[str, Any], group: Optional[Dict[str, Any]], limit: int = 5,
 ) -> List[Dict[str, str]]:

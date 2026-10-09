@@ -34,6 +34,7 @@ from src.video_agent.exceptions import GenerationError
 from src.video_agent.core.provider_config import (
     first_available_image_provider,
     first_available_image_provider_async,
+    first_image_model,
     resolve_provider_ref,
     spec_media_preference,
     spec_production_params,
@@ -716,30 +717,46 @@ class ImageGenerateTool(BaseTool):
         优先级 = 草稿自身（中间面板直接选择，ctx.image_provider）> 全局设置
         （spec_media_preference）；single 补 adapter_provider/aspect_ratio，batch 补
         provider_id/model，防传空导致「供应商 '' 未配置」。经 provider_config 端口
-        访问声明（依赖倒置，与 _execute_batch 同口径，保 monkeypatch 可见）。"""
+        访问声明（依赖倒置，与 _execute_batch 同口径，保 monkeypatch 可见）。
+
+        2026-10-09 事故 1111（模型静默换名）：**provider 与 model 各自独立解析**
+        （配对判据是「来源同源」，不是「分支嵌套」）。旧实现把 model 注入嵌在
+        `elif spec_pid` 内，而 `ctx.image_provider` 自身即回落
+        `settings.default_image_provider_id` ⇒ 两分支同源互斥 ⇒ 该 elif **恒不成立**
+        ⇒ `args["model"]` 永不被写（死分支）。空 model 流到派发层后被静默兜底成
+        `image_models[0]`（列表首位），全局设置的模型形同未配。
+        """
+        port = ports.provider_config_port()
+        spec_pid, spec_model = port.spec_media_preference(ctx.state)
         single = str(args.get("mode") or "batch").strip().lower() == "single"
         if single:
+            # single 轨只补 provider/画幅：其模型由 AdapterFactory 注册期的
+            # 供应商默认决定（`_execute_single` 不消费 model 入参），补了是死写入。
             if not str(args.get("adapter_provider") or "").strip():
-                _sp, _sm = ports.provider_config_port().spec_media_preference(ctx.state)
                 if ctx.image_provider:
                     args["adapter_provider"] = ctx.image_provider
                     logger.info("[image_generate] single provider 注入（草稿选择）: {}", ctx.image_provider)
-                elif _sp:
-                    args["adapter_provider"] = _sp
-                    logger.info("[image_generate] single provider 注入（全局设置）: {}", _sp)
+                elif spec_pid:
+                    args["adapter_provider"] = spec_pid
+                    logger.info("[image_generate] single provider 注入（全局设置）: {}", spec_pid)
             if ctx.image_aspect_ratio and not args.get("aspect_ratio"):
                 args["aspect_ratio"] = ctx.image_aspect_ratio
                 logger.info("[image_generate] single 画幅注入（草稿选择）: {}", ctx.image_aspect_ratio)
-        elif not str(args.get("provider_id") or "").strip():
-            spec_pid, spec_model = ports.provider_config_port().spec_media_preference(ctx.state)
+            return
+        if not str(args.get("provider_id") or "").strip():
             if ctx.image_provider:
                 args["provider_id"] = ctx.image_provider
                 logger.info("[image_generate] batch provider 注入（草稿选择）: {}", ctx.image_provider)
             elif spec_pid:
                 args["provider_id"] = spec_pid
-                if spec_model and not str(args.get("model") or "").strip():
-                    args["model"] = spec_model
-                logger.info("[image_generate] batch provider 注入（全局设置）: {}/{}", spec_pid, spec_model)
+                logger.info("[image_generate] batch provider 注入（全局设置）: {}", spec_pid)
+        # model 注入：仅当最终 provider 与全局设置**同源**才注入其模型
+        # （跨供应商套用会张冠李戴）；其余来源的模型配对由 _execute_batch 按
+        # 草稿自带 → 供应商默认 续解，那里有完整的目标草稿上下文。
+        if str(args.get("provider_id") or "").strip() == spec_pid and spec_model \
+                and not str(args.get("model") or "").strip():
+            args["model"] = spec_model
+            logger.info("[image_generate] batch model 注入（全局设置）: {}", spec_model)
 
     async def aexecute(self, params: GenerateImageInput) -> ToolResult:
         mode = str(params.mode or "batch").strip().lower()
@@ -823,19 +840,11 @@ class ImageGenerateTool(BaseTool):
         svc = StateManager.get_instance()
         state = svc.state_dict
 
-        # 收集目标 (group, draft, draft_type) 三元组（只读，无需加锁）
-        targets: List[tuple] = []
-        if params.target in ("all_keyElements", "all_keyelements"):
-            for g in state.get(CAT_KEY_ELEMENTS, []):
-                for d in g.get("drafts", []):
-                    if (d.get("prompt") or "").strip():
-                        targets.append((g, d, "keyElement"))
-        elif params.target in ("all_shots", "all_shot"):
-            for g in state.get(CAT_SHOTS, []):
-                for d in g.get("drafts", []):
-                    if (d.get("prompt") or "").strip():
-                        targets.append((g, d, "shot"))
-        else:
+        # 收集目标 (group, draft, draft_type) 三元组（只读，无需加锁）。
+        # 种类判据与闸机同源（ops.batch_media_targets，事故 1111）：音色卡
+        # （mediaType=audio）不参与生图，否则其音色描述词会被当画面提示词送出。
+        targets: List[tuple] = ops.batch_media_targets(state, params.target, media_type="image")
+        if not targets and not ops.is_batch_media_target(params.target):
             # T2 第一步：混合集 target 结构化校验——具体 draft_id 经
             # storyboard_ops.find_draft 既有路径校验存在性（引用不复制）；
             # 格式非法/未命中统一 error_code="validation"，文案附合法取值说明与采样
@@ -877,16 +886,20 @@ class ImageGenerateTool(BaseTool):
                 error_code="validation", retryable=False,
             )
 
-        # 供应商回退链（唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
-        # → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报「供应商 '' 未配置」
+        # 供应商与模型**各自独立回退**（2026-10-09 事故 1111）：旧实现把 model
+        # 解析嵌在 `if not provider_id` 内 ⇒ provider 一旦有值（注入层已注入），
+        # model 永不解析、且从不读草稿自带的 imageModel ⇒ 空 model 流到派发层被
+        # 静默兜底成 `image_models[0]`（列表首位），全局设置/草稿所选模型全部落空。
+        # 供应商回退链（唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带
+        # providerId → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报
+        # 「供应商 '' 未配置」。
         provider_id = resolve_provider_ref(str(params.provider_id or "").strip())
-        model = str(params.model or "").strip()
+        spec_pid, spec_model = spec_media_preference(state)
+        fb_model = ""  # 「首个可用供应商」一步的配对模型（仅该步执行时才有值）
         if not provider_id:
-            spec_pid, spec_model = spec_media_preference(state)
             if spec_pid:
                 provider_id = spec_pid
-                model = model or spec_model
-                logger.info(f"[image_generate] provider 未指定，按全局设置回退: {spec_pid}/{model}")
+                logger.info(f"[image_generate] provider 未指定，按全局设置回退: {spec_pid}")
         if not provider_id:
             for _g, d, _t in targets:
                 pid = resolve_provider_ref(str(d.get("imageProviderId") or d.get("providerId") or "").strip())
@@ -897,18 +910,45 @@ class ImageGenerateTool(BaseTool):
         if not provider_id:
             if settings.default_image_provider_id:
                 provider_id = settings.default_image_provider_id
-                model = model or settings.default_image_model
-                logger.info(f"[image_generate] provider 未指定，回退全局设置默认出图渠道: {provider_id}/{model}")
+                logger.info(f"[image_generate] provider 未指定，回退全局设置默认出图渠道: {provider_id}")
         if not provider_id:
             provider_id, fb_model = await first_available_image_provider_async()
             if provider_id:
-                model = model or fb_model
-                logger.info(f"[image_generate] provider 未指定，回退配置首个可用生图供应商: {provider_id}/{model}")
+                logger.info(f"[image_generate] provider 未指定，回退配置首个可用生图供应商: {provider_id}")
         if not provider_id:
             # T5：供应商回退链全部落空属环境配置问题，原参重试无效，需先配置生图供应商再重试
             return ToolResult(success=False, error=(
                 "当前工作区未配置任何可用的生图供应商，请先在 API 配置页添加供应商与 API Key。"
             ), error_code="other")
+
+        # 模型回退链（与供应商链同序，但**独立判定**）：LLM 参数 → 全局设置
+        # （仅当供应商同源，防跨供应商套用）→ 目标草稿自带 imageModel →
+        # 供应商配对模型 → 该供应商声明的首个图片模型（兜底，必然留痕）。
+        model = str(params.model or "").strip()
+        if not model and provider_id == spec_pid:
+            model = spec_model
+            if model:
+                logger.info(f"[image_generate] model 未指定，按全局设置回退: {model}")
+        if not model:
+            for _g, d, _t in targets:
+                m = str(d.get("imageModel") or d.get("model") or "").strip()
+                if m:
+                    model = m
+                    logger.info(f"[image_generate] model 未指定，回退目标草稿自带模型: {m}")
+                    break
+        if not model and fb_model:
+            # provider 与 model 同出于「首个可用供应商」这一步 ⇒ 本就配对
+            # （该步返回的即该供应商的模型），直接采用，不算跨供应商套用。
+            model = fb_model
+            logger.info(f"[image_generate] model 未指定，采用首个可用生图供应商配对模型: {model}")
+        if not model:
+            # 兜底 = 该供应商声明的首个图片模型（与派发层同一事实源，此处先落地
+            # 以便**一次性留痕**：日志 + 回执 detail 均可见，不再静默换名）。
+            model = first_image_model(provider_id)
+            if model:
+                logger.warning(
+                    f"[image_generate] model 回退链全部落空，兜底取供应商 '{provider_id}' "
+                    f"首个图片模型: {model}（与全局设置/草稿选择都不一致时，请检查配置）")
 
         # 规格制作参数：图片分辨率由规格文档优先，
         # 其次草稿自带，最后全局默认（回退链与供应商链口径一致）
@@ -961,11 +1001,16 @@ class ImageGenerateTool(BaseTool):
                     "（任务已提交、不受影响；下次落盘自愈）")
 
         # 提交即返回：结果由前端 SSE + 轮询跟踪，
-        # 避免 N×600s 工具轮阻塞 agent 循环
+        # 避免 N×600s 工具轮阻塞 agent 循环。
+        # 回执写明**实际生效的渠道与模型**（§2.5 平台改写必须模型可见，事故 1111）：
+        # 旧回执只说「已提交 N 个任务」，模型无从察觉模型被换成了别的。
         return ToolResult(success=True, data={
             "submitted": len(submitted),
             "task_ids": [tid for _, tid in submitted],
-            "detail": f"已提交 {len(submitted)} 个生图任务，结果将通过 SSE/轮询通知",
+            "provider_id": provider_id,
+            "model": model,
+            "detail": f"已提交 {len(submitted)} 个生图任务（{provider_id} / {model or '未指定模型'}），"
+                      "结果将通过 SSE/轮询通知",
         })
 
 

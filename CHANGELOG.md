@@ -36,6 +36,55 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-09 · 事故 1111「Agent 生图全失败、手动点却成功」根因批：模型解析链解耦 + 静默兜底留痕 + 批量目标种类过滤（用户裁决「修吧」）
+
+- **立项（用户 1111 项目追问）**：「为什么 agent 不能生图，我手动点可以生图？」「为什么模型调用的
+  `gemini-3-pro-image`？而不是 `gemini-3.1-flash-image`，**我全局设置里面也是
+  `gemini-3.1-flash-image`**」。现场 = `proj-1791464775-7e017914`（工作台「1111」）。
+- **取证（只读，落盘任务表 + 服务端日志双证）**：Agent 确实调了工具（`conv-main.jsonl` seq=81
+  `{"mode":"batch","target":"all_keyElements"}`，回执「已提交 15 个生图任务」）⇒ **不是没调、
+  也不是被闸拒**；`state.sqlite3` 的 `generation_tasks` 里该批 **15/15 failed**、
+  `model` 字段**全为空串**，报 `No accounts available with quota for model: gemini-3-pro-image`；
+  同日志 22:11 用户手动的两次**成功**、用的是 `gemini-3.1-flash-image`。
+- **根因（三层各自丢一次模型名，逐层可验）**：
+  1. **注入层死分支**（`tools/document_tools.apply_provider_defaults`）：model 注入嵌在
+     `elif spec_pid` 内，而 `ctx.image_provider` **自身即回落** `settings.default_image_provider_id`
+     （`resolve_selected_draft_media_config` 的 `kind="image"` 分支第二返回值是 **aspectRatio、
+     不是 model**）⇒ 两分支**同源互斥** ⇒ `elif` 恒不成立，`args["model"]` **永不被写**。
+     可执行证明：`ctx.image_provider` 的四种取值穷举下 elif 均不可达。
+  2. **工具层短路**（`_execute_batch`）：model 解析嵌在 `if not provider_id` 内 ⇒ provider
+     一旦有值即整块跳过；且该链**只读 `imageProviderId`、从不读草稿的 `imageModel`**。
+  3. **派发层静默兜底**（`web/generation_dispatch`）：空 model 到达后取 `image_models[0]`
+     ——`custom-api-2` 的列表首位恰是**无额度的** `gemini-3-pro-image`；全程**零告警**，
+     且无任何一处代码**同时持有**「实际发出」与「全局设置」两个值 ⇒ 不可能发现不一致。
+- **附带发现（同批根除）**：`target='all_keyElements'` 只判「有无提示词」、**不判媒体种类**
+  ⇒ 同组 5 张音色卡（`mediaType=audio`）被卷入生图（15 = 10 图 + 5 音色），
+  音色描述词被当画面提示词送出；全库复查 9999 同样中招（keyElements 9 audio / 14 image）。
+- **修法（最小改动，不动闸机、不改 Skill；provider 与 model 各自独立解析）**：
+  1. **注入层**：model 注入与 provider 解耦，判据改为「最终 provider 与全局设置**同源**」
+     （跨供应商不借用，防张冠李戴）；single 轨**不补 model**（`_execute_single` 不消费该入参，
+     补了是死写入——已实测确认，避免为修复而新增死代码）。
+  2. **工具层**：model 回退链独立成链 —— 显式 → 全局设置（仅同源）→ **目标草稿自带
+     `imageModel`** → 「首个可用供应商」配对模型 → 供应商首个图片模型（兜底，**必留痕**）。
+  3. **派发层**：兜底取值改经新增单一事实源 `provider_config.first_image_model`
+     （与工具层同引，消灭第二份 `image_models[0]` 抄写）并**降为 WARNING 留痕**。
+  4. **种类过滤单一事实源** `storyboard_ops.batch_media_targets`（种类判据 = `infer_media_type`，
+     与 `build_draft_dict`/闸机同源），**G4 四处调用路径全覆盖**：工具写口、`gen_confirm_gate`
+     （闸机判的目标集必须**就是**工具会提交的目标集）、手动批量路由 `/generate/batch-image`、
+     派发兜底。
+  5. **回执可见**（§2.5）：`image_generate` 回执写入 `provider_id`/`model` 并进 `detail`
+     ——旧回执只说「已提交 N 个任务」，模型无从察觉自己指定的模型被换掉。
+- **回归钉（9 条，带事故编号，新建 `tests/unit/test_1111_image_model_resolution.py`）**：
+  注入层同源注入 / 跨供应商不借用 / provider 已定时仍按草稿解析 / 同源回退全局设置 /
+  回执报实际模型 / 派发兜底必留痕 / 音色卡不入生图批 / 种类判据单一事实源 / 闸机与写口同集。
+- **突变验证已做**：移除注入层 model 注入 + 草稿模型回退两处 → **3 条钉子转红**，
+  且日志**逐字复现生产症状**（`兜底取供应商 'custom-api-2' 首个图片模型: gemini-3-pro-image`）；
+  还原后 9 条全绿。
+- **验收**：`acceptance.py --quick` **15/15 全绿**；**全量 `acceptance.py` 20/20 全绿（含
+  RATCHETS 覆盖率地板，退出码 0）**；后端全量 pytest **2774 passed / 0 failed**。
+- **未纳入本批（边界）**：网关侧 `gemini-3-pro-image` 无额度是**外部额度**问题，
+  本批只保证「平台不再擅自换成它」；`ai_decide` 档下模型仍由全局设置/草稿决定。
+
 ### 2026-10-08 · 事故 9999「工具调用凭空蒸发」根因批 + 媒体生成阶段分工边界（用户裁决「按 dsh 方案做」/「把分工弄对、文案写清楚」）
 
 - **立项**：9999 实跑两症状——①主代理**工具调用凭空蒸发**（只写正文、不发工具，被轮末假停判定捕获）；

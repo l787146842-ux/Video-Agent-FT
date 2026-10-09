@@ -70,6 +70,22 @@ async def first_available_image_provider_async() -> Tuple[str, str]:
     return first_available_image_provider()
 
 
+def first_image_model(provider_id: str) -> str:
+    """供应商配置里声明的**首个图片模型**（空串 = 该供应商未声明图片模型）。
+
+    空模型兜底的**单一事实源**：生图工具（批次参数解析）与派发层
+    （`generation_dispatch.generate_image_via_provider`）同引本函数——
+    此前两处各写一遍 `image_models[0]`，正是「模型静默换成列表首位」的温床。
+
+    语义边界（2026-10-09 事故 1111）：本函数只回答「该供应商**有什么**模型」，
+    不回答「**该用**哪个模型」。调用方须先走完显式指定 → 全局设置 → 草稿自带
+    的回退链，仅当全部落空时才用它兜底，且必须留痕（不得静默）。
+    """
+    cfg = get_provider_config(provider_id) or {}
+    models = [m for m in (cfg.get("image_models") or []) if m]
+    return str(models[0]) if models else ""
+
+
 # ---------- 规格文档媒体偏好 ----------
 
 

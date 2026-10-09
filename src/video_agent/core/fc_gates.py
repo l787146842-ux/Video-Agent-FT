@@ -30,7 +30,6 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.state.models import (
     ALL_CATEGORIES_TUPLE,
     CAT_KEY_ELEMENTS,
-    CAT_SHOTS,
     # 2026-09-23 批11（事故 4444/P1-5）：mediaType 缺省取值的唯一推导入口
     # （与 build_draft_dict 同引一实现，防两处各写一遍 `or "image"` 再次漂移）
     infer_media_type as ops_infer_media_type,
@@ -235,18 +234,12 @@ def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optio
         return None
     state = ctx.state()
     target = str(args.get("target") or "all_keyElements").strip()
-    targets: List[Dict[str, Any]] = []
-    if target in ("all_keyElements", "all_keyelements"):
-        for g in state.get(CAT_KEY_ELEMENTS, []):
-            for d in g.get("drafts", []):
-                if (d.get("prompt") or "").strip():
-                    targets.append(d)
-    elif target in ("all_shots", "all_shot"):
-        for g in state.get(CAT_SHOTS, []):
-            for d in g.get("drafts", []):
-                if (d.get("prompt") or "").strip():
-                    targets.append(d)
-    else:
+    # 2026-10-09 事故 1111：目标收集走**写口同一实现**（ops.batch_media_targets）
+    # ——闸机判的必须就是工具**真实会提交的那个目标集**。旧实现此处各写一份
+    # 类别遍历，且两处都不判媒体种类 ⇒ 音色卡被计入生图目标。
+    collected = ops.batch_media_targets(state, target, media_type="image")
+    targets: List[Dict[str, Any]] = [d for _g, d, _t in collected]
+    if not targets and not ops.is_batch_media_target(target):
         for cat in ALL_CATEGORIES_TUPLE:
             for g in state.get(cat, []):
                 for d in g.get("drafts", []):
