@@ -64,42 +64,16 @@ def _seed(svc):
     }]
 
 
-# ---------- ① 注入层：model 与 provider 各自独立解析（死分支根因） ----------
+# ---------- ① 注入层不再解析 batch 渠道（消除「两处各写一遍」的复述） ----------
 
 
-def test_1111_injection_fills_model_from_global_settings(monkeypatch):
-    """草稿选择命中（ctx.image_provider 非空）时，model 也必须被注入。
+def test_1111_injection_leaves_batch_channel_to_tool(monkeypatch):
+    """batch 轨：注入层**不写** provider_id/model —— 渠道解析唯一落点 = 工具。
 
-    旧实现该情形只写 provider_id，`args['model']` 永远缺席 ⇒ 现场日志
-    「[image_generate] batch provider 注入（草稿选择）: custom-api-2」之后
-    没有任何 model 注入行。
-    """
-    import src.video_agent.core.provider_config as pc
-    from src.video_agent.tools.document_tools import ImageGenerateTool
-
-    class _Port:
-        @staticmethod
-        def spec_media_preference(state, kind="image"):
-            return ("custom-api-2", _FLASH)
-
-    monkeypatch.setattr(pc, "spec_media_preference", _Port.spec_media_preference)
-    import src.video_agent.core.ports as ports_mod
-    monkeypatch.setattr(ports_mod, "provider_config_port", lambda: _Port)
-
-    tool = ImageGenerateTool()
-    ctx = _ctx(image_provider="custom-api-2", state={})
-    args = {"mode": "batch", "target": "all_keyElements"}
-    tool.apply_provider_defaults(args, ctx)
-
-    assert args["provider_id"] == "custom-api-2"
-    assert args["model"] == _FLASH, (
-        "全局设置的模型必须随同源供应商注入（事故 1111 根因①：该分支只写 provider）")
-
-
-def test_1111_injection_model_not_borrowed_across_providers(monkeypatch):
-    """provider 与全局设置**不同源**时不得套用其模型（防张冠李戴）。
-
-    草稿自带其它供应商时，全局设置的模型不适用，应留给下游按草稿/供应商解析。
+    事故 1111 根因①（model 注入嵌在 `elif spec_pid` 内恒不可达）**长在
+    「注入层与工具各解析一份」这份重复里**。2026-10-09 用户裁决「执行时按卡内
+    已填参数」后，batch 解析整体收回 `_execute_batch`（逐卡），本处只留 single。
+    消除重复即消除该 bug 的温床：即便将来再改优先级，也只有一处可改。
     """
     import src.video_agent.core.provider_config as pc
     import src.video_agent.core.ports as ports_mod
@@ -115,9 +89,31 @@ def test_1111_injection_model_not_borrowed_across_providers(monkeypatch):
 
     args = {"mode": "batch", "target": "all_keyElements"}
     ImageGenerateTool().apply_provider_defaults(
-        args, _ctx(image_provider="other-provider", state={}))
-    assert args["provider_id"] == "other-provider"
-    assert not args.get("model"), "跨供应商不得借用全局设置的模型"
+        args, _ctx(image_provider="custom-api-2", state={}))
+    assert not str(args.get("provider_id") or "").strip(), \
+        "batch 渠道不得在注入层解析（唯一落点 = _execute_batch 逐卡）"
+    assert not str(args.get("model") or "").strip()
+
+
+def test_1111_injection_still_serves_single_mode(monkeypatch):
+    """single 轨照旧注入 provider/画幅（批次回归：移除 batch 分支不得误伤 single）。"""
+    import src.video_agent.core.provider_config as pc
+    import src.video_agent.core.ports as ports_mod
+    from src.video_agent.tools.document_tools import ImageGenerateTool
+
+    class _Port:
+        @staticmethod
+        def spec_media_preference(state, kind="image"):
+            return ("custom-api-2", _FLASH)
+
+    monkeypatch.setattr(pc, "spec_media_preference", _Port.spec_media_preference)
+    monkeypatch.setattr(ports_mod, "provider_config_port", lambda: _Port)
+
+    args = {"mode": "single", "prompt": "一只猫"}
+    ImageGenerateTool().apply_provider_defaults(
+        args, _ctx(image_provider="", state={}, aspect="9:16"))
+    assert args["adapter_provider"] == "custom-api-2", "single 轨仍按全局设置注入"
+    assert args["aspect_ratio"] == "9:16", "single 轨仍注入画幅"
 
 
 # ---------- ② 工具层：模型回退链独立于供应商链 ----------
@@ -195,7 +191,7 @@ async def test_1111_receipt_reports_actual_model(svc, monkeypatch):
     result = await ImageGenerateTool().aexecute(
         GenerateImageInput(target="all_keyElements", provider_id="custom-api-2"))
     assert result.success
-    assert result.data.get("model") == _FLASH
+    assert result.data.get("channels") == [f"custom-api-2 / {_FLASH}"]
     assert _FLASH in result.data.get("detail", "")
     await asyncio.sleep(0.3)
 
@@ -325,15 +321,134 @@ def test_1111_gate_and_tool_share_target_set():
         "闸机须走写口同一实现，否则闸机校验的目标集 ≠ 工具实际提交的目标集")
 
 
+# ---------- ⑤ 卡优先（用户裁决 2026-10-09：「执行时按卡内已填参数」） ----------
+
+
+async def test_1111_card_channel_wins_over_global_settings(svc, monkeypatch):
+    """卡上渠道 ≠ 全局设置时，**用卡**（= 用户手动点卡那条路）。
+
+    事故 1111 的分歧点：用户手动点卡成功（读卡上的 flash），Agent 失败
+    （渠道被全局设置/兜底改写）。用户裁决「执行时按卡内已填参数」后，
+    两条路同源，不再存在分歧。
+    """
+    from src.video_agent.tools import document_tools
+    from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
+
+    monkeypatch.setattr(StateManager, "_instance", svc)
+    _seed(svc)
+    # 全局设置指向另一个渠道；卡上写明 custom-api-2 / flash
+    monkeypatch.setattr(document_tools, "spec_media_preference",
+                        lambda state: ("agnes-ai", "agnes-image-2.1-flash"))
+    captured = []
+    _stub_gen(monkeypatch, captured)
+
+    result = await ImageGenerateTool().aexecute(
+        GenerateImageInput(target="all_keyElements"))
+    assert result.success
+    await asyncio.sleep(0.3)
+    assert captured[0][:2] == ("custom-api-2", _FLASH), (
+        f"卡上渠道必须生效，实际 {captured[0][:2]}（用户裁决：按卡内已填参数）")
+
+
+async def test_1111_mixed_channels_resolved_per_card(svc, monkeypatch):
+    """同批不同卡可以是不同渠道 —— 逐卡解析，不得整批套用同一对值。
+
+    旧实现整批只解析一对 (provider, model)，跨供应商的卡会被其中一对覆盖
+    （9999 实测有 4 张卡与全局设置不同）。"""
+    from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
+
+    monkeypatch.setattr(StateManager, "_instance", svc)
+    svc.state_dict["shots"] = []
+    svc.state_dict["keyElements"] = [
+        {"id": "ke-1", "title": "Element_A", "drafts": [
+            {"id": "d-a", "tag": "已确认", "mediaType": "image", "prompt": "卡A",
+             "imageProviderId": "custom-api-2", "imageModel": _FLASH, "aspectRatio": "16:9"}]},
+        {"id": "ke-2", "title": "Element_B", "drafts": [
+            {"id": "d-b", "tag": "已确认", "mediaType": "image", "prompt": "卡B",
+             "imageProviderId": "modelscope", "imageModel": "Qwen/Qwen-Image-2512",
+             "aspectRatio": "16:9"}]},
+    ]
+    captured = []
+    _stub_gen(monkeypatch, captured)
+
+    result = await ImageGenerateTool().aexecute(
+        GenerateImageInput(target="all_keyElements"))
+    assert result.success and result.data["submitted"] == 2
+    await asyncio.sleep(0.3)
+
+    got = {(c[0], c[1]) for c in captured}
+    assert got == {("custom-api-2", _FLASH), ("modelscope", "Qwen/Qwen-Image-2512")}, \
+        f"两张卡应各走自己的渠道，实际 {got}"
+    # 回执把两个渠道都列出来（§2.5 可见）
+    assert len(result.data["channels"]) == 2
+
+
+async def test_1111_unstamped_card_falls_back_to_global_then_logs(svc, monkeypatch):
+    """卡上无渠道（存量/漏补印）→ 回退全局设置；全局也没有才用供应商首个模型。"""
+    from src.video_agent.tools import document_tools
+    from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
+
+    monkeypatch.setattr(StateManager, "_instance", svc)
+    _seed(svc)
+    svc.state_dict["keyElements"][0]["drafts"][1].pop("imageProviderId", None)
+    svc.state_dict["keyElements"][0]["drafts"][1].pop("imageModel", None)
+    monkeypatch.setattr(document_tools, "spec_media_preference",
+                        lambda state: ("custom-api-2", _FLASH))
+    captured = []
+    _stub_gen(monkeypatch, captured)
+
+    result = await ImageGenerateTool().aexecute(
+        GenerateImageInput(target="all_keyElements"))
+    assert result.success
+    await asyncio.sleep(0.3)
+    assert captured[0][:2] == ("custom-api-2", _FLASH), "卡无值时回退全局设置"
+
+
+def test_1111_stamp_only_fills_empty_never_overwrites(set_global_setting):
+    """建卡补印**只补空、不覆盖**已有值（用户逐卡改选必须存活）。"""
+    from src.video_agent.core.provider_config import stamp_draft_spec_preference
+
+    set_global_setting("default_image_provider_id", "custom-api-2")
+    set_global_setting("default_image_model", _FLASH)
+
+    # 已有值 → 不被覆盖
+    d1 = {"mediaType": "image", "imageProviderId": "user-chosen", "imageModel": "user-model"}
+    stamp_draft_spec_preference({}, d1, "keyElements")
+    assert d1["imageProviderId"] == "user-chosen" and d1["imageModel"] == "user-model"
+
+    # 空值 → 补印成全局设置（结构保证：卡上必有值，执行期无须靠回退链猜）
+    d2 = {"mediaType": "image"}
+    stamp_draft_spec_preference({}, d2, "keyElements")
+    assert d2.get("imageProviderId") == "custom-api-2"
+    assert d2.get("imageModel") == _FLASH
+
+
+def test_1111_stamp_covers_create_group_path():
+    """建卡补印必须覆盖**两条**建卡路径（G4）：add_draft 与 create_group 附带草稿。
+
+    事故 1111 复查发现 `create_group` 的附带草稿路径**漏了补印** ⇒ 由此建出的
+    卡渠道为空。用户裁决「执行时按卡内已填参数」要求卡上必有值（结构保证），
+    故该漏口必须补上并钉死。
+    """
+    import inspect
+
+    from src.video_agent.tools import storyboard_tools
+    src = inspect.getsource(storyboard_tools.StoryboardCreateGroupTool.aexecute)
+    assert "stamp_draft_spec_preference" in src, \
+        "create_group 附带草稿路径必须补印（否则卡上无渠道，回退链兜底）"
+    src_add = inspect.getsource(storyboard_tools.StoryboardAddDraftTool.aexecute)
+    assert "stamp_draft_spec_preference" in src_add, "add_draft 路径必须补印"
+
+
 # ---------- 小工具 ----------
 
 
-def _ctx(image_provider="", state=None):
+def _ctx(image_provider="", state=None, aspect=""):
     from src.video_agent.tools.base import ProviderInjectionContext
     return ProviderInjectionContext(
         state=state if state is not None else {},
         image_provider=image_provider,
-        image_aspect_ratio="",
+        image_aspect_ratio=aspect,
         selected_draft_id="",
         selected_type="",
     )

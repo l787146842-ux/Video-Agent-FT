@@ -388,7 +388,12 @@ class _CaptureToolManager:
 
 
 def test_fc_injects_provider_into_image_generate(monkeypatch):
-    """LLM 未传 provider_id 时，image_generate 注入中间面板选中供应商"""
+    """batch 轨：注入层**不**替工具决定渠道（唯一落点 = 工具逐卡解析）。
+
+    2026-10-09 用户裁决「执行时按卡内已填参数」（事故 1111 后续）：
+    batch 渠道解析整体收回 `_execute_batch`，注入层不再写 provider/model
+    ——消除两处各写一遍的复述（事故 1111 的死分支就长在那份重复里）。
+    本用例原钉「注入层写入选中草稿供应商」，现按新口径反转。"""
     import asyncio
     tm = _CaptureToolManager()
     runner = FCToolRunner(tool_manager=tm)
@@ -401,7 +406,9 @@ def test_fc_injects_provider_into_image_generate(monkeypatch):
     asyncio.run(runner.execute(response, image_provider="custom-api",
                                gate_override="all"))
     name, args = tm.captured[0]
-    assert name == "image_generate" and args.get("provider_id") == "custom-api"
+    assert name == "image_generate"
+    assert not str(args.get("provider_id") or "").strip(), \
+        "注入层不得替 batch 决定渠道（唯一落点 = _execute_batch 逐卡）"
 
 
 def test_image_generate_fallback_to_draft_provider(svc, monkeypatch):
@@ -515,8 +522,13 @@ def test_spec_media_preference_global_settings_sole_source(set_global_setting):
 
 
 def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_setting):
-    """image_generate 注入优先级（B7 用户裁决基线）：草稿自身（中间面板直接选择）
-    > 全局设置；未带草稿供应商时才回落全局设置渠道。"""
+    """image_generate 注入优先级：草稿自身（中间面板直接选择）> 全局设置。
+
+    2026-10-09 用户裁决「执行时按卡内已填参数」（事故 1111 后续）：
+    **batch 轨的渠道解析整体归工具 `_execute_batch` 逐卡完成**，注入层不再解析
+    batch 渠道（消除两处各写一遍的复述——事故 1111 的死分支就长在这份重复里）。
+    故本用例改钉「注入层不越权写 batch 渠道」：草稿选择只作为 ctx 传入，
+    最终渠道由工具按卡决定。"""
     import asyncio
 
     set_global_setting("default_image_provider_id", "gemini-cli")
@@ -524,7 +536,6 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_s
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
         lambda: {"documents": [{"name": "制片规格.md", "content": _SPEC_PREF_DOC}]}))
 
-    # 带草稿供应商：草稿自身优先（B7 优先级链首位）
     tm = _CaptureToolManager()
     runner = FCToolRunner(tool_manager=tm)
     response = ChatResponse(content="", tool_calls=[
@@ -535,19 +546,21 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_s
     asyncio.run(runner.execute(response, image_provider="custom-api",
                                gate_override="all"))
     _name, args = tm.captured[0]
-    assert args.get("provider_id") == "custom-api"
-
-    # 未带草稿供应商：回落全局设置（唯一硬参数事实源）
-    tm2 = _CaptureToolManager()
-    runner2 = FCToolRunner(tool_manager=tm2)
-    asyncio.run(runner2.execute(response, image_provider="",
-                                gate_override="all"))
-    _name2, args2 = tm2.captured[0]
-    assert args2.get("provider_id") == "gemini-cli" and args2.get("model") == "auto"
+    # 注入层不再替 batch 决定渠道（唯一落点 = _execute_batch 逐卡解析）
+    assert not str(args.get("provider_id") or "").strip()
+    assert not str(args.get("model") or "").strip()
 
 
 async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch, set_global_setting):
-    """草稿被前端回填 Grsai，但全局设置设定 Antigravity CLI → 实际生图走全局设置"""
+    """草稿自带渠道**优先**于全局设置（2026-10-09 用户裁决「执行时按卡内已填参数」）。
+
+    本用例原钉 8888 的「全局设置赢过卡」，现按新裁决**反转**：卡上写着 custom-api
+    就用 custom-api（= 用户手动点卡那条路，事故 1111 手动成功/Agent 失败的分歧点）。
+    8888 要防的「前端把首选供应商回填进卡」已在**写入侧**封闭
+    （`ParamControls.tsx`「全局设置默认渠道优先于首选供应商回填」+ 建卡补印
+    只补空不覆盖），故执行期读卡不再有被污染的风险，防护从执行期补偿
+    前移到写入侧根因。
+    """
     import asyncio
     from src.video_agent.web import generation_dispatch
     from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
@@ -561,7 +574,8 @@ async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch,
     svc.state_dict["keyElements"] = [{
         "id": "ke-1", "title": "Element_A",
         "drafts": [{"id": "d1", "tag": "已确认", "prompt": "提示词",
-                    "providerId": "custom-api", "aspectRatio": "16:9"}],
+                    "imageProviderId": "custom-api-2", "imageModel": "gemini-3.1-flash-image",
+                    "aspectRatio": "16:9"}],
     }]
     captured = []
 
@@ -574,7 +588,8 @@ async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch,
     result = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
     assert result.success and result.data["submitted"] == 1
     await asyncio.sleep(0.3)
-    assert captured == [("gemini-cli", "auto")]
+    assert captured == [("custom-api-2", "gemini-3.1-flash-image")], (
+        "卡上已填渠道必须被采用（用户裁决：执行时按卡内已填参数）")
 
 
 # ---------- 防虚报硬拦截（8888 事故：image_generate 被拦后模型仍声称「已触发生成」） ----------

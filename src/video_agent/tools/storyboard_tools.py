@@ -422,7 +422,11 @@ class StoryboardCreateGroupTool(BaseTool):
 
             # 附带草稿
             if draft_payload:
-                ops.append_draft(new_group, draft_payload, svc.state_dict)
+                _extra = ops.append_draft(new_group, draft_payload, svc.state_dict)
+                # 全局设置补印（与 add_draft / patch_draft 同一口径，2026-10-09）：
+                # 本路径此前**漏了补印** ⇒ 由此建出的卡渠道为空，执行期只能靠
+                # 回退链猜（用户裁决「执行时按卡内已填参数」要求卡上必有值）。
+                stamp_draft_spec_preference(svc.state_dict, _extra, cat_key)
 
             # 落盘结果判定（事故 9999/2026-09-27 动作二②）：版本闸放弃写入时
             # 不得静默回「执行成功」（假回执），必须回喂可行动的失败信封

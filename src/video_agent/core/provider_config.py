@@ -86,6 +86,31 @@ def first_image_model(provider_id: str) -> str:
     return str(models[0]) if models else ""
 
 
+def resolve_draft_channel(draft: Dict[str, Any], kind: str = "image") -> Tuple[str, str]:
+    """读取**草稿卡自带**的生成渠道 (provider, model)。
+
+    执行期渠道解析的**唯一事实源 = 草稿卡**（用户裁决 2026-10-09）：
+    「全局设置里设好模型 → 建卡时按全局设置补印进卡 → 自动出图直接按卡内
+    已填参数执行」。卡上的值是建卡时（`stamp_draft_spec_preference`）按当时
+    全局设置烙下的，也允许用户/中间面板逐卡改选，故**执行期读卡即读用户意图**。
+
+    字段口径按种类隔离（与 `stamp_draft_spec_preference` / 前端参数栏同源）：
+    image → `imageProviderId`/`imageModel`，video → `videoProviderId`/`videoModel`；
+    旧共享字段 `providerId`/`model` 保留作存量数据回退。全部为空返回 ("", "")。
+
+    本函数**只读不改**，不做任何回退（回退是调用方的事，且必须留痕）。
+    """
+    if not isinstance(draft, dict):
+        return "", ""
+    if str(kind or "image").strip().lower() == "video":
+        pid_field, model_field = "videoProviderId", "videoModel"
+    else:
+        pid_field, model_field = "imageProviderId", "imageModel"
+    pid = str(draft.get(pid_field) or draft.get("providerId") or "").strip()
+    model = str(draft.get(model_field) or draft.get("model") or "").strip()
+    return pid, model
+
+
 # ---------- 规格文档媒体偏好 ----------
 
 
