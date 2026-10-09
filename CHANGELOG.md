@@ -36,6 +36,48 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-08 · 事故 9999「工具调用凭空蒸发」根因批 + 媒体生成阶段分工边界（用户裁决「按 dsh 方案做」/「把分工弄对、文案写清楚」）
+
+- **立项**：9999 实跑两症状——①主代理**工具调用凭空蒸发**（只写正文、不发工具，被轮末假停判定捕获）；
+  ②单会话 **57 处**命中「可委派阶段主代理不直接调用」与「花钱生成不委派」两条规则打架、
+  每步靠猜（`conv-1791119953-edc63c90` 原文「**Wait**, let me re-read」/「**wait**, "生成" is
+  listed as main-thread stage?!」）。症状②的量化代价 = 该项目累计 61 万字符思考。
+- **① 根因（症状①，harness 层，本批最重）**：供应商 400 文案
+  「Messages with role 'tool' must be a response to a preceding message with 'tool_calls'」
+  是**配对错误**（我们发出去的历史不合法），而旧判定用 `"tool" in body` **子串**匹配——
+  该文案里同时含 `role 'tool'` 与 `'tool_calls'` ⇒ **恒为真** ⇒ 误判成「端点不支持 tool role」。
+- **放大器**：误判触发**粘性**历史改写降级（`MSG_TOOL_ROLE_KEY` 入 `_unsupported_fields`，
+  本实例此后每轮沿用）⇒ 模型看到的自己历史全是 `⟦TOOL_CALLS: …⟧` 占位符，学会照抄
+  ⇒ 真到要干活时只写正文、不发工具。
+- **决定性反证**：同端点 123 个样本以 69–99 条消息、tool_calls>0 正常应答 ⇒ 该端点**接受**
+  tool role；全库 500 份抓包中含 "tool" 的 400 共 3 条，**全部**是配对错误、**零**条真「不支持 role」。
+- **dsh 对照（724 包全量核查）**：dsh **无**运行时格式降级、**无**「记住降级」集合；
+  能力问题**发出前**拒绝（原文「**no clamping or aliasing is performed**」）；
+  「requests are deep-frozen and **never rewritten**」⇒ 历史**永不改写**；供应商怪癖由适配器承担。
+- **修法（同向，删机制而非加补丁）**：
+  1. **删掉粘性历史改写降级**（`_downgrade_tool_role_messages` 退役）；
+  2. 新增 `classify_tool_role_400(body)` **精确分类** → `pairing` / `unsupported` / `other`
+     （顺序要紧：配对错误优先，其文案同样含两个关键词——这正是旧实现子串匹配的病根）；
+  3. 新增 `normalize_tool_pairing(messages)`：**发出前**配对归一（孤立 tool 结果 → 转 user
+     **内容一字不丢**；声明了调用却无结果 → 补占位），幂等、浅拷贝、**不改调用方历史本体**；
+  4. `_demote_tool_role_for_request`：真能力缺失才降级，且**只影响本次请求、不写记忆**。
+- **② 症状② 修法（P2 约束下沉 / G3 禁「写一句话让模型配合」）**：新增
+  `subagent.stage_scope_contract(stage)` 渲染**结构事实**（该阶段子代理执行面只有
+  `storyboard_add_draft`/`storyboard_patch_draft`；`image_generate`/`generate_video`/`workflow_pause`
+  在 `SUBAGENT_TOOL_DENY` 内；其 `skill_name=""` 故生成确认闸不生效、同意账本记在主对话轮次上），
+  经 `_stage_hint()` 进 stage 入参描述；`prompts/planner/subagent.md` 的 `SUBAGENT_POLICY`
+  删旧句「花钱生成不委派」、改「委派出去的是**写**，你亲自做的是**生成**」。**不新增散文禁令、不新增闸机。**
+- **③ 同批文案收口**：`PREF_CONFIRM_BEFORE_GEN` 明确「首次**按轮计**、不因前序轮次生成过而免除」；
+  `GENERATION_CONFIRM_GATE_BLOCKED`（源 + `prompts/gates/messages.md` 两处同源）删「先展示草案」。
+- **回归钉**：`tests/unit/test_9999_media_stage_scope.py`（**5 条**，新建：分工声明存在/结构证据/
+  只对 media_generate 出句/真到达模型可见面/策略段写明边界 + 4444-Q2① 内部机制词防回潮）；
+  `test_11111_storyboard_contract_fixes.py` 增 `test_9999_pairing_classifier_*` /
+  `normalize_*` / `prepare_endpoint_never_rewrites_history_sticky` 等（降级类用例改名 `downgrade_*`→`demote_*`）；
+  `test_reasoning_passthrough.py::test_400_tool_role_unsupported_demotes_this_request_only`
+  由钉「粘性沿用」**反向**钉「第二次请求恢复标准 tool 通道」。
+- **验收**：`acceptance.py --quick` **15/15 全绿（退出码 0）**；定向 3 文件 **40 passed**。
+  本批为**补登记**（改动成于 2026-10-08 但当时未留痕、未提交），补登记时复核全绿后单独提交。
+
 ### 2026-10-06 · 时间段落契约批：镜内分段的时间写法落进 desc 契约（用户裁决；Skill 零改动）
 
 - **立项（用户 9999 追问「时间标记为什么是约几秒，不是 Flova 那样 0-6s」+ 裁决措辞）**：

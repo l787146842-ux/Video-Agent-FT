@@ -183,8 +183,8 @@ GENERATION_CONFIRM_GATE_ERROR = _gate_msg("GENERATION_CONFIRM", (
 # 模型自发跳确认（本轮用户消息无跳过指令）→ 拒收而非放行。
 # 「只警告不拦人」保护的是用户意志；模型违反 Skill 暂停语义不属用户意志。
 GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
-    "流程拦截：目标草稿的 Prompt Draft 尚未经用户审阅确认。请先展示草案并调用"
-    "暂停工具请求用户审阅；用户接受暂停卡后重提生成即视为已确认，不会重复拦截。"
+    "流程拦截：目标草稿的 Prompt Draft 尚未经用户审阅确认。请调用暂停工具"
+    "请求用户审阅；用户接受暂停卡后重提生成即视为已确认，不会重复拦截。"
     "也可在工作台把目标草稿标「已确认」后再生成。"
 ))
 

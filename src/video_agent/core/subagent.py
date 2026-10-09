@@ -238,6 +238,42 @@ STAGE_CARD_AUDIO_TYPES: Dict[str, FrozenSet[str]] = {
 }
 
 
+def stage_scope_contract(stage: str = "") -> str:
+    """阶段**分工边界**的模型可见正面契约（空串 = 无边界声明，整句不出）。
+
+    2026-10-08 批（事故 9999「思考打架」修复，用户裁决「把分工弄对、文案写清楚」）：
+    病灶 = 主代理需同时遵守两条规则 —— 「可委派阶段主代理不直接调用
+    （执行＝run_subagent(stage=…)）」与「花钱生成留主线程受确认闸管」——
+    而 `media_generate` **恰好同时落在两个桶里**：它是可委派阶段，内容却是
+    给媒体写提示词。两条规则谁优先、边界划在哪，全平台**没有任何一处写明**。
+
+    实跑代价（9999，`proj-1790513490-8468602e`）：主代理单会话内 57 次
+    命中该矛盾并在推理里反复自我辩论，`conv-1791119953-edc63c90` 原文：
+    「So I should NOT delegate media generation... **Wait**, let me re-read」
+    /「the main thread stages are 规格/生成/暂停/核对 — **wait**, "生成" is
+    listed as main-thread stage?! ... But then what's the media_generate
+    delegation stage for?」/「**Hmm**, but wait — where do the prompts go?」
+    —— 每一步都要靠猜，直接推高思考长度（该项目累计 61 万字符思考）。
+
+    形态选择（P2 约束下沉 / G3 禁「写一句话让模型配合」）：
+    只把**结构事实**渲染出来（该阶段的工具面 + 确认闸为何只在主线程），
+    不新增散文禁令、不新增闸机。结构依据（真实代码，非发明）：
+      · `_STAGE_TOOLS["media_generate"] = {storyboard_add_draft,
+        storyboard_patch_draft}` —— 子代理手里**只有写卡工具**；
+      · `SUBAGENT_TOOL_DENY` 含 `image_generate` / `generate_video` /
+        `workflow_pause` —— 子代理结构上无法出图、也无法弹确认卡；
+      · 子代理 `skill_name=""` ⇒ 生成确认闸对它不生效；用户确认的账本
+        （`generation_consented_turn`）记在主对话轮次上。
+    """
+    resolved = resolve_stage(stage)
+    if resolved != "media_generate":
+        return ""
+    return (
+        "本阶段＝为媒体撰写提示词（子代理执行面只有写提示词相关的写入工具）；"
+        "真正花钱的出图与出视频由主代理在主线程直调"
+    )
+
+
 def stage_card_contract(stage: str = "") -> str:
     """阶段建卡限定的**模型可见正面契约**（空串 = 该阶段不受限，整句不出）。
 

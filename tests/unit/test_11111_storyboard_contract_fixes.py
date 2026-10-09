@@ -182,12 +182,24 @@ def test_11111_iron_rules_legacy_wording_migrates():
         assert legacy not in content
 
 
-# ---------- Q2：降级样板话不得是可模仿的第一人称完整句 ----------
+# ---------- Q2：降级占位不得是可模仿的第一人称完整句 ----------
+#
+# 2026-10-08 批（事故 9999 根因修复，用户裁决「按 dsh 方案做」）更新：
+# 原 `_downgrade_tool_role_messages`（粘性历史改写）已整体退役——它是
+# 9999「工具调用凭空蒸发」的放大器。现由两个替代物承重：
+#   · `normalize_tool_pairing`（发出前配对归一，任何请求都走，不改历史）
+#   · `_demote_tool_role_for_request`（真·不支持 role 时**逐次**降级，不记忆）
+# 本组钉子改钉这两个替代物，原「机械标记式、不可模仿」的约束原样保留。
 
 
-def _downgrade(messages):
-    from src.video_agent.adapters.openai_compat import _downgrade_tool_role_messages
-    return _downgrade_tool_role_messages(messages)
+def _normalize(messages):
+    from src.video_agent.adapters.openai_compat import normalize_tool_pairing
+    return normalize_tool_pairing(messages)
+
+
+def _demote(messages):
+    from src.video_agent.adapters.openai_compat import _demote_tool_role_for_request
+    return _demote_tool_role_for_request(messages)
 
 
 def _asst_with_calls(*names):
@@ -197,17 +209,17 @@ def _asst_with_calls(*names):
         for i, n in enumerate(names)]}
 
 
-def test_11111_downgrade_placeholder_is_not_imitable_sentence():
-    """Q2（harness 修复）：assistant 侧降级占位必须是**机械标记**，不是完整句。
+def test_11111_demote_placeholder_is_not_imitable_sentence():
+    """Q2（harness 修复）：降级占位必须是**机械标记**，不是可模仿的完整句。
 
     11111 取证：原占位「（本轮为工具调用轮：{names}，结果见紧随其后的系统消息）」
-    是一句第一人称式完整陈述；降级**粘性**（后续请求一律沿用旧通道）⇒ 模型每轮
-    看到的自己的历史全是这句，开始照抄——5 处纯文本轮逐字复现，其中 seq=57
+    是一句第一人称式完整陈述；而旧降级**粘性**（后续请求一律沿用旧通道）⇒ 模型
+    每轮看到的自己的历史全是这句，开始照抄——5 处纯文本轮逐字复现，其中 seq=57
     那轮**实际带了 5 个工具调用**、正文仍是样板话（已成说话习惯），模型推理
     两次自认 `I again failed to emit tool calls.`，子代理#2 八步里丢 3 步。
-    本钉防止该可模仿文案复活。
+    本钉防止该可模仿文案复活（现由 `_demote_tool_role_for_request` 承接）。
     """
-    out = _downgrade([_asst_with_calls("storyboard_create_group", "todo_write")])
+    out = _demote([_asst_with_calls("storyboard_create_group", "todo_write")])
     content = out[0]["content"]
     # 旧文案不得回潮
     assert "本轮为工具调用轮" not in content
@@ -219,42 +231,138 @@ def test_11111_downgrade_placeholder_is_not_imitable_sentence():
     assert "storyboard_create_group" in content
 
 
-def test_11111_downgrade_keeps_real_content_and_preserves_history():
+def test_11111_demote_keeps_real_content_and_preserves_history():
     """Q2 不变量：只换**占位**文案，不吞真实正文、不改调用方历史本体。"""
     # ① assistant 已有真实正文 → 原样保留，不被占位覆盖
     real = {"role": "assistant", "content": "我已建完 4 组",
             "tool_calls": [{"id": "c1", "type": "function",
                             "function": {"name": "x", "arguments": "{}"}}]}
-    out = _downgrade([real])
+    out = _demote([real])
     assert out[0]["content"] == "我已建完 4 组"
 
     # ② tool 结果内容保留（转 user 伪装）
-    out2 = _downgrade([{"role": "tool", "tool_call_id": "c1", "content": "正文内容"}])
+    out2 = _demote([{"role": "tool", "tool_call_id": "c1", "content": "正文内容"}])
     assert out2[0]["role"] == "user"
     assert "正文内容" in out2[0]["content"]
 
     # ③ 浅拷贝：不改调用方历史本体
     hist = [_asst_with_calls("x")]
-    _downgrade(hist)
+    _demote(hist)
     assert "tool_calls" in hist[0]
 
 
-def test_11111_downgrade_prefix_mismatches_feedback_marker():
-    """Q2 附带发现（**已登记待裁决**）：降级前缀 ≠ `FEEDBACK_MARKER`。
+# ---------- 2026-10-08 批：配对归一（9999 根因） ----------
+
+
+def test_9999_pairing_classifier_never_confuses_pairing_with_capability():
+    """事故 9999 根因钉：**配对错误**不得被判成「端点不支持 tool role」。
+
+    病灶：旧判定 `"tool" in body` 子串匹配 —— 而供应商的配对错误文案
+    「Messages with role 'tool' must be a response to a preceding message
+    with 'tool_calls'」里同时含 `role 'tool'` 与 `'tool_calls'` ⇒ 恒为真 ⇒
+    误判 ⇒ 触发粘性历史改写 ⇒ 模型照抄占位符 ⇒ 工具调用蒸发。
+    """
+    from src.video_agent.adapters.openai_compat import classify_tool_role_400
+
+    pairing = ('{"code":"LITELLM_ERROR","message":"Messages with role \'tool\' '
+               'must be a response to a preceding message with \'tool_calls\' '
+               'Request id: 021791376618724160995723eabea0b8c1f9"}')
+    assert classify_tool_role_400(pairing) == "pairing", \
+        "配对错误必须判为 pairing（可自愈），不得判成能力缺失"
+
+    # 真·能力缺失仍要认出（本次修复不误伤该保护）
+    assert classify_tool_role_400(
+        '{"error":{"message":"role tool is not supported"}}') == "unsupported"
+    assert classify_tool_role_400(
+        '{"error":{"message":"unknown role: tool"}}') == "unsupported"
+
+    # 无关 400 不得被吞进任一分支
+    assert classify_tool_role_400(
+        '{"error":{"message":"invalid temperature"}}') == "other"
+
+
+def test_9999_normalize_fixes_orphan_tool_result_without_losing_content():
+    """配对归一：孤立 tool 结果 → 转 user，**内容一字不丢**。
+
+    现场形态（存量导入轮 / 压缩后断链）：历史里出现没有前置
+    assistant(tool_calls) 声明的 tool 消息 ⇒ 供应商整次请求 400。
+    修法 = 在**发送副本**上合法化，不改写持久历史（dsh「请求投影」同款）。
+    """
+    orphan = [
+        {"role": "user", "content": "问"},
+        {"role": "tool", "tool_call_id": "", "content": "存量导入的结果正文"},
+    ]
+    out = _normalize(orphan)
+    assert out[1]["role"] == "user", "孤立 tool 消息必须转 user"
+    assert "存量导入的结果正文" in out[1]["content"], "内容不得丢失"
+    assert "tool_call_id" not in out[1], "转 user 后不得残留 tool_call_id"
+
+
+def test_9999_normalize_fills_unanswered_call_and_is_idempotent():
+    """两个方向都要修；且对已合法的序列**零改动**（幂等）。"""
+    missing_result = [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "x", "arguments": "{}"}}]},
+        {"role": "user", "content": "（用户打断）"},
+    ]
+    out = _normalize(missing_result)
+    assert any(m.get("role") == "tool" and m.get("tool_call_id") == "c1"
+               for m in out), "assistant 声明但无结果的调用必须补占位"
+
+    legal = [
+        {"role": "assistant", "content": "做完了", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "x", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "结果"},
+    ]
+    out2 = _normalize(legal)
+    assert out2 == legal, "已合法的序列必须原样返回（幂等）"
+    assert out2 is legal, "零改动时返回同一列表对象（零拷贝）"
+
+
+def test_9999_prepare_endpoint_never_rewrites_history_sticky():
+    """根因防线：请求侧准备**不含**粘性历史改写。
+
+    旧 `_prepare_endpoint_messages` 会在 `MSG_TOOL_ROLE_KEY in unsupported`
+    时把整段历史改写（assistant.tool_calls → 文本占位）。该路径必须消失：
+    配对问题归 `normalize_tool_pairing`（每次请求都做，不改历史），
+    真能力缺失归 400 分支的**逐次**降级（不写 `_unsupported_fields`）。
+    """
+    import inspect
+
+    from src.video_agent.adapters import openai_compat as oc
+
+    src = inspect.getsource(oc._prepare_endpoint_messages)
+    assert "normalize_tool_pairing" in src, "发出前必须做配对归一"
+    assert "MSG_TOOL_ROLE_KEY" not in src, \
+        "粘性 tool role 降级必须从请求侧移除（9999 根因）"
+    assert not hasattr(oc, "MSG_TOOL_ROLE_KEY"), \
+        "粘性记忆键必须整体退役，不得留兼容空壳"
+    assert not hasattr(oc, "_downgrade_tool_role_messages"), \
+        "粘性历史改写函数必须整体退役，不得留兼容空壳"
+
+
+def test_11111_demote_prefix_mismatches_feedback_marker():
+    """Q2 附带发现：降级前缀 ≠ `FEEDBACK_MARKER`（**影响面已收窄**）。
 
     实测：适配器写「（系统）本轮工具执行结果：」，而
     `fc_feedback.FEEDBACK_MARKER` = 「（系统）本轮调用的工具已执行完毕，
-    结果如下：」⇒ `_is_feedback_msg` 对降级后的消息返回 **False**。
-    后果（降级粘性 ⇒ 全程生效）：`digest_projected_tool_lines`（工具行摘要
-    压缩）与 `_skill_section_seen`（read_skill 去重）在降级通道下双双失效。
-    本钉**锁定当前事实**，防「注释声称兼容、实际不兼容」的静默漂移；
-    若将来接线（统一前缀），本钉须同批更新并留痕。
+    结果如下：」⇒ `_is_feedback_msg` 对降级后的消息返回 **False**，
+    故 `digest_projected_tool_lines`（工具行摘要压缩）与 `_skill_section_seen`
+    （read_skill 去重）在降级消息上不生效。
+
+    2026-10-08 批口径变更：降级已从**粘性**改为**逐次**（不写
+    `_unsupported_fields`）⇒ 该前缀不匹配只在**那一次重试请求**上存在，
+    不再像旧版那样「一经启用、本实例全程生效」。本钉**锁定当前事实**，
+    防「注释声称兼容、实际不兼容」的静默漂移；若将来统一前缀，须同批
+    更新本钉并留痕。
     """
     from src.video_agent.core.fc_feedback import (
         FEEDBACK_MARKER, _is_feedback_msg,
     )
 
-    out = _downgrade([{"role": "tool", "tool_call_id": "c1", "content": "x"}])
+    out = _demote([{"role": "tool", "tool_call_id": "c1", "content": "x"}])
     msg = out[0]
     assert not msg["content"].startswith(FEEDBACK_MARKER), \
         "若前缀已统一，请更新本钉并在 CHANGELOG 留痕"

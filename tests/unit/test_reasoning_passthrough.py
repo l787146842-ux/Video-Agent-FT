@@ -192,9 +192,14 @@ async def test_400_named_reasoning_does_not_strip_top_level_fields(_gate_on):
 
 @respx.mock
 @pytest.mark.allow_degradation
-async def test_400_tool_role_downgrades_to_user_disguise(_gate_on):
-    """C2 兜底：端点 400 点名拒收 tool role → 降级 user 伪装重试并记忆，
-    后续请求沿用旧通道（assistant.tool_calls 也回退文本占位）"""
+async def test_400_tool_role_unsupported_demotes_this_request_only(_gate_on):
+    """2026-10-08 批（事故 9999 根因修复，用户裁决「按 dsh 方案做」）：
+    端点**明示**不支持 tool role → 本次请求降级重试，但**不粘性**。
+
+    旧行为（已退役）：降级写入 `_unsupported_fields` 永久沿用，并改写模型
+    可见历史 ⇒ 模型照抄 `⟦TOOL_CALLS: …⟧` 占位符、真工具调用蒸发。
+    现行为：逐次决策 —— 第一次请求降级，**第二次请求仍走标准 tool 通道**。
+    """
     route = respx.post(f"{BASE_URL}/chat/completions").mock(
         side_effect=[
             httpx.Response(400, json={"error": {
@@ -216,14 +221,14 @@ async def test_400_tool_role_downgrades_to_user_disguise(_gate_on):
     await a.chat([dict(m) for m in history])
     sent2 = json.loads(route.calls.last.request.content)
     roles2 = [m.get("role") for m in sent2["messages"]]
-    assert "tool" not in roles2, "400 后重试请求不含 tool role"
-    assert sent2["messages"][1].get("role") == "assistant"
-    assert "tool_calls" not in sent2["messages"][1], "assistant.tool_calls 一并回退文本占位"
+    assert "tool" not in roles2, "400 后本次重试请求降级为不含 tool role"
+    assert "tool_calls" not in sent2["messages"][1], "assistant.tool_calls 一并降级占位"
     assert "章节正文" in sent2["messages"][2]["content"], "tool 结果转 user 伪装保留内容"
-    # 记忆生效：第二次请求直接走旧通道
+    # ★ 关键逆转：不粘性 —— 第二次请求**恢复**标准 tool 通道
     await a.chat([dict(m) for m in history])
     sent3 = json.loads(route.calls.last.request.content)
-    assert all(m.get("role") != "tool" for m in sent3["messages"])
+    assert any(m.get("role") == "tool" for m in sent3["messages"]), \
+        "降级不得粘性沿用（旧行为：本实例后续请求一律降级 → 模型照抄占位符）"
     await a.close()
 
 

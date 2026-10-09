@@ -17,6 +17,7 @@ from src.video_agent.core import ports, prompt_gates
 # 只读常量；core.subagent 仅依赖 utils.prompts + skill_runtime，无环）。
 from src.video_agent.core.subagent import (
     PIPELINE_STAGE_KINDS, STAGE_LABELS, stage_card_contract,
+    stage_scope_contract,
 )
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
@@ -59,6 +60,14 @@ def _stage_hint() -> str:
     父级 prompt 从无此表）⇒ 主代理在 `current_step` 里命令子代理建
     图像卡、5 次全被闸拒收（占两次委派总时长 ≥46%）。
     渲染源 = `subagent.stage_card_contract`（两张表仍为唯一事实源）。
+
+    2026-10-08 批（事故 9999「思考打架」修复，用户裁决「把分工弄对、文案写清楚」）：
+    追加**媒体生成阶段的边界声明**。病灶 = 主代理无法从任何地方得知
+    `media_generate` 只管「写提示词建卡」而「出图」仍归主线程，只能在
+    「阶段=委派」与「花钱不委派」两条规则间反复自我辩论（9999 单会话
+    57 处命中，`conv-1791119953-edc63c90` seq=7/22/30 逐条留痕）。
+    渲染源 = `subagent.stage_scope_contract`（与建卡限定同为**正向声明**，
+    不新增散文禁令；该阶段的工具面本身即结构证据）。
     """
     pairs = "、".join(
         f"{k}（{STAGE_LABELS.get(k, k)}）"
@@ -71,6 +80,10 @@ def _stage_hint() -> str:
             f"{k}（{stage_card_contract(k)}）"
             for k in sorted(PIPELINE_STAGE_KINDS) if stage_card_contract(k))
         + "。安排 current_step / task 时以该限定为准。"
+        + "各阶段的分工边界：" + "；".join(
+            f"{k}（{stage_scope_contract(k)}）"
+            for k in sorted(PIPELINE_STAGE_KINDS) if stage_scope_contract(k))
+        + "。"
     )
 
 

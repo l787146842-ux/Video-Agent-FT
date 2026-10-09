@@ -27,6 +27,7 @@ from .base_chat import (
     new_request_id,
 )
 from .base import BaseImageAdapter, ImageGenerationResponse
+from src.video_agent.utils.prompts import load_prompt_section
 from .errors import (
     KIND_NETWORK,
     KIND_REFUSAL,
@@ -307,47 +308,164 @@ def _strip_messages_reasoning(messages: List[Dict[str, Any]]) -> List[Dict[str, 
 
 # 400 兜底记忆键：assistant 消息内字段（与 payload 顶层字段键共集合存放）
 MSG_REASONING_KEY = "messages.reasoning_content"
-# C2 兜底记忆键：端点拒收标准 tool role 消息 → 整体降级 user 伪装
-MSG_TOOL_ROLE_KEY = "messages.tool_role"
+
+# ---------- 400 文案精确分类（dsh 对齐：code 分类，不解析模糊子串） ----------
+#
+# 2026-10-08 批（事故 9999「工具调用凭空蒸发」根因修复，用户裁决「按 dsh 方案做」）：
+#
+# 病灶链（全套取证见 CHANGELOG 同批条目）：
+#   ① 供应商 400 文案「Messages with role 'tool' must be a response to a
+#      preceding message with 'tool_calls'」是**配对错误**（我们发出去的历史
+#      不合法），不是能力缺失；
+#   ② 旧判定用 `"tool" in body` **子串**匹配 —— 该文案里同时含
+#      `role 'tool'` 与 `'tool_calls'` ⇒ 恒为真 ⇒ **误判成「端点不支持
+#      tool role」**；
+#   ③ 误判触发粘性历史改写降级：把模型自己历史里的 assistant(tool_calls)
+#      全换成 `⟦TOOL_CALLS: 工具名⟧` 文本占位，并在本实例内**永久沿用**；
+#   ④ 模型每轮看到自己的历史全是该占位符，学会照抄 —— 真到要干活时只写
+#      正文、不发工具调用 ⇒ **工具调用凭空蒸发**（假停 + 活干一半）。
+#
+# 反证（决定性）：同一端点上 123 个样本以 69–99 条消息、tool_calls>0 正常
+# 应答 ⇒ 该端点**接受** tool role。全库 500 份抓包中含 "tool" 的 400 共 3 条，
+# **全部**是配对错误，**零**条「真不支持 role」。
+#
+# dsh 对照（`@deepseek-ai/dsh-llm` 等 724 个包全量核查）：
+#   - dsh **不存在**运行时格式降级，也**不存在**「记住降级」的集合；
+#   - 原文「Unsupported explicit efforts reject before provider I/O;
+#     **no clamping or aliasing is performed**」⇒ 能力问题**发出前**拒绝；
+#   - 「Model-visible ⟺ logged ... requests are deep-frozen and
+#     **never rewritten**」⇒ 历史**永不改写**；
+#   - 供应商怪癖由**适配器**在序列化时承担（「adapters own the wire」）。
+# ⇒ 修法同向：**删掉历史改写降级**，改为「发出前配对归一 + 400 精确分类」。
+
+# 真·不支持 tool role（能力缺失）：只认明确的能力/角色声明语句
+_TOOL_ROLE_UNSUPPORTED_RE = re.compile(
+    # 「role tool is not supported」/「the tool role is unsupported」
+    r"(?:role\s*['\"]?tool['\"]?|tool\s+role)\s*(?:is\s*)?"
+    r"(?:not\s+support\w*|unsupported|not\s+recognized|unrecognized|not\s+known|unknown)"
+    # 「unsupported role: tool」/「unknown role 'tool'」
+    r"|(?:unsupported|unknown|invalid|unrecognized)\s+role\b[^.]{0,40}?\btool\b",
+    re.I,
+)
+
+# 配对错误（我们的历史不合法）：明确指向「tool 必须回应前置 tool_calls」
+_TOOL_PAIRING_ERROR_RE = re.compile(
+    r"must\s+be\s+a\s+response\s+to\s+a\s+preceding\s+message"
+    r"|preceding\s+message\s+with\s*['\"]?tool_calls"
+    r"|messages?\s+with\s+role\s*['\"]?tool['\"]?\s+must",
+    re.I,
+)
 
 
-def _downgrade_tool_role_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """拒收型端点降级：assistant.tool_calls 消息转回 assistant 文本占位，
-    role:"tool" 结果消息转回 user 伪装（FEEDBACK_MARKER 前缀，与旧格式
-    兼容——fc_feedback 家族的文本解析对两种形态都成立）。浅拷贝替换，
-    不改调用方历史本体。
+# 未应答调用的占位回喂：措辞唯一源 = prompts/planner/feedback.md::TOOL_RESULT_SUSPENDED
+# （与 core/session_log._suspended_tool_note 同源；Rule 6 禁硬编码 CJK prose）。
+# adapters → utils 是合法方向（check_layer_imports R3 明确放行），故直接引外置源。
+def _unanswered_tool_note() -> str:
+    return (load_prompt_section("planner/feedback.md", "TOOL_RESULT_SUSPENDED")
+            or "（该调用未执行完成，会话在此中断）")
 
-    2026-09-26 11111 取证批（样板话回声修复，用户批准）：
-    病灶 = **assistant 侧占位文案被模型当成自己的口吻模仿**。原文案是一句
-    完整的第一人称式陈述「（本轮为工具调用轮：{names}，结果见紧随其后的
-    系统消息）」，而本降级**是粘性的**（`MSG_TOOL_ROLE_KEY` 入
-    `_unsupported_fields` ⇒ 本实例后续请求一律沿用旧通道），于是模型每一轮
-    看到的**自己的历史全是这句样板话**，开始照抄。
 
-    实跑取证（`proj-1790409991-6152543d`，两次子代理 5 处纯文本轮逐字复现）：
-    其中 seq=57 那轮**确实带了 5 个工具调用**、正文却仍是该样板话 ⇒ 已成
-    "说话习惯"；模型推理两次自认 `I again failed to emit tool calls.`。
-    危害：被这句「结果见紧随其后的系统消息」暗示后，模型倾向只写正文、
-    忘记发工具，直接被轮末假停判定捕获（子代理#2 八步里丢 3 步）。
+def classify_tool_role_400(body: str) -> str:
+    """tool 相关 400 精确分类：返回 "pairing" / "unsupported" / "other"。
 
-    判别依据（非推测）：本函数用 `", ".join` **逗号连接**工具名、**从不产
-    `×N`**；而实测正文含 `×4`/`×5`/「含 corrected 字段顺序」——那些是模型
-    自己补的字 ⇒ 因果方向 = harness 给前半句、模型照抄并补全。
+    顺序要紧：配对错误优先判定 —— 其文案里也含 `role 'tool'` 与
+    `tool_calls`，宽松匹配会把两者混淆（这正是旧实现 `"tool" in body`
+    的病根）。两者互斥时的取舍依据：配对错误是**可自愈**的我们自身缺陷，
+    能力缺失是**不可自愈**的端点属性，修复动作完全不同。
+    """
+    text = str(body or "")
+    if _TOOL_PAIRING_ERROR_RE.search(text):
+        return "pairing"
+    if _TOOL_ROLE_UNSUPPORTED_RE.search(text):
+        return "unsupported"
+    return "other"
 
-    修法：改为**机械标记式**（对齐既有 `⟦PRUNE: …⟧` 结构标记口径，
-    `context_prune` 同款，见 `check_prompt_literals.DECLARED_DATA`）——
-    方括号 + 冒号 + 名词短语，**不写成第一人称完整句**，模型无从模仿；
-    工具名保留（排障需要，且是唯一可追溯调用内容的痕迹）。
 
-    ⚠️ 下方 `role:"tool"` 分支的前缀**不属本批改动范围**，且经实测**与
-    `fc_feedback.FEEDBACK_MARKER` 并非同一字符串**（适配器写「（系统）本轮
-    工具执行结果：」，而 FEEDBACK_MARKER 是「（系统）本轮调用的工具已执行完毕，
-    结果如下：」）⇒ `fc_feedback._is_feedback_msg` 对降级后的消息**返回
-    False**，历史注释所称「fc_feedback 家族的文本解析对两种形态都成立」
-    **不成立**。影响面 = `digest_projected_tool_lines`（工具行摘要压缩）与
-    `_skill_section_seen`（read_skill 去重）在降级通道下双双失效——降级是
-    粘性的，故该通道一经启用，两项优化全程不生效。**已登记，待裁决**，
-    本批只改 assistant 侧可模仿文案。
+def normalize_tool_pairing(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """发出前 tool 消息配对归一（dsh 对齐：I/O 之前校验，**不改写持久历史**）。
+
+    OpenAI 硬约束：每条 `role:"tool"` 必须紧跟在**声明了其 tool_call_id** 的
+    `assistant(tool_calls)` 之后。历史里任何来源的断裂（存量导入轮、压缩
+    检查点、就地改写、用户中断轮）都会让**整次请求**被供应商 400 拒收；
+    而拒收文案极易被误读成「端点不支持 tool role」（见上方批注）。
+
+    本函数在**发送副本**上就地修复，调用方历史本体不变（浅拷贝替换）：
+      - 孤立 tool 结果（前置未声明该 id，含 id 为空的存量导入轮）→ 转
+        `role:"user"`，**内容一字不丢**（内容早已落会话事件流，此处只是
+        请求投影的合法化；对齐 dsh「durable 引用 → 路由专用请求版本」）；
+      - assistant 声明了调用却没有结果 → 补占位 tool 结果（满足「每个
+        tool_call 必有对应 tool 消息」，与 session_log 补位同口径）。
+
+    幂等：已合法的消息序列原样返回（同一列表对象，零拷贝）。
+    """
+    if not messages:
+        return messages
+    out: List[Dict[str, Any]] = []
+    mutated = False
+    i = 0
+    while i < len(messages):
+        m = messages[i]
+        if not isinstance(m, dict):
+            out.append(m)
+            i += 1
+            continue
+        role = m.get("role")
+        if role == "assistant" and m.get("tool_calls"):
+            calls = [c for c in (m.get("tool_calls") or []) if isinstance(c, dict)]
+            declared = [str(c.get("id") or "") for c in calls]
+            # 收集紧随其后的 tool 结果块
+            results: List[Dict[str, Any]] = []
+            j = i + 1
+            while j < len(messages) and isinstance(messages[j], dict) \
+                    and messages[j].get("role") == "tool":
+                results.append(messages[j])
+                j += 1
+            answered = {str(r.get("tool_call_id") or "") for r in results}
+            out.append(m)
+            # ① 该 assistant 声明但无结果的 → 补占位
+            for cid in declared:
+                if cid and cid not in answered:
+                    out.append({"role": "tool", "tool_call_id": cid,
+                                "content": _unanswered_tool_note()})
+                    mutated = True
+            # ② 结果落在声明集合内 → 原样保留；否则 → 转 user（内容不丢）
+            for r in results:
+                cid = str(r.get("tool_call_id") or "")
+                if cid and cid in declared:
+                    out.append(r)
+                else:
+                    new_r = {k: v for k, v in r.items() if k != "tool_call_id"}
+                    new_r["role"] = "user"
+                    out.append(new_r)
+                    mutated = True
+            i = j
+            continue
+        if role == "tool":
+            # 走到这里 = 没有前置 assistant(tool_calls) 声明它 ⇒ 孤立
+            new_m = {k: v for k, v in m.items() if k != "tool_call_id"}
+            new_m["role"] = "user"
+            out.append(new_m)
+            mutated = True
+            i += 1
+            continue
+        out.append(m)
+        i += 1
+    return out if mutated else messages
+
+
+def _demote_tool_role_for_request(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """真·不支持 tool role 的端点：**本次请求**降级 user 伪装（不粘性）。
+
+    与 2026-09-26 之前那版的关键区别：**不写 `_unsupported_fields`**。
+    旧版「降级是粘性的」是本次事故的放大器——一次误判即让该实例此后
+    每一轮请求都改写历史，模型持续照抄占位符。改为逐次决策后：
+      - 配对 bug 已由 `normalize_tool_pairing` 在发出前消除 ⇒ 本分支
+        在实跑中不再被触发（全库 500 份抓包零「真不支持」样本）；
+      - 即便将来真遇到这类端点，也只影响**那一次**请求，且下一轮
+        仍走标准 tool 通道（不污染模型对自己历史的认知）。
+
+    assistant 侧：tool_calls 转文本占位（机械标记式，模型无从模仿）；
+    tool 侧：转 user 并保留内容（一字不丢）。浅拷贝，不改调用方本体。
     """
     out = messages
     mutated = False
@@ -392,13 +510,16 @@ def _gate_reasoning_passthrough(
 def _prepare_endpoint_messages(
     messages: List[Dict[str, Any]], unsupported: set,
 ) -> List[Dict[str, Any]]:
-    """请求侧消息变换统一入口：思考回传闸门 + 400 兜底记忆
-    （reasoning_content 剥离 / tool role 降级 user 伪装）。"""
+    """请求侧消息变换统一入口：思考回传闸门 + 400 兜底记忆（reasoning 剥离）
+    + **发出前 tool 配对归一**（2026-10-08 批）。
+
+    tool role 降级的粘性记忆已退役（事故 9999 根因）：它由子串误判触发、
+    且改写模型可见历史致其照抄占位符。配对问题改在**这里**（任何请求都先
+    归一，dsh 同款「I/O 之前校验」），真能力缺失才在 400 分支逐次降级。
+    """
     msgs = _gate_reasoning_passthrough(
         messages, force_strip=MSG_REASONING_KEY in unsupported)
-    if MSG_TOOL_ROLE_KEY in unsupported:
-        msgs = _downgrade_tool_role_messages(msgs)
-    return msgs
+    return normalize_tool_pairing(msgs)
 
 
 class OpenAICompatChatAdapter(BaseChatAdapter):
@@ -515,19 +636,39 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 "剥离历史思考字段后重试一次（本实例后续请求不再携带）"
             )
             return True
-        # C2 兜底：报文点名 tool 且请求确带 tool role/tool_calls 消息 →
-        # 整体降级 user 伪装重试（旧通道文本解析兼容，无害回退）
-        if ("tool" in body and MSG_TOOL_ROLE_KEY not in self._unsupported_fields
-                and any(isinstance(m, dict) and (m.get("role") == "tool" or m.get("tool_calls"))
-                        for m in (payload.get("messages") or []))):
-            payload["messages"] = _downgrade_tool_role_messages(payload.get("messages") or [])
-            self._unsupported_fields.add(MSG_TOOL_ROLE_KEY)
-            record_degradation("adapter.tool_role_unsupported")
-            logger.warning(
-                "[OpenAICompat] 端点 400 拒收 tool role 消息，降级 user 伪装后"
-                "重试一次（本实例后续请求沿用旧通道）"
-            )
-            return True
+        # 2026-10-08 批（事故 9999 根因修复，用户裁决「按 dsh 方案做」）：
+        # tool 相关 400 **精确分类**后分流 —— 旧实现用 `"tool" in body`
+        # 子串匹配，把「配对错误」（我们历史不合法）误判成「端点不支持
+        # tool role」，进而触发**粘性历史改写降级**，让模型照抄占位符、
+        # 工具调用凭空蒸发（完整取证见本模块 _TOOL_* 常量上方批注）。
+        #   · pairing → 我们自身的可自愈缺陷：**就地修配对后重试一次**，
+        #     绝不改写历史、绝不记住（下轮历史本就合法，无需记忆）；
+        #   · unsupported → 真能力缺失：只在**本次请求副本**上降级重试，
+        #     **不写入 `_unsupported_fields`**（不粘性）——配对 bug 修好后
+        #     不再有任何东西能触发它，留作最后防线而非常态通道。
+        if "tool" in body and any(
+                isinstance(m, dict) and (m.get("role") == "tool" or m.get("tool_calls"))
+                for m in (payload.get("messages") or [])):
+            _kind400 = classify_tool_role_400(body)
+            if _kind400 == "pairing":
+                _fixed = normalize_tool_pairing(payload.get("messages") or [])
+                if _fixed is not payload.get("messages"):
+                    payload["messages"] = _fixed
+                    record_degradation("adapter.tool_pairing_normalized")
+                    logger.warning(
+                        "[OpenAICompat] 400 判定为 tool 消息配对错误（非能力缺失）："
+                        "发送副本配对归一后重试一次（历史本体不改写、不记忆）"
+                    )
+                    return True
+            elif _kind400 == "unsupported":
+                payload["messages"] = _demote_tool_role_for_request(
+                    payload.get("messages") or [])
+                record_degradation("adapter.tool_role_unsupported")
+                logger.warning(
+                    "[OpenAICompat] 端点 400 明示不支持 tool role："
+                    "本次请求降级 user 伪装重试（**不记忆**，下轮仍按标准 tool 通道）"
+                )
+                return True
         fields = [k for k in ("response_format", "reasoning_effort", "enable_thinking") if k in payload]
         if not fields:
             return False
