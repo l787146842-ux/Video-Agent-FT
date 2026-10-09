@@ -94,7 +94,7 @@ async def lifespan(_app: FastAPI):
     load_runtime_settings()  # 运行时设置（fallback 开关等）持久化覆盖，热生效
     # Skill 下拉框与目录只保留 data/skills/*.md 文档 Skill
     ensure_default_skill_docs()
-    StateManager.get_instance()  # 触发加载/初始化
+    StateManager.init_default()  # 声明服务进程身份并触发加载/初始化（事故 1111）
     # 数据 TTL 启动清理——技能历史版本全量收敛（每 slug 保留最近 N 版）；
     # 生成任务表 TTL 清理由 task_manager._load_persisted 末尾自动执行
     try:

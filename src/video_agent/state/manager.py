@@ -122,30 +122,80 @@ class StateManager(UndoRedoMixin):
     # 单例
     _instance: Optional["StateManager"] = None
 
+    # 默认工作区授权位（事故 1111，2026-10-09）：进程级显式声明「本进程是
+    # 服务进程、有权使用生产 workspace」。只有 init_default() 置位。
+    #
+    # 根因：原 get_instance() 在无任务绑定时**静默**回落 DEFAULT_WORKSPACE_DIR，
+    # 任何直接用 `python xxx.py` 跑的验证脚本都能拿到生产单例并整板写状态
+    # （事故 1111：.tmp_probe 验证脚本把测试夹具写进真实项目，覆盖 10 组/7 镜；
+    # tests/conftest.py 的隔离夹具只覆盖 pytest 进程，脚本绕过）。
+    # 依 P2 约束下沉：进程身份是客观事实、可机械判定 ⇒ 改为 fail-loud 报错，
+    # 不用 prose 劝阻脚本。拿不到就停下，绝不静默写生产库。
+    _default_authorized: bool = False
+
     @classmethod
-    def get_instance(cls) -> "StateManager":
-        """获取状态管理器：后台任务上下文内返回任务专属实例，其余返回全局单例。"""
-        bound = _task_state_var.get()
-        if bound is not None:
-            return bound
+    def init_default(cls) -> "StateManager":
+        """显式声明本进程使用生产 workspace 并初始化全局单例。
+
+        唯一合法调用点 = 服务启动（web/app.py lifespan）。测试/脚本一律
+        显式 `StateManager(<临时目录>)` 并自行绑定，不走本入口。
+        """
+        cls._default_authorized = True
         if cls._instance is None:
             cls._instance = cls(str(DEFAULT_WORKSPACE_DIR))
         return cls._instance
 
     @classmethod
+    def get_instance(cls) -> "StateManager":
+        """获取状态管理器：后台任务上下文内返回任务专属实例，其余返回全局单例。
+
+        未授权且无任务绑定时**抛错**（不再静默回落生产 workspace，事故 1111）。
+        """
+        bound = _task_state_var.get()
+        if bound is not None:
+            return bound
+        if cls._instance is not None:
+            return cls._instance
+        if not cls._default_authorized:
+            raise StateError(
+                "StateManager 默认工作区未授权：本进程未声明为服务进程。"
+                "服务启动请经 StateManager.init_default()；"
+                "测试/脚本请显式 StateManager(<临时工作区>) 并绑定实例"
+                "（详见事故 1111：脚本静默写生产库）"
+            )
+        cls._instance = cls(str(DEFAULT_WORKSPACE_DIR))
+        return cls._instance
+
+    @classmethod
     def reset_instance(cls) -> None:
-        """重置单例（测试用）"""
+        """重置单例（测试用）。
+
+        注意：本方法**同时清除授权位**——避免测试/脚本在一次 init_default()
+        后长驻授权，使后续误用重新变成静默写生产库。
+        """
         cls._instance = None
+        cls._default_authorized = False
 
     @classmethod
     def create_task_bound(
-        cls, project_id: str, workspace_dir: str = str(DEFAULT_WORKSPACE_DIR),
+        cls, project_id: str, workspace_dir: str = "",
     ) -> "tuple[StateManager, Token]":
         """为后台 Agent 任务创建专属实例并绑定到当前 context（任务级隔离）。
 
         任务提交时锁定所属项目：即使之后用户切换项目/刷新页面，
         worker 内所有 StateManager.get_instance 都命中本实例，不串写。
+
+        workspace_dir 缺省 = 生产 workspace，但**要求本进程已授权**
+        （事故 1111 G4：本入口同样不得静默落到生产库；测试/脚本必须显式传目录）。
         """
+        if not str(workspace_dir or "").strip():
+            if not cls._default_authorized:
+                raise StateError(
+                    "create_task_bound 未指定工作区且本进程未授权默认工作区："
+                    "服务进程请先经 StateManager.init_default()；"
+                    "测试/脚本请显式传 workspace_dir（详见事故 1111）"
+                )
+            workspace_dir = str(DEFAULT_WORKSPACE_DIR)
         svc = cls(workspace_dir)
         svc._instance_tag = f"task:{project_id}"  # 批 B 取证：标识任务专属实例
         if svc.active_project_id != project_id:
