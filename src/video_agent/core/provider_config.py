@@ -9,7 +9,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
+from src.video_agent.state.models import (
+    CAT_AUDIO_ITEMS,
+    CAT_KEY_ELEMENTS,
+    CAT_SHOTS,
+    # 种类判据唯一源（与 build_draft_dict / 闸机同引）：补印按**媒体种类**判，
+    # 不再按状态类别判（事故 1111 复查：分镜下的图像卡两边都不沾、漏补分辨率）
+    infer_media_type,
+)
 from src.video_agent.utils.provider_config_loader import (  # noqa: F401
     load_merged_providers,
     load_merged_providers_async,
@@ -109,6 +116,46 @@ def resolve_draft_channel(draft: Dict[str, Any], kind: str = "image") -> Tuple[s
     pid = str(draft.get(pid_field) or draft.get("providerId") or "").strip()
     model = str(draft.get(model_field) or draft.get("model") or "").strip()
     return pid, model
+
+
+def resolve_draft_production_params(
+    draft: Dict[str, Any], kind: str = "image",
+) -> Dict[str, Any]:
+    """读取**草稿卡自带**的制作参数（分辨率/时长/画幅）。
+
+    与 `resolve_draft_channel` 同源同口径（用户裁决 2026-10-09：除分镜最大时长外
+    全部制作参数以卡为唯一事实源）：**只读卡**、只补齐缺省、不做跨来源回退。
+
+    返回键（按种类给全，未配置为空串，调用方自行决定是否回落全局设置）：
+    - image：`image_resolution`（1K/2K/4K）、`aspect_ratio`
+    - video：`video_resolution`（480p/720p/1080p…）、`duration`（"5s" → 5）、
+      `aspect_ratio`
+
+    时长字段在卡上是字符串（`"12s"`），此处解析为整数秒（解析失败回落 0 =
+    未知，由调用方决定）。`max_shot_duration` **不参与**：它是 Agent 拆镜的
+    单镜上限（拆解用），不是卡上的生成参数（用户明确排除）。
+    """
+    if not isinstance(draft, dict):
+        draft = {}
+    if str(kind or "image").strip().lower() == "video":
+        return {
+            "video_resolution": str(draft.get("resolution") or "").strip(),
+            "duration": _parse_seconds(draft.get("duration")),
+            "aspect_ratio": str(
+                draft.get("videoAspectRatio") or draft.get("aspectRatio") or "").strip(),
+        }
+    return {
+        "image_resolution": str(draft.get("imageResolution") or "").strip(),
+        "aspect_ratio": str(draft.get("aspectRatio") or "").strip(),
+    }
+
+
+def _parse_seconds(value: Any) -> int:
+    """卡上时长字符串 → 整数秒（"12s"/"12 秒"/12 → 12；解析失败 → 0）。"""
+    if isinstance(value, (int, float)):
+        return int(value)
+    m = re.search(r"(\d+(?:\.\d+)?)", str(value or ""))
+    return int(float(m.group(1))) if m else 0
 
 
 # ---------- 规格文档媒体偏好 ----------
@@ -255,31 +302,41 @@ def apply_spec_channel_selections(content: str, reply: str) -> Tuple[str, List[s
 
 
 def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any], cat_key: str) -> bool:
-    """新建草稿时补印全局默认（草稿无值时被前端硬编码首选供应商回填污染）。
+    """新建草稿时补印全局默认制作参数与渠道（草稿无值时补，**已有值不覆盖**）。
 
-    补印顺序：分辨率/时长全局默认（草稿自带不覆盖）→ 供应商/模型
-    （唯一权威源=全局设置；仅当草稿未自带 providerId 时补印，
-    防前端默认首选供应商回填污染——参数栏与全局设置不一致；
-    audioItems 跳过供应商补印）。返回是否发生补印。"""
+    用户裁决（2026-10-09，渠道单一事实源批延伸）：「全局设置里设好 → 建卡按设置
+    补印进卡 → 自动出图按卡内已填参数执行」，**除分镜最大时长外全部制作参数**
+    都要走这条链（分辨率/时长/画幅/渠道）。故本函数是「卡上必有值」的**结构保证**：
+    执行期因此可以放心读卡，不必靠回退链猜。
+
+    分辨率/时长按**媒体种类**补印（2026-10-09 事故 1111 复查修正）：旧实现按
+    **状态类别**判（`cat_key == CAT_KEY_ELEMENTS` 才补 imageResolution、
+    `cat_key == CAT_SHOTS` + video 才补 resolution）⇒ **分镜下的图像卡**
+    （分镜表格图/运镜轨迹示意图，mediaType=image）两边都不沾、拿不到分辨率。
+    种类判据唯一源 = `infer_media_type`（与 build_draft_dict / 闸机同源）。
+
+    渠道仍按种类字段隔离写入，并同步保留旧共享字段供旧链路回退；
+    audioItems 跳过渠道补印（音频走独立通道）。返回是否发生补印。
+    """
     if not isinstance(draft, dict):
         return False
     stamped = False
-    # 分辨率/时长全局默认（与供应商无关，先补）
-    if cat_key == CAT_KEY_ELEMENTS and not str(draft.get("imageResolution") or "").strip():
+    kind = infer_media_type(draft)
+    # 分辨率：按**媒体种类**补（不再按类别判，防分镜图像卡漏补）
+    if kind == "image" and not str(draft.get("imageResolution") or "").strip():
         draft["imageResolution"] = settings.default_image_resolution
         stamped = True
-    if cat_key == CAT_SHOTS and str(draft.get("mediaType") or "").strip().lower() == "video":
+    if kind == "video":
         if not str(draft.get("resolution") or "").strip():
             draft["resolution"] = settings.default_video_resolution
             stamped = True
+        # 时长：仅作**初始种子**取自 max_shot_duration（该值服务于 Agent 拆镜的
+        # 单镜上限）；落卡后由 sync_shot_duration 与分镜结构时长对齐，执行期读卡。
         if not str(draft.get("duration") or "").strip():
             draft["duration"] = f"{settings.max_shot_duration}s"
             stamped = True
-    if cat_key == CAT_AUDIO_ITEMS:
+    if kind == "audio":
         return stamped
-    kind = "image"
-    if cat_key == CAT_SHOTS and str(draft.get("mediaType") or "").strip().lower() == "video":
-        kind = "video"
     # 按种类参数隔离：补印写本种类字段，旧共享字段同步保留供旧链路回退
     pid_field = "imageProviderId" if kind == "image" else "videoProviderId"
     model_field = "imageModel" if kind == "image" else "videoModel"

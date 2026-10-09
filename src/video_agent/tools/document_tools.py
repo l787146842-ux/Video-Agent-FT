@@ -36,6 +36,7 @@ from src.video_agent.core.provider_config import (
     first_available_image_provider_async,
     first_image_model,
     resolve_draft_channel,
+    resolve_draft_production_params,
     resolve_provider_ref,
     spec_media_preference,
     spec_production_params,
@@ -925,8 +926,10 @@ class ImageGenerateTool(BaseTool):
                         f"无自带模型且全局设置未提供，兜底取供应商 '{pid}' 首个图片模型: {model}")
             return pid, model, source
 
-        # 规格制作参数：图片分辨率由规格文档优先，
-        # 其次草稿自带，最后全局默认（回退链与供应商链口径一致）
+        # 制作参数（分辨率）同样**以卡为唯一事实源**（用户裁决 2026-10-09：
+        # 除分镜最大时长外全部制作参数都按卡内已填参数执行）。
+        # 旧实现此处顺序是「全局设置 → 卡 → 全局默认」，全局设置**压过卡**
+        # ⇒ 与渠道同病（卡上选了 4K 却被全局 2K 覆盖）。现改为 卡 → 全局设置。
         spec_image_res = str(spec_production_params(state).get("image_resolution") or "")
 
         # 统一任务管线提交：提交即记录生成日志 + SSE 点亮前端卡片读秒，
@@ -944,14 +947,15 @@ class ImageGenerateTool(BaseTool):
                 "[image_generate] 卡 '{}' 渠道来源={} → {}/{}",
                 draft.get("label") or draft.get("id"), _source, provider_id, model)
             refs = ops.resolve_shot_refs(state, group) if group else []
+            card_params = resolve_draft_production_params(draft, "image")
             eff_resolution = (
-                spec_image_res or str(draft.get("imageResolution") or "")
-                or settings.default_image_resolution or "1K"
+                card_params.get("image_resolution")
+                or spec_image_res or settings.default_image_resolution or "1K"
             )
             draft["imageResolution"] = eff_resolution  # 参数栏同步可见
             task_id = submit_image_task(
                 state, draft, provider_id, model, refs,
-                aspect_ratio=(draft.get("aspectRatio") or "16:9"),
+                aspect_ratio=(card_params.get("aspect_ratio") or "16:9"),
                 resolution=eff_resolution,
                 on_failure_save=svc.save_debounced,
                 draft_type=dtype,

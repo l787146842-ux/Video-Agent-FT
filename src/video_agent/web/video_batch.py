@@ -21,6 +21,7 @@ from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_SHOTS
+from src.video_agent.core.provider_config import resolve_draft_production_params
 
 _PERSIST_PATH = DATA_DIR / "video_batch_tasks.json"
 _MAX_BATCHES = 50
@@ -188,11 +189,19 @@ class VideoBatchManager:
                 self._touch(record)
                 try:
                     image_refs, audio_refs = collect_shot_video_refs(state, group, draft)
+                    # 制作参数以卡为唯一事实源（用户裁决 2026-10-09）：卡上分辨率/
+                    # 时长/画幅优先，批次入参次之，全局设置末级兜底。旧实现直接用
+                    # 批次记录里的值 ⇒ 用户逐卡改的分辨率/时长在批量子模式下不生效。
+                    _card = resolve_draft_production_params(draft, "video")
                     task_id = submit_video_task(
                         state, draft, "shot", record["provider_id"], record["model"],
-                        duration=int(record.get("duration") or settings.max_shot_duration),
-                        resolution=record.get("resolution") or settings.default_video_resolution,
-                        aspect_ratio=str(draft.get("videoAspectRatio") or draft.get("aspectRatio") or "16:9"),
+                        duration=(_card.get("duration")
+                                  or int(record.get("duration") or 0)
+                                  or settings.max_shot_duration),
+                        resolution=(_card.get("video_resolution")
+                                    or record.get("resolution")
+                                    or settings.default_video_resolution),
+                        aspect_ratio=(_card.get("aspect_ratio") or "16:9"),
                         image_refs=image_refs, audio_refs=audio_refs,
                         source="batch",
                     )

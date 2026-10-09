@@ -12,11 +12,13 @@ from fastapi import APIRouter
 from loguru import logger
 
 from src.video_agent.exceptions import GenerationError, VideoAgentError
+from src.video_agent.config import settings
 from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_SHOTS, ALL_CATEGORIES_TUPLE
 # 2026-09-23 批10（事故 4444/P0-A）：shotRefs 解析唯一入口 = ops.find_ref_group
 from src.video_agent.state import storyboard_ops as ops
+from src.video_agent.core.provider_config import resolve_draft_production_params
 from src.video_agent.utils import gen_id
 from src.video_agent.web.generation import generate_image_via_provider, image_size_for
 
@@ -207,9 +209,14 @@ async def batch_generate_image(body: BatchImageGenRequest):
         prompt_text = draft["prompt"]
         provider_id = body.provider_id
         model_name = body.model
-        # 按草稿自身 比例 + 分辨率档位 计算尺寸（缺失时回退请求参数）
-        aspect_ratio = (draft.get("aspectRatio") or "").strip() or body.aspect_ratio
-        resolution = (draft.get("imageResolution") or "").strip().upper()
+        # 制作参数以卡为唯一事实源（用户裁决 2026-10-09，与 Agent 轨同源）：
+        # 卡上比例/分辨率 → 请求参数 → 全局设置默认（末级兜底）。
+        _card = resolve_draft_production_params(draft, "image")
+        aspect_ratio = _card.get("aspect_ratio") or body.aspect_ratio
+        resolution = (_card.get("image_resolution")
+                      or str(body.resolution or "").strip()).upper()
+        if resolution not in ("1K", "2K", "4K"):
+            resolution = (settings.default_image_resolution or "1K").upper()
         if resolution not in ("1K", "2K", "4K"):
             resolution = "1K"
         size = image_size_for(aspect_ratio, resolution)

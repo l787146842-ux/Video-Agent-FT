@@ -440,6 +440,167 @@ def test_1111_stamp_covers_create_group_path():
     assert "stamp_draft_spec_preference" in src_add, "add_draft 路径必须补印"
 
 
+# ---------- ⑥ 制作参数同口径：分辨率/时长/画幅也以卡为唯一事实源 ----------
+# 用户裁决 2026-10-09：「除了分镜最大时长，不用管，那个是给 agent 分镜用的。
+# 其他都要做，分辨率这些都要」。
+
+
+def test_1111_stamp_resolution_by_media_type_not_category(set_global_setting):
+    """补印按**媒体种类**判，不按状态类别 —— 分镜下的**图像卡**也要能拿到分辨率。
+
+    旧实现 `cat_key == CAT_KEY_ELEMENTS` 才补 imageResolution、`CAT_SHOTS`+video
+    才补 resolution ⇒ 分镜里的图像卡（分镜表格图/运镜轨迹示意图）两边都不沾，
+    卡上永远是空分辨率，执行期只能吃默认值。
+    """
+    from src.video_agent.core.provider_config import stamp_draft_spec_preference
+
+    set_global_setting("default_image_resolution", "2K")
+    set_global_setting("default_video_resolution", "720p")
+
+    # 分镜类别下的图像卡（旧实现漏补）
+    shot_img = {"mediaType": "image", "label": "分镜表格图"}
+    stamp_draft_spec_preference({}, shot_img, "shots")
+    assert shot_img.get("imageResolution") == "2K", \
+        "分镜下的图像卡必须补印图片分辨率（旧实现按类别判、此处漏补）"
+
+    # 关键元素类别下的图像卡（原路径不回归）
+    ke_img = {"mediaType": "image", "label": "三视图"}
+    stamp_draft_spec_preference({}, ke_img, "keyElements")
+    assert ke_img.get("imageResolution") == "2K"
+
+    # 分镜视频卡：分辨率 + 时长种子
+    shot_vid = {"mediaType": "video", "label": "分镜视频"}
+    stamp_draft_spec_preference({}, shot_vid, "shots")
+    assert shot_vid.get("resolution") == "720p"
+    assert shot_vid.get("duration"), "视频卡应有时长种子"
+
+
+def test_1111_resolve_draft_production_params_reads_card():
+    """读卡制作参数：只读卡、按种类给全、时长解析为整数秒。"""
+    from src.video_agent.core.provider_config import resolve_draft_production_params
+
+    img = resolve_draft_production_params(
+        {"imageResolution": "4K", "aspectRatio": "9:16"}, "image")
+    assert img == {"image_resolution": "4K", "aspect_ratio": "9:16"}
+
+    vid = resolve_draft_production_params(
+        {"resolution": "1080p", "duration": "12s", "aspectRatio": "16:9"}, "video")
+    assert vid == {"video_resolution": "1080p", "duration": 12, "aspect_ratio": "16:9"}
+
+    # 空卡 → 空串/0（调用方自行回落全局设置，本函数不臆造）
+    empty = resolve_draft_production_params({}, "video")
+    assert empty == {"video_resolution": "", "duration": 0, "aspect_ratio": ""}
+
+
+async def test_1111_image_resolution_card_wins_over_global(svc, monkeypatch, set_global_setting):
+    """卡上的图片分辨率优先于全局设置（旧实现顺序是全局优先 ⇒ 卡上选 4K 被 2K 覆盖）。"""
+    from src.video_agent.tools import document_tools
+    from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
+
+    monkeypatch.setattr(StateManager, "_instance", svc)
+    _seed(svc)
+    svc.state_dict["keyElements"][0]["drafts"][1]["imageResolution"] = "4K"
+    set_global_setting("default_image_resolution", "2K")
+    # 全局 spec 参数也指 2K（旧实现此处即覆盖卡值）
+    monkeypatch.setattr(document_tools, "spec_production_params",
+                        lambda state: {"image_resolution": "2K"})
+    captured = []
+    _stub_gen(monkeypatch, captured)
+
+    result = await ImageGenerateTool().aexecute(
+        GenerateImageInput(target="all_keyElements"))
+    assert result.success
+    await asyncio.sleep(0.3)
+    submitted = svc.state_dict["keyElements"][0]["drafts"][1]
+    assert submitted.get("imageResolution") == "4K", \
+        "卡上 4K 必须生效（旧实现被全局 2K 覆盖）"
+
+
+async def test_1111_image_resolution_falls_back_when_card_empty(svc, monkeypatch, set_global_setting):
+    """卡上无分辨率 → 回退全局设置（结构保证之外的存量卡仍需可用）。"""
+    from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
+
+    monkeypatch.setattr(StateManager, "_instance", svc)
+    _seed(svc)
+    svc.state_dict["keyElements"][0]["drafts"][1].pop("imageResolution", None)
+    set_global_setting("default_image_resolution", "2K")
+    captured = []
+    _stub_gen(monkeypatch, captured)
+
+    result = await ImageGenerateTool().aexecute(
+        GenerateImageInput(target="all_keyElements"))
+    assert result.success
+    await asyncio.sleep(0.3)
+    submitted = svc.state_dict["keyElements"][0]["drafts"][1]
+    assert submitted.get("imageResolution") == "2K"
+
+
+def test_1111_video_tool_injects_card_params(monkeypatch):
+    """agent 单镜视频：卡上时长/分辨率/画幅被注入，且分辨率真的进 generate()。
+
+    旧实现 tool 层只注入渠道，**分辨率根本没进 generate() 调用**（卡上选 720p
+    从不生效），时长也由模型入参决定、绕过卡。
+    """
+    import src.video_agent.core.ports as ports_mod
+    from src.video_agent.tools.base import ProviderInjectionContext
+    from src.video_agent.tools.video.generate_video import GenerateVideoTool
+
+    card = {"id": "d-1", "mediaType": "video", "duration": "12s",
+            "resolution": "1080p", "aspectRatio": "9:16"}
+
+    class _Port:
+        @staticmethod
+        def find_selected_draft(state, sid, stype):
+            return card
+
+        @staticmethod
+        def resolve_selected_draft_media_config(state, sid, stype, kind="video"):
+            return "prov-V", "vid-m"
+
+        @staticmethod
+        def resolve_draft_production_params(draft, kind):
+            from src.video_agent.core.provider_config import (
+                resolve_draft_production_params as real,
+            )
+            return real(draft, kind)
+
+    monkeypatch.setattr(ports_mod, "provider_config_port", lambda: _Port)
+
+    args = {"image_url": "http://img", "prompt": "动起来"}
+    GenerateVideoTool().apply_provider_defaults(
+        args, ProviderInjectionContext(state={}, selected_draft_id="d-1",
+                                       selected_type="shot"))
+    assert args["adapter_provider"] == "prov-V"
+    assert args["duration"] == 12, "卡上时长必须注入"
+    assert args["resolution"] == "1080p", "卡上分辨率必须注入"
+    assert args["aspect_ratio"] == "9:16", "卡上画幅必须注入"
+
+    # 显式入参优先，不被卡覆盖
+    args2 = {"image_url": "http://img", "prompt": "动", "duration": 5,
+             "resolution": "720p", "aspect_ratio": "16:9"}
+    GenerateVideoTool().apply_provider_defaults(
+        args2, ProviderInjectionContext(state={}, selected_draft_id="d-1",
+                                        selected_type="shot"))
+    assert (args2["duration"], args2["resolution"], args2["aspect_ratio"]) == (5, "720p", "16:9")
+
+
+def test_1111_max_shot_duration_not_used_as_card_param():
+    """分镜最大时长**不是**卡上的生成参数（用户明确排除）：读卡函数不读它。
+
+    `max_shot_duration` 服务于 Agent 拆镜的单镜上限；卡上的 `duration` 是
+    分镜结构时长（由 sync_shot_duration 对齐），两者不得混同。
+    """
+    from src.video_agent.core import provider_config as pc
+
+    # 读卡参数只认卡上的 duration，不回落 settings.max_shot_duration
+    got = pc.resolve_draft_production_params({"mediaType": "video"}, "video")
+    assert got["duration"] == 0, "卡无时长时返回 0（未知），不得回填 max_shot_duration"
+
+    # 槽位语义仍由拆镜侧持有（该值仍从 settings 读，未被本批改动）
+    from src.video_agent.config import settings
+    assert isinstance(settings.max_shot_duration, int)
+
+
 # ---------- 小工具 ----------
 
 
