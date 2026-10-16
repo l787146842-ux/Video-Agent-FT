@@ -36,6 +36,231 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-16 · 事故 9999 子代理线程泄漏 + 子任务入口迁址 + 左栏手势收窄（用户三裁决）
+
+- **立项（用户看 9999 截图三问，两轮确认后授权执行）**：①右侧会话标签栏出现一整排
+  「子代理」标签页；②子任务入口应从顶栏迁到会话标签栏前方、只要图标、执行中闪烁；
+  ③中间面板为子任务视图时只有点卡片才回预览框。用户第二轮逐条确认边界：只认草稿卡与
+  素材卡、严格按「只有卡片」执行、点击做成开关（再点回预览）、子任务视图下工作台保持高亮。
+- **批1 · 显示错误根因（`fix(state)`）**：可见性判据**有两处分身**——
+  `conversations_meta_payload` 过滤了 `scope`，而 `build_full_snapshot`（前端标签栏的
+  真实数据源 `/api/project/state`）没有，只 `pop("messages")` ⇒ 18 条
+  `scope.kind='subagent'` 隐藏线程被渲染成标签页。前端双保险 `stripScopedThreads` 拦不住
+  （它判的是微调线程登记表，子代理线程从不进该表），且 `GET /api/conversations` 这条已过滤
+  干净的接口前端启动时根本不调用 ⇒ 没有任何请求能纠正。
+  只读实测（`proj-1790513490-8468602e`）：快照 conversations = **19**（18 子代理），
+  meta 口径 = **1**。**附带次生缺陷**：`activeConversationId` 指向子代理线程
+  （`conv-1790513536-0857b9e4`「素材分析」）⇒ 主面板显示空线程、标签栏无对应高亮；
+  该 id 恰为数组第 0 条，而 `delete_conversation` 回落正是 `convs[0]`。
+  - **修法（P1 消分身）**：`conversation_ops` 立可见性单点 `is_hidden_thread` /
+    `is_visible_conversation` / `visible_conversations`，判据与 `scoped_threads_payload`、
+    `find_scoped_conversation` 同源收编；meta 面与快照面共用取数面（快照侧只消费不复述条件）。
+    `ensure_conversations` 补第二条不变式：**活跃对话必须是可见对话**（落隐藏线程自愈回落，
+    全隐藏则补建可见会话承载输入）；`switch_conversation` 拒切隐藏线程、
+    `delete_conversation` 回落取首个可见对话。隐藏线程清单面（`subagent_threads` /
+    `scoped_threads_payload`）行为不变，**18 条线程一条不删**（子任务面板与只读记录仍读它们）。
+  - **回归钉**：`tests/unit/test_9999_subagent_thread_tab_leak.py`（**16 例**：可见性单点判据
+    互补性、**快照面与 meta 面口径一致**、隐藏线程不泄进快照、过滤不回写 raw state、
+    两个清单面不受影响、活跃位自愈含落盘重载、全隐藏补建、切换/删除可见性守卫与
+    「仅剩一个可见对话」既有语义不退化）。
+- **批2 · 入口迁址（`feat(web)`）**：顶栏「子任务」文字项移除（`subagentsClass` 与
+  `navClass` 互斥特例一并撤除 ⇒ 导航回归三项、工作台页恒高亮）；入口改会话标签栏
+  **最前方**的仅图标按钮（`FiCpu`，`role` 语义走 `aria-label`/`aria-pressed`）。
+  闪烁判据 = actor 域新增 `subagentActivity()`（任一 actor `running`）——首个子事件入账即闪、
+  父 `run_subagent` 收尾（成功/失败）即停；点击为**开关**（子任务视图 ↔ 预览）。
+  样式复用既有 `status-pulse` 与 `--accent-emerald`/`--color-info` token（`check_semantic_colors`
+  绿，未新增硬编码色）。**陈旧线程不会闪成常亮**：9999 现存 23 条线程按 `thread_status`
+  口径复算 = running **0** / completed 11 / incomplete 11 / failed 1。
+  - **回归钉**：`RightPanel-subagents-entry.test.tsx`（**10 例**：位于全部会话标签之前且仅图标、
+    开关三态往返含反复切换、闪烁判据五支含失败收尾与串行多委派互不误停）；
+    `subagent-actors.test.ts` +3 例（压力面取值、失败收尾、刷新重建 static actor 的 running 照闪）；
+    `Header.test.tsx` 改写为「入口已迁出、导航不再互斥」4 例。
+- **批3 · 手势收窄（`fix(web)`）**：`LeftPanel` 删除容器级 catch-all 点击（原先页签/分组标题/
+  描述/空白/版本栏全算回程手势）⇒ 回预览**仅经草稿卡与素材卡**（click 或 Enter）。
+  回预览落点收敛为单点 `studioActions.returnToPreview`（草稿域与素材域共用，规则不两处写）；
+  **`selectDraft`/`selectAsset` 本体语义不变**——它们亦被 Agent 建卡（`board-edit` 内联 draft）
+  与卡片右键「添加到对话」等非手势路径调用，并入回预览会让 Agent 动作抢用户视图，
+  故另立手势动作而非改本体（`assets → ui` 依赖单向不成环）。
+  - **回归钉**：`LeftPanel.test.tsx` 改写为「不再 catch-all」5 例；新增
+    `card-gesture-return-preview.test.tsx` 8 例。
+- **文档**：`docs/前端体验规范.md` §二 新增「子任务入口」「中间面板回预览手势」两条强制约束，
+  §四台账新增 #25/#26/#27 三条映射；顶栏/左栏相关过期注释（`studio-core.ts`、`types/index.ts`、
+  `MiddlePanel.tsx`、`SubagentRail.tsx`、`LeftPanel.tsx`）按 P1 同批更正。
+- **存量处置**：9999 的 18 条子代理线程与事件流**原样保留**；活跃位已由本批不变量在加载时
+  自愈，无需一次性迁移脚本。
+
+### 2026-10-10 · 事故 1010 附带清偿：Skill 正文点名不存在的工具（`reply_to_user`）归一为 `workflow_pause`
+
+- **立项（用户四问之第 1 问「reply_to_user → workflow_pause 这个要做」）**：用户跑多个项目
+  发现「没有启动协议、一来就派子代理」，取证过程中**顺带发现**本项独立缺陷，用户当场裁决执行。
+- **缺陷本体**：**7 个 Skill 的 `<planner>`「何时暂停/暂停时机」一节把暂停动作指给
+  `reply_to_user`——该工具在本项目不存在**（注册表只有 `workflow_pause`）。
+  模型读到的是「用卡片或 reply_to_user 邀请用户审阅」，而结构上无法执行。
+- **根因（三重门同时漏，全链可验）**：
+  1. **2026-10-03 `626ddbab`「Flova planner 整体替换」按 Flova 原文整章重写** 10 个 Skill——
+     Flova 原版该句正是 `reply_to_user`（Flova 全库 7 处，其自身平台工具），一并搬入。
+  2. **迁移脚本对账名单漏列该项**：`scripts/archive/migrate_planner_to_flova.py` 的
+     「Flova 专名残留对账」只列 `Final_Video_Spec` / `resource_prepare_and_analyze` /
+     `text_editor` / `bind_asset` / `write_the_prompt` / `multimodal_analyze_tool`
+     六项，**`reply_to_user` 不在内** ⇒ 脚本内置的 fail-loud 未命中、静默落盘。
+  3. **无任何门禁校验「Skill 点名的工具是否存在」**：`check_skill_anchor_lint` 只管章节
+     标签配对与合法性，`check_stage_face_consistency` 只管章节映射，两者都放行。
+  - **历史反讽（决定性背景）**：`a9fc8257`（2026-08-31，**用户裁决**）标题即「删除
+     reply_to_user 独有章节，白名单对齐 Flova」——已把它从 `SECTION_TAG_STAGES`
+     与前端 `SECTION_TAGS`/`SECTION_META` 摘除；`ba75e2a0`（08-19）亦已退役
+     `FOREIGN_TOOL_MAP` 外部工具名翻译层 ⇒ **既无白名单也无翻译层，无任何一层能自动改写它**。
+- **修法（逐处语义适配，非机械全替换）**：按每处出现的语境分别改写，共 **9 处 / 7 个包**：
+  - 「何时暂停 / 暂停时机」6 处 → `workflow_pause`（叙事驱动的美学视频、商品宣传短片、
+    多人对话访谈、故事驱动型视频、视频拉片复刻、音乐MV需上传音乐、新-Skill 各 1 处）。
+  - 音乐MV「用户覆盖与风险」1 处 → 「您必须在 `workflow_pause` 中说明……」。
+  - 新-Skill「Prompt Draft 展示」1 处 → 「以 Prompt Draft 形式通过 workflow_pause 展示给用户」。
+  - **未纳入**：`新-Skill` 的 `resource_prepare_and_analyze` / `text_editor` /
+    `Final_Video_Spec.md` 等**章节 tag 与文档名**——它们是 Flova 章节词表，由
+    `SECTION_TAG_STAGES` 兼容别名**真实映射**（非悬空），D-24 已登记为「外来宿主词表，
+    另案」保留例外，本批不碰。
+- **冻结 #16 翻案登记**：`docs/冻结与暂缓清单.md` #16 追加第四次部分翻案——
+  放行范围**严格限于把 `reply_to_user` 改为 `workflow_pause`**（含上述 9 处），
+  Skill 其余正文零改动。
+- **新增回归钉（`tests/unit/test_1010_skill_tool_name_integrity.py`，9 例）**：
+  ① Skill 正文**零残留**已知外部平台工具名（当前 = `reply_to_user`，只增不减登记表）；
+  ② **点名即存在**——Skill 里出现的控制流工具名必须能在工具注册表找到；
+  ③ 逐包钉 7 个包的暂停工具已归一。
+  **突变验证已做**：把商品宣传短片的 `workflow_pause` 改回 `reply_to_user` ⇒
+  **2 例转红**（残留钉 + 逐包钉），还原后 9 例全绿。
+- **验收**：`acceptance.py --quick` **15/15 全绿（退出码 0）**；`check_skill_anchor_lint` /
+  `check_stage_face_consistency` / `check_tool_descriptions` / `check_prompt_literals` /
+  `check_fc_tool_name_literals` / `check_legacy_orchestration` / `check_category_keys`
+  逐项 PASS；受影响 Skill 系 6 文件 **48 passed**；新增钉 9 passed；
+  `tests/fixtures/skill_sections_golden.json` 按规程重采（6 条 `planning` 指纹，
+  chars +1/+2，**越界 0**——仅目标句所在章）。
+- **环境障碍（本机，非本批引入）**：pytest 在本机**完全无法启动**——`TempPathFactory`
+  以 `mode=0o700` 建 basetemp/`mktemp` 目录，Python 3.13 在 Windows 上把该 mode 落成
+  **仅属主 ACL**，而 DSH 沙箱受限令牌非其受信主体 ⇒ 目录建后即不可列举，
+  `tests/conftest.py:31` session 夹具 set-up 阶段 `PermissionError [WinError 5]`。
+  **实测与本批改动无关**（失败发生在读任何 Skill 正文之前；`git stash` 对照同样失败）。
+  验证绕行 = 临时插件 `.tmp_probe/ptyfix.py`（把 basetemp/`mktemp` 改默认 mode 建目录）
+  经 `-p ptyfix` 加载，**不改仓库任何文件**。已登记待裁决（见下）。
+- **边界（本批不动）**：仅修工具名归一。
+
+### 2026-10-10 · 主代理开场必先派子代理：删「不权衡」阻塞句（用户裁决）
+
+- **现场（用户报障）**：跑多个项目均「一来就是派子代理」——planner 里的询问类散文
+  （启动确认、按顺序确认后再推进）在主代理阶段出不来。用户裁决两点：
+  ① 「启动协议本来就是散文驱动，模型根据散文来就行了，不该有 True/False 这套结构判定」；
+  ② 「『不权衡、不在思考或正文里讨论是否委派』这句直接删了——它明显让 planner 里的
+     询问类散文在主代理阶段直接出不来」。
+- **根因（平台层一句阻塞）**：`prompts/planner/subagent.md::SUBAGENT_POLICY` 原文
+  「推进 Skill 的整段阶段工作＝直接 run_subagent(stage=阶段名) 委派并连续推进：
+  **一阶段一条，不权衡、不在思考或正文里讨论是否委派、不在本对话逐字代做**。」
+  —— 该句治的是 2026-09-15 的「模型反复纠结该不该派」（委派轴），但写成**无条件祈使**后
+  覆盖了**询问轴**：模型即使读懂 planner 要求先确认，也被禁止停下来权衡。
+  实跑铁证（`proj-1791643331-14baf58b`，12,701 字思考）：模型逐字引用启动协议、
+  明写「pause first is literal compliance」，仍判定「delegating first wastes nothing」
+  先派分析子代理。**两轴本来不同**（`CHANGELOG.md` 09-21 条已自认「属委派轴…
+  与『合并问用户』不同轴」），但祈使句不区分，模型只读到「别停下来想」。
+- **修法（删阻塞，不加特例）**：该句改写为「推进 Skill 的整段阶段工作时，用
+  `run_subagent(stage=阶段名)` 委派给对应执行环节」——**保留委派路径与两桶映射
+  （可委派阶段 / 主线程阶段的划分是结构事实，仍须声明）**，删去
+  「一阶段一条 / 不权衡 / 不在思考或正文里讨论 / 不在本对话逐字代做」四处祈使。
+  时机与顺序交回 Skill 散文（与 `skill_runtime.md` DISCIPLINE #1
+  「顺序由你按流程散文自主推进」同向）。
+- **不改的**：`skill_runtime.md` DISCIPLINE #5「主代理是纯编排角色」与
+  `subagent.py::MAIN_AGENT_DENY` **保持原样**——它们表达的是「工具面收窄」这一结构事实
+  （主代理确实没有执行写入工具），不是「不许先问」；本次删除的是**禁止权衡**那句，
+  不是委派机制本身。Skill 文件零改动（`data/skills` 一行不改）。
+- **测试配套**：`tests/unit/test_skill_stage_focus.py::test_selected_block_planner_only_for_real_skill`
+  原以 `assert "启动协议" in block` 作 planner 段在场探针——那是把某两个 Skill 的
+  **小标题字样**当成了注入契约。改用 `全流程阶段与依赖关系`（10-03 改写后 10 个包的
+  流程节通用小标题），**探针语义不变（仍证明 `<planner>` 段全文注入）、不再绑定个别措辞**。
+- **验收**：`acceptance.py --quick` 全绿；受影响 Skill 系测试 48 passed；
+  `check_prompt_literals` / `check_skill_anchor_lint` / `check_stage_face_consistency` PASS。
+- **待实测（无法用代码证明）**：需实跑同类开场，观察主代理是否恢复「先按 planner
+  散文确认、再推进」。措辞收益属行为项，按宪法 §3.1 留用户目测。
+
+### 2026-10-10 · 事故 1010：配置好 API 却必须重启才能用（适配器缓存持旧凭证）
+
+- **现场（用户报障）**：API 设置页配好 workbuddy（`custom-api-7`，`http://127.0.0.1:7863/v1`）
+  的 Key 后，「验证地址」显示连接正常，但聊天一直失败；用户原话「怎么用不了」，
+  重启后端即恢复，诉求「我只要配置了 API 就能用」。
+- **取证（SSE 抓包副产品，`SSE_CAPTURE=1` 当时开着）**：`data/sse_capture/` 内
+  `sse-*-cn` 系列 footer 记录 **HTTP 401 `invalid_api_key`**，header 显示
+  `model=cn:deepseek-v4.1-flash`、`base_url=http://127.0.0.1:7863/v1`——端点正确、
+  **请求未带 Authorization**。时间线决定性：21:06:33 进程启动 → 21:13~21:16 五次 401
+  → **21:21:25 保存 Key 成功**（`has_key=True`）→ **21:21:54 仍 401**。
+  直连实测同一 Key：`/v1/models` 200、`/v1/chat/completions` 200、流式 + `tool_calls` 正常
+  ⇒ 上游与 Key 均无问题，断点在应用侧。
+- **根因（归属层 = `adapters/factory.py` 适配器缓存）**：缓存键 `f"{provider}:{model}"`
+  **不含凭证**，而 `PUT /api/providers` 保存 Key 只写 `API/.env`、**不碰缓存**；
+  下次取用命中旧实例——该实例建于 Key 保存之前、`api_key=""`，故请求不带
+  `Authorization`。「验证地址」走 `probe_adapter` 一次性探测、每次都用当前 Key，
+  所以**永远显示正常**（验证通过 ≠ 配置已生效）。
+- **修法（P2 约束下沉，两层互补）**：
+  1. **取用即校验**（`get_or_create_chat_adapter` → `_ensure`/`_endpoint_matches`）：
+     按本次解析出的端点/凭证比对缓存实例，不符即判陈旧并重建——覆盖
+     「Key 保存前后同名模型」这一类指纹可能漏判的场景；
+  2. **配置指纹**（`utils/provider_config_loader.config_fingerprint`，唯一判定源）：
+     `api_providers.json` + `API/.env` 各自 `(mtime_ns, size)` + 进程内写入计数
+     （三重证据，覆盖同时间戳粒度内的连续写）；所有配置写口
+     （`save_api_providers` / `update_env_key` / `clear_env_key`）bump 修订号。
+     `AdapterFactory.refresh_if_config_changed` 在每个取用入口比对，
+     **逐供应商增量校准**——只替换端点真变了的实例，其余保留连接池
+     （防「改 A 的 Key 关掉 B 在途视频轮询」）。
+  - **边界**：CLI 类适配器（`AgyCliImageAdapter`）不持端点/凭证（无
+    `api_key`/`base_url` 属性），判定为「无陈旧可言」，不得被反复重建。
+- **回归钉死**：`tests/unit/test_adapter_config_freshness.py`（12 例）——
+  Key 保存后即时生效 / 无变更仍复用同实例（连接池复用不得被破坏）/
+  Key 轮换 / Base URL 变更 / 模型列表变更 / 指纹四态（写 Key、存配置、
+  无变更稳定、清 Key）/ 不误伤其他供应商实例 / `enabled=False` 不注册 /
+  CLI 适配器不被误重建。
+- **口径**：本修复使「配置了就能用」成立——**保存 Key / 改 Base URL / 改模型列表
+  一律即时生效，不需要重启进程**。同时保留一条认知：**「验证地址」通过不代表配置已生效**
+  （它是一次性探测，与运行期缓存无关）。
+- **门禁口径**：GATES 无新增；`acceptance.py --quick` 全 PASS（exit 0）。
+  全量单测基线对照：修复前 50 failed / 2759 passed，修复后 41 failed / 2769 passed
+  —— 新增 12 例全绿，**零新增失败**；余 41 例为既存本机环境问题
+  （`no_proxy` 含 `[::1]` 致 httpx `InvalidURL`，登记于 `docs/未清偿债务清单.md` D-22，
+  与本次改动无关：git stash 对照两侧同为 41 例）。
+- **附带发现（非缺陷，已登记待裁决）**：Windows 下模型名含冒号（`cn:xxx`）会使
+  SSE 抓包文件名被解析为 NTFS 备用数据流（ADS），资源管理器显示 0 字节、
+  实际内容在流内，排查时易误判为空文件。
+
+### 2026-10-09 · 事故 6666 三问批：卡 prompt 转义归一漏网（G4 补齐）+ 暂停卡长清单折叠（用户裁决「全部写口一起修」/「改成折叠展示」）
+
+- **现场（用户三问，6666 `proj-1791553932-3fcd06d8`）**：①提示词里该换行的没换行；
+  ②暂停卡标题下一大堆描述；③本次执行有没有「思考打架」。
+- **Q1 根因（真缺陷，本批修）**：9/9 张设定图卡的 `prompt` 全是**字面两字符 `\n`**
+  （真换行 0 处；码点实测 `0x5c 0x6e`），用户在提示词框里直接看见「\n」。
+  - **归属层**：`tools/storyboard_tools.py` 的 `_unescape_desc`（2026-09-24 分镜
+    desc 转义修复引入）**只接在组 desc 两条写口上**，卡 `prompt` 一路原样透传
+    ⇒ 同一次修复漏掉的同类路径（G4 未全覆盖），非新机制缺失。
+  - **修法（P2 约束下沉，纯归一不加闸）**：`_unescape_desc` → **`_unescape_text`**
+    （不再绑定单一字段）；新增唯一名单 **`_DRAFT_TEXT_FIELDS = ("prompt", "desc")`**
+    与唯一入口 **`_normalize_free_text(payload)`**，四条模型写口全部经此：
+    ① `create_group` 内联 draft；② `add_draft`；③ `patch_draft`；④ `patch_group`（desc）。
+  - **边界（P2 只裁定模型产出）**：REST `PATCH /storyboard/drafts/{id}` 是**用户手编
+    路径**，**不**归一——用户若确要写字面 `\n`，平台不得私自改写其输入；已加反面对照测试钉死。
+  - **存量数据**：6666 那 9 张卡已落库的坏值**按用户裁决不回填**（只修代码）；后续写入不再复现。
+- **Q2 定性（非缺陷，契约本来如此）**：`WorkflowPauseInput.detail` 明文要求
+  「确认批次产出时，把被确认的对象逐条列在这里」（4444/P2-1 裁决：只报总数 = 用户
+  在批准自己看不见的东西）⇒ 模型列出 9 条 **是正确执行**。
+  - **用户裁决「改成折叠展示」** ⇒ **不改契约、只改呈现**：新增 `lib/pause-detail.ts`
+    （纯函数判定：含换行 或 超 160 字 ⇒ 折叠）+ `PauseDetailBlock.tsx`（默认只露
+    首行摘要 + 「展开全部（共 N 行）」，点击展开全文，内容一字不少）；短说明保持内联
+    （不退化体验基线、不白加一次点击）。`ConfirmActions` / `PauseQuestionFlow` 两支共用。
+    计数写「行」不写「条」：统计口径 = 非空行数（含首行概述），写「条」会被读成清单
+    条目数而对不上（6666 现场 = 1 行概述 + 9 条清单 = 10 行）。
+- **Q3 结论（无缺陷，不动代码）**：按 9999「思考打架」签名（`but wait` / `let me
+  re-read` / `hmm, but wait` 等自我推翻）扫本次 **7 条 trace / 约 3.8 万字推理**，
+  命中 1 处且**同段内自行裁决完毕**（媒体生成子代理按优先级链判定「制片规格 > Skill
+  英文示例」→ 用中文写提示词），非病灶。对照 9999 累计 **61 万字符**思考。
+  2026-10-08 批加的 `stage_scope_contract` 生效：主代理推理直接吸收「写提示词归
+  子代理、出图归主线程」，零纠结。
+- **附带发现（非缺陷，平台正确拦截并自愈）**：前 3 镜模型用 `[0-5s]` 方括号写时间，
+  撞 `[元素名]` 令牌语法 ⇒ 平台两次回喂「令牌未匹配（已丢弃）：0-5s、5-9s、9-13s」，
+  模型随后自行改正为契约要求的 `「0-6s」`。
+- **门禁口径**：GATES 无新增；`acceptance.py --quick` 全 PASS（含 tsc）。
+  UI 变更（暂停卡折叠）已构建，**待用户目测确认**（宪法 §3.1）。
+
 ### 2026-10-09 · 事故 1111 二次：脚本静默写生产库根因修复（默认工作区改显式授权）
 
 - **事故现场（用户报障「1111 项目打开后原来跑的内容都不在了」）**：工作台「1111」

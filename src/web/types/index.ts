@@ -67,7 +67,8 @@ import type { TurnLedger } from '@/lib/turn-ledger';
 export type DraftType = 'keyElement' | 'shot' | 'audio';
 export type MediaType = 'image' | 'video' | 'audio';
 export type LeftTab = 'storyboard' | 'uncategorized';
-/** 中间面板视图：preview=预览框（默认）；subagents=子任务面板（顶栏入口切换） */
+/** 中间面板视图：preview=预览框（默认）；subagents=子任务面板
+ * （入口 = 会话标签栏最前方的子任务图标，点击为开关切换；卡片手势回预览） */
 export type MiddleView = 'preview' | 'subagents';
 export type SubTab = 'keyElements' | 'shots' | 'audio';
 

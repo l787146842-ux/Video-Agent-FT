@@ -8,12 +8,12 @@ import { ParamControls } from './ParamControls';
 import { SubagentRail } from './SubagentRail';
 
 /**
- * 中间面板（双视图，由顶栏「子任务」入口切换 middleView）：
+ * 中间面板（双视图，由会话标签栏最前方的子任务图标切换 middleView）：
  * - preview（默认，对齐旧版布局）：预览区（flex-1）→ 水平分割线（拖动只调 Prompt 区高度）
  *   → Prompt 区（定高）→ 参数控制栏（固定在底部不动）
  *   收缩时：提示词输入区与底部参数栏一起折叠，仅保留展开按钮条。
  * - subagents：「子任务」面板（列表 → 点卡片看只读执行记录）；
- *   点左栏任意处切回 preview。
+ *   回 preview 仅经草稿卡/素材卡手势（2026-10-16 用户裁决：左栏其余点击不切视图）。
  */
 export default function MiddlePanel() {
   // Prompt 区高度：100-600px，向上拖变高（invert），旧版默认 280px

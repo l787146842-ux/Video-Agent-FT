@@ -11,7 +11,8 @@ import type {
 // ===== State 接口 =====
 export interface StudioState {
   leftTab: LeftTab;
-  /** 中间面板视图（顶栏「子任务」按钮切 subagents；点左栏任意处回 preview） */
+  /** 中间面板视图（会话标签栏前方的子任务图标 = 开关切 subagents；
+   *  草稿卡/素材卡手势回 preview） */
   middleView: MiddleView;
   subTab: SubTab;
   showAllAssets: boolean;
