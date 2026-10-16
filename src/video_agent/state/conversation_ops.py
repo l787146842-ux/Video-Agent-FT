@@ -25,11 +25,46 @@ if TYPE_CHECKING:  # 仅类型标注用，运行期不 import manager（防循�
 CHAT_HISTORY_LIMIT = 200
 
 
+# ---------- 对话可见性单点（P1） ----------
+# 「哪些对话对用户可见」只有一个判据：不带 scope 键 = 用户会话（进主标签栏）；
+# 带 scope（微调真子对话 / 子代理）= 隐藏线程，只经各自专用清单面暴露。
+# 判据与 scoped_threads_payload / find_scoped_conversation 同源（后两者也按
+# `isinstance(scope, dict)` 认线程），故本处一并收编为同一函数。
+# 消费方一律引用本函数，禁止各自复述过滤条件——快照面与 meta 面曾各写一半，
+# 导致隐藏线程经 /api/project/state 泄漏进主标签栏。
+
+
+def is_hidden_thread(conv: Any) -> bool:
+    """是否隐藏线程（唯一判据）：scope 是 dict 即隐藏。
+
+    取 `isinstance(scope, dict)` 而非真假值判定：`scope: {}`（退化/空壳）
+    属线程而非用户会话——宁可保守藏起异常线程，也不把它当会话泄进标签栏。
+    """
+    return bool(isinstance(conv, dict) and isinstance(conv.get("scope"), dict))
+
+
+def is_visible_conversation(conv: Any) -> bool:
+    """单条对话是否对用户可见（= 非隐藏线程；用户面板的判据）。"""
+    return bool(isinstance(conv, dict) and not is_hidden_thread(conv))
+
+
+def visible_conversations(svc: "StateManager") -> List[Dict[str, Any]]:
+    """当前项目全部可见对话（主标签栏 / 快照 conversations 的唯一数据源）。"""
+    ensure_conversations(svc)
+    return [
+        c for c in svc._raw_state.get("conversations") or []
+        if is_visible_conversation(c)
+    ]
+
+
 def ensure_conversations(svc: "StateManager") -> List[Dict[str, Any]]:
-    """确保多对话结构存在并维护不变式：
-    chatMessages 始终是活跃对话 messages 的同一引用，
-    使 add_chat_message / 快照等既有路径无需改动。
-    旧项目首次访问时把既有 chatMessages 迁入首个对话。
+    """确保多对话结构存在并维护两条不变式：
+    ① chatMessages 始终是活跃对话 messages 的同一引用（使 add_chat_message /
+       快照等既有路径无需改动）；
+    ② **活跃对话必须是可见对话**——活跃位落在隐藏线程（子代理 / 微调线程）
+       时自愈回落到首个可见对话，无可见对话则补建一个（用户面板没有
+       「无会话」态，回落隐藏线程会让整屏聊天区空白且失去可写目标）。
+       旧项目首次访问时把既有 chatMessages 迁入首个对话。
     """
     convs = svc._raw_state.get("conversations")
     if not isinstance(convs, list) or not convs:
@@ -42,8 +77,12 @@ def ensure_conversations(svc: "StateManager") -> List[Dict[str, Any]]:
         svc._raw_state["activeConversationId"] = "conv-main"
     active_id = svc._raw_state.get("activeConversationId") or ""
     active = next((c for c in convs if c.get("id") == active_id), None)
-    if active is None:
-        active = convs[0]
+    if active is None or not is_visible_conversation(active):
+        active = next((c for c in convs if is_visible_conversation(c)), None)
+        if active is None:
+            # 极端态（全部对话都是隐藏线程）：补建可见会话承载用户输入
+            active = {"id": gen_id("conv"), "title": "会话 1", "messages": []}
+            convs.append(active)
         svc._raw_state["activeConversationId"] = active["id"]
     msgs = active.setdefault("messages", [])
     if svc._raw_state.get("chatMessages") is not msgs:
@@ -77,16 +116,14 @@ def conversations_meta_payload(svc: "StateManager") -> Dict[str, Any]:
 
     消息单一来源：前端 convState 不再持有消息副本，
     消息装载一律走 get_conversation_messages（GET /conversations/{id}/messages）。
-    单点过滤（微调真子对话）：带 scope 的隐藏线程对话不出主清单，
-    仅供 scoped_threads_payload 另面暴露（前端标签栏不再见微调线程）。
+    可见性单点：隐藏线程（带 scope）不出主清单，仅供 scoped_threads_payload /
+    subagent_threads 另面暴露（前端标签栏不再见微调线程与子代理线程）。
     """
     ensure_conversations(svc)
-    convs = svc._raw_state.get("conversations") or []
     return {
         "conversations": [
             {k: v for k, v in conv.items() if k != "messages" and not str(k).startswith("_")}
-            for conv in convs
-            if not conv.get("scope")
+            for conv in visible_conversations(svc)
         ],
         "active_conversation_id": svc._raw_state.get("activeConversationId", ""),
     }
@@ -100,7 +137,7 @@ def find_scoped_conversation(
     ensure_conversations(svc)
     keys = ("kind", "cat", "group_id", "draft_id")
     for c in svc._raw_state.get("conversations") or []:
-        if not isinstance(c, dict) or not isinstance(c.get("scope"), dict):
+        if not is_hidden_thread(c):
             continue
         if all(str((c["scope"] or {}).get(k) or "") == str(scope.get(k) or "") for k in keys):
             return c
@@ -206,7 +243,7 @@ def scoped_threads_payload(svc: "StateManager") -> Dict[str, Any]:
                 "scope": dict(c.get("scope") or {}),
             }
             for c in svc._raw_state.get("conversations") or []
-            if isinstance(c, dict) and isinstance(c.get("scope"), dict)
+            if is_hidden_thread(c)
         ],
     }
 
@@ -225,7 +262,7 @@ def subagent_threads(svc: "StateManager") -> List[Dict[str, Any]]:
     ensure_conversations(svc)
     out: List[Dict[str, Any]] = []
     for c in svc._raw_state.get("conversations") or []:
-        if not isinstance(c, dict):
+        if not is_hidden_thread(c):
             continue
         scope = c.get("scope") or {}
         if str(scope.get("kind") or "") != "subagent":
@@ -414,9 +451,17 @@ def create_conversation(svc: "StateManager", title: str = "") -> Dict[str, Any]:
 
 
 def switch_conversation(svc: "StateManager", conversation_id: str) -> Optional[Dict[str, Any]]:
-    """切换活跃对话；不存在返回 None"""
+    """切换活跃对话；不存在或为隐藏线程返回 None（不设「藏在标签栏外」的活跃位）。
+
+    隐藏线程的对话框（微调真子对话 / 子代理）只能经各自专用入口进入，
+    切换活跃位不在其列；混入会让主面板显示隐藏线程且标签栏无对应高亮。
+    """
     convs = ensure_conversations(svc)
-    target = next((c for c in convs if c.get("id") == conversation_id), None)
+    target = next(
+        (c for c in convs
+         if is_visible_conversation(c) and c.get("id") == conversation_id),
+        None,
+    )
     if target is None:
         return None
     svc._raw_state["activeConversationId"] = conversation_id
@@ -426,16 +471,23 @@ def switch_conversation(svc: "StateManager", conversation_id: str) -> Optional[D
 
 
 def delete_conversation(svc: "StateManager", conversation_id: str) -> Optional[Dict[str, Any]]:
-    """删除对话；仅剩一个时不允许删除；不存在返回 None"""
+    """删除对话；仅剩一个时不允许删除；不存在/为隐藏线程返回 None。
+
+    回落目标必须是**可见**对话：此前回落 `convs[0]`，当第 0 条是隐藏线程
+    时会把活跃位写进隐藏线程（用户面板就此显示空线程，标签栏无高亮）。
+    """
     convs = ensure_conversations(svc)
-    if len(convs) <= 1:
+    visible = [c for c in convs if is_visible_conversation(c)]
+    if len(visible) <= 1:
         return None
-    target = next((c for c in convs if c.get("id") == conversation_id), None)
+    target = next(
+        (c for c in visible if c.get("id") == conversation_id), None)
     if target is None:
         return None
     convs.remove(target)
     if svc._raw_state.get("activeConversationId") == conversation_id:
-        return switch_conversation(svc, convs[0]["id"])
+        remaining = [c for c in convs if is_visible_conversation(c)]
+        return switch_conversation(svc, remaining[0]["id"])
     svc.save()
     return conversations_payload(svc)
 

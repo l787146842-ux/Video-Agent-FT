@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from src.video_agent.config import settings
 
+from . import conversation_ops
 from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ProjectState
 
 # 第 5 批上下文治理（Q6 裁决 2026-09-01）：分阶段注入策略表（policy-as-data）
@@ -392,6 +393,14 @@ def build_full_snapshot(raw_state: Dict[str, Any], board_version: int) -> Dict[s
     for conv in snap.get("conversations") or []:
         if isinstance(conv, dict):
             conv.pop("messages", None)
+    # 可见性单点（与 conversations_meta_payload 同一判据）：隐藏线程
+    #（微调真子对话 / 子代理）不得随快照进主标签栏——前端标签栏数据源
+    # 正是本快照（/api/project/state），此前未过滤导致隐藏线程被渲染成标签页。
+    # 判据本体仍在 conversation_ops（本函数只消费，不复述过滤条件）。
+    snap["conversations"] = [
+        conv for conv in snap.get("conversations") or []
+        if conversation_ops.is_visible_conversation(conv)
+    ]
     return snap
 
 
