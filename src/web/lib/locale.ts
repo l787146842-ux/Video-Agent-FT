@@ -220,6 +220,8 @@ const zhCN = {
   // 2026-09-21 批G（事故 4444/Q4）：子代理思考（执行中即可展开）
   'rp.actor.reasoning': '子代理思考',
   'rp.actor.openRecord': '查看子代理执行记录',
+  // 2026-10-16 用户裁决：子任务入口自顶栏迁至会话标签栏最前（仅图标、点击开关）
+  'rp.subagents.entry': '子任务面板（点击切换；有子代理执行时闪烁）',
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',
@@ -244,6 +246,12 @@ const zhCN = {
   'rp.confirm.skip': '跳过',
   'rp.confirm.hintIncomplete': '还有问题未作答，已跳回该题',
   'rp.confirm.hintUnanswered': '请选择一项、填写答复，或点「跳过」',
+  // 2026-10-09（事故 6666，用户裁决「改成折叠展示」）：长说明/清单默认收起。
+  // 内容一字不少，只把呈现从「顶在标题下」改为「首行摘要 + 点击展开」。
+  // 计数写「行」不写「条」：统计口径 = 非空行数（含首行概述），写「条」会被
+  // 读成清单条目数而对不上（6666 现场 = 1 行概述 + 9 条清单 = 10 行）。
+  'rp.confirm.detailExpand': '展开全部（共 {n} 行）',
+  'rp.confirm.detailCollapse': '收起',
   'rp.receipt.title': '提问',
   'rp.receipt.answered': '{answered}/{total} 已回答',
   // R 批（对齐 dsh row.inspect）：展开/收起**所选选项的说明**（description）

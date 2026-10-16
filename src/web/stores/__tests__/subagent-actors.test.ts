@@ -26,7 +26,7 @@ vi.mock('@/api/conversations', () => ({
 
 import {
   subagentActorActions, subagentActors, actorByKey, actorKeyOf, actorSlotId,
-  resetSubagentActors, SUBAGENT_DELEGATE_TOOL,
+  resetSubagentActors, SUBAGENT_DELEGATE_TOOL, subagentActivity,
 } from '../chat/subagent-actors';
 
 const META: SseSubagentMeta = {
@@ -346,6 +346,50 @@ describe('切走再切回：槽位按 turnId 挂回（全保真）', () => {
     chatActions.loadMessages([serverMsg('turn-other', 5000)]);
     const led = settledLedgerForMessage(chatState.messages[0]);
     expect(led.items.some((it) => it.name === SUBAGENT_ACTOR)).toBe(false);
+  });
+});
+
+describe('子代理活动压力面（子任务图标闪烁判据，2026-10-16）', () => {
+  it('无 actor → running=false/total=0；开跑 → true；收尾 → false', () => {
+    expect(subagentActivity()).toEqual({ running: false, total: 0 });
+    subagentActorActions.applyChildEvent(META, {
+      type: 'tool_started', id: 'c1', name: 'read_draft', summary: '读草稿',
+    } as SseEvent);
+    expect(subagentActivity()).toEqual({ running: true, total: 1 });
+    finishDelegate(true);
+    expect(subagentActivity()).toEqual({ running: false, total: 1 });
+  });
+
+  it('失败收尾同样不计 running（「完成就停」含已中断态）', () => {
+    subagentActorActions.applyChildEvent(META, {
+      type: 'tool_started', id: 'c1', name: 'read_draft', summary: '读草稿',
+    } as SseEvent);
+    finishDelegate(false);
+    expect(subagentActivity().running).toBe(false);
+  });
+
+  it('刷新重建的 static actor：服务端 running 态照闪，completed 不闪', async () => {
+    const runningCid = 'conv-1789754701-aaaa1111';
+    const doneCid = 'conv-1789754702-bbbb2222';
+    threadsMock.mockResolvedValue({
+      subagents: [
+        { conversation_id: runningCid, title: '子代理', label: '分镜', parent_conversation: 'conv-main', status: 'running', steps: 1 },
+        { conversation_id: doneCid, title: '子代理', label: '提示词', parent_conversation: 'conv-main', status: 'completed', steps: 2 },
+      ],
+    });
+    // 直接调 hydrate（不依赖历史委派轮）
+    await subagentActorActions.hydrateFromServer();
+    expect(actorByKey(runningCid)?.status).toBe('running');
+    expect(subagentActivity().running).toBe(true);
+    // 唯一 running 的那条转为 completed 后（再 hydrate 不重复建；此处直接收尾）→ 停闪
+    subagentActorActions.applyDelegateEvent({
+      type: 'tool_started', id: 'anchor-x', name: SUBAGENT_DELEGATE_TOOL, summary: '委派',
+    } as SseEvent);
+    subagentActorActions.applyDelegateEvent({
+      type: 'tool_finished', id: 'anchor-x', ok: true,
+    } as SseEvent);
+    expect(subagentActivity().running).toBe(false);
+    expect(subagentActivity().total).toBe(2);
   });
 });
 

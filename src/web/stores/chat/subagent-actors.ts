@@ -98,6 +98,19 @@ export function subagentActors(): SubagentActor[] {
   return actorsState.list;
 }
 
+/** 子代理活动状态（会话标签栏前方子任务图标的数据面，判据单点）：
+ *  running = 有子代理正在执行 → 图标闪烁；total = 已知子代理总数。
+ *  running 语义对齐三态药丸：首个子事件入账即真、父 run_subagent 收尾
+ *  （completed/failed）即假——「启动就闪、完成就停」的唯一判据；
+ *  刷新后由 hydrateFromServer 按服务端线程态重建（仍在跑的照闪）。 */
+export function subagentActivity(): { running: boolean; total: number } {
+  const list = actorsState.list;
+  return {
+    running: list.some((a) => a.status === 'running'),
+    total: list.length,
+  };
+}
+
 /** 按归组键取 actor（渲染层消费面） */
 export function actorByKey(key: string): SubagentActor | undefined {
   return actorsState.list.find((a) => a.key === key);

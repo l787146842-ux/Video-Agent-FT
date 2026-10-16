@@ -1,8 +1,8 @@
 /**
- * Header 导航测试：顶栏「子任务」入口 / 「影视工作台」入口对偶切换 middleView。
+ * Header 导航测试：顶栏导航（影视工作台 / 画布 / API 配置）+「影视工作台」回预览。
  * Router / 主题 / 项目切换 / 历史与任务入口全部打桩，
  * 只钉两件事：① 点击入口真的切状态（含 A 组件透传 onClick 的用法）；
- * ② 导航组激活互斥（子任务频道激活时「影视工作台」不高亮，反之亦然）。
+ * ② 「子任务」已迁出顶栏（不再占导航频道）——故工作台页恒高亮、不互斥。
  */
 import { render, fireEvent, cleanup } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -39,27 +39,28 @@ function renderHeader() {
   return render(() => <Header overlayMode={false} onToggleHeader={() => {}} />);
 }
 
-describe('Header 子任务入口 / 影视工作台入口', () => {
-  it('初始（预览频道）：影视工作台高亮、子任务不高亮', () => {
+describe('Header 导航（子任务入口已迁出顶栏）', () => {
+  it('顶栏不再渲染「子任务」文字入口（已迁至会话标签栏前方图标）', () => {
+    const { queryByText } = renderHeader();
+    expect(queryByText('子任务')).toBeNull();
+  });
+
+  it('初始（预览频道）：影视工作台高亮', () => {
     const { getByText } = renderHeader();
     expect(getByText('影视工作台').className).toContain('active');
-    expect(getByText('子任务').className).not.toContain('active');
   });
 
-  it('点「子任务」→ 中间面板切子任务；高亮互斥（影视工作台灭）', () => {
+  it('子任务视图下「影视工作台」仍高亮（导航不再与子任务互斥）', () => {
+    setState('middleView', 'subagents');
     const { getByText } = renderHeader();
-    fireEvent.click(getByText('子任务'));
-    expect(state.middleView).toBe('subagents');
-    expect(getByText('子任务').className).toContain('active');
-    expect(getByText('影视工作台').className).not.toContain('active');
+    expect(getByText('影视工作台').className).toContain('active');
   });
 
-  it('子任务频道下点「影视工作台」→ 切回预览；高亮反转', () => {
+  it('子任务视图下点「影视工作台」→ 中间面板切回预览', () => {
     setState('middleView', 'subagents');
     const { getByText } = renderHeader();
     fireEvent.click(getByText('影视工作台'));
     expect(state.middleView).toBe('preview');
     expect(getByText('影视工作台').className).toContain('active');
-    expect(getByText('子任务').className).not.toContain('active');
   });
 });

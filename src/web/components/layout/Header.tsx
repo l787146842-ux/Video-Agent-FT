@@ -10,7 +10,7 @@ import {
 } from '@/stores/history';
 import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
 import { toggleJobs } from '@/stores/jobs';
-import { state, studioActions } from '@/stores/studio';
+import { studioActions } from '@/stores/studio';
 
 /**
  * 顶栏「全局设置」入口（替代旧自动切换按钮）：
@@ -48,17 +48,12 @@ export function Header(props: {
   const location = useLocation();
 
   /** 导航项样式：/ 精确匹配，其余前缀匹配。
-   * 「子任务」频道激活时影视工作台不高亮（导航组激活互斥，视觉只亮一处） */
+   * 「影视工作台」不再与「子任务」互斥——子任务入口已迁至会话标签栏前方
+   * 的图标按钮（不再占据一个导航频道），故工作台页恒高亮。 */
   function navClass(path: string, exact = false): string {
     const active = exact
-      ? location.pathname === path && state.middleView !== 'subagents'
+      ? location.pathname === path
       : location.pathname.startsWith(path);
-    return active ? 'mode-btn active' : 'mode-btn';
-  }
-
-  /** 「子任务」入口高亮：在工作台页且中间面板已切为子任务面板 */
-  function subagentsClass(): string {
-    const active = location.pathname === '/' && state.middleView === 'subagents';
     return active ? 'mode-btn active' : 'mode-btn';
   }
 
@@ -95,16 +90,6 @@ export function Header(props: {
         </A>
         <A href="/canvas" class={navClass('/canvas')}>画布</A>
         <A href="/settings" class={navClass('/settings')}>API 配置</A>
-        {/* 子任务入口：切中间面板为子任务面板（回预览 = 点左栏任意处）；
-            不在工作台时点击先回工作台 */}
-        <A
-          href="/"
-          class={subagentsClass()}
-          title="子任务面板"
-          onClick={() => studioActions.setMiddleView('subagents')}
-        >
-          子任务
-        </A>
       </nav>
 
       {/* 右侧操作区 */}

@@ -23,6 +23,18 @@
   .conv-tabs-add { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; min-width: 24px; border-radius: 6px; border: none; background: none; color: var(--text-dim); cursor: pointer; transition: all 0.15s; }
   .conv-tabs-add:hover { color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
 
+  /* 子任务入口（2026-10-16 用户裁决：自顶栏迁至会话标签栏最前，仅图标）：
+     点击 = 切中间面板子任务视图 / 再点回预览的开关（active = 当前在该视图）；
+     有子代理正在执行时整钮常闪（.running，收尾即停）。图标语义色对齐子任务
+     面板三态 running（--accent-emerald），不新增硬编码色。 */
+  .conv-subagents { position: relative; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; min-width: 26px; margin: 0 4px 4px 0; border-radius: 6px; border: 1px solid transparent; background: none; color: var(--text-dim); cursor: pointer; transition: color 0.15s, background 0.15s, border-color 0.15s; }
+  .conv-subagents:hover { color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
+  .conv-subagents.active { color: var(--accent-blue); border-color: color-mix(in srgb, var(--color-info-strong) 45%, transparent); background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); }
+  .conv-subagents.running { color: var(--accent-emerald); }
+  .conv-subagents.running.active { color: var(--accent-emerald); border-color: color-mix(in srgb, var(--color-success) 45%, transparent); }
+  /* 执行中指示点：与图标同步脉冲（复用 status-pulse，同会话标签运行中角标口径） */
+  .conv-subagents-pulse { position: absolute; top: -1px; right: -1px; width: 7px; height: 7px; border-radius: 50%; background-color: var(--accent-emerald); animation: status-pulse 1.2s infinite; }
+
   .chat-feed { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-anchor: none; }
   .chat-msg { display: flex; flex-direction: column; max-width: 88%; gap: 4px; }
     /* 长会话性能：content-visibility 让浏览器跳过屏外消息的布局/绘制
