@@ -170,8 +170,8 @@ export function DraftCard(props: {
         class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''} ${isVoiceCard() ? 'draft-card--voice' : ''}`}
         style={bgStyle()}
         title={cardTitle()}
-        onClick={() => studioActions.selectDraft(props.draft.id, props.type)}
-        onKeyDown={(e) => e.key === 'Enter' && studioActions.selectDraft(props.draft.id, props.type)}
+        onClick={() => studioActions.selectDraftOnCard(props.draft.id, props.type)}
+        onKeyDown={(e) => e.key === 'Enter' && studioActions.selectDraftOnCard(props.draft.id, props.type)}
         onContextMenu={onContextMenu}
       >
       {/* 视频媒体：首帧缩略图 + 类型角标 */}

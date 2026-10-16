@@ -14,15 +14,16 @@ const TABS: Array<{ key: LeftTab; label: string; icon: typeof FiGrid }> = [
 
 /**
  * 左侧面板容器：LeftTab 切换（故事板 / 未归类素材）。
- * 子任务面板已迁至中间面板（顶栏入口切换 middleView），
- * 本面板任意点击 = 中间面板切回预览框。
+ * 子任务面板在中间面板（会话标签栏前方的图标入口切换 middleView）。
+ *
+ * 2026-10-16 用户裁决：中间面板为子任务视图时，**只有点击草稿卡 / 素材卡**
+ * 才切回预览框（原先挂在本容器上的「点左栏任意处回预览」已删除——页签、
+ * 分组标题、描述、空白处、版本栏一律保持当前视图不动）。
+ * 回预览的落点单点 = studioActions.returnToPreview（经草稿卡/素材卡手势调用）。
  */
 export default function LeftPanel() {
   return (
-    <div
-      class="panel-column"
-      onClick={() => studioActions.setMiddleView('preview')}
-    >
+    <div class="panel-column">
       {/* 顶部 Tab（旧版 left-tabs：左对齐 + 蓝色下划线激活） */}
       <div class="left-tabs">
         {TABS.map((tab) => (

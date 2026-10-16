@@ -4,6 +4,7 @@ import { showToast } from '@/stores/toast';
 import { uid } from '@/lib/utils';
 import { state, setState, groupsForType, fieldForType } from '../studio-core';
 import { storyboardActions, persistBoard } from './storyboard';
+import { uiActions } from './ui';
 
 export const assetActions = {
   /** 选中未归类素材：只在中间预览区展示媒体，不切换故事板 subTab。
@@ -15,6 +16,14 @@ export const assetActions = {
     setState('selectedDraftId', assetId);
     setState('selectedType', type);
     setState('selectTick', (v) => v + 1);
+  },
+
+  /** 未归类素材卡手势：选中素材 + 回预览框（2026-10-16 用户裁决），与草稿卡
+   *  手势同一裁决、共用 uiActions.returnToPreview 单一落点。
+   *  本域依赖 ui 域是单向的（assets → ui；ui 不引 studio 内任何域），不成环。 */
+  selectAssetOnCard(assetId: string) {
+    assetActions.selectAsset(assetId);
+    uiActions.returnToPreview();
   },
 
   /** 删除未归类素材（未归类面板右键菜单） */

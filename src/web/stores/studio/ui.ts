@@ -20,9 +20,26 @@ export const uiActions = {
     setState('leftTab', tab);
   },
 
-  /** 中间面板视图切换：顶栏「子任务」→ subagents；点左栏任意处 → preview */
+  /** 中间面板视图切换：会话标签栏前方的子任务图标（开关）→ subagents；
+   *  卡片手势（草稿卡/素材卡）→ preview。 */
   setMiddleView(view: MiddleView) {
     setState('middleView', view);
+  },
+
+  /** 回预览框（卡片手势共用的**唯一落点**）：2026-10-16 用户裁决——中间面板为
+   *  子任务视图时，**只有点击草稿卡/素材卡**才切回预览；左栏其余点击（页签/
+   *  分组标题/描述/空白/版本栏）保持视图不动。草稿卡与素材卡分属两个域，
+   *  各自的手势动作共用本函数，避免「回预览」这条规则在两处各写一遍。 */
+  returnToPreview() {
+    setState('middleView', 'preview');
+  },
+
+  /** 草稿卡手势：选中该卡 + 回预览。
+   *  不得并入 selectDraft 本体——selectDraft 亦被 Agent 建卡等非手势路径调用
+   *  （board-edit），并入会让 Agent 动作也抢用户视图。 */
+  selectDraftOnCard(id: string, type: DraftType) {
+    uiActions.selectDraft(id, type);
+    uiActions.returnToPreview();
   },
 
   setSubTab(tab: SubTab) {

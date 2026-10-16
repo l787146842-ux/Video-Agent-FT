@@ -108,8 +108,8 @@ export function AssetCard(props: { asset: Asset }) {
       tabIndex={0}
       class={`draft-card ${selected() ? 'active' : ''}`}
       style={bgStyle()}
-      onClick={() => studioActions.selectAsset(props.asset.id)}
-      onKeyDown={(e) => e.key === 'Enter' && studioActions.selectAsset(props.asset.id)}
+      onClick={() => studioActions.selectAssetOnCard(props.asset.id)}
+      onKeyDown={(e) => e.key === 'Enter' && studioActions.selectAssetOnCard(props.asset.id)}
       onContextMenu={onContextMenu}
       title={props.asset.name}
     >
