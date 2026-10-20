@@ -72,16 +72,34 @@ describe('stores/agent-prefs（pill 持久化）', () => {
     expect(prefs.agentAssetMode()).toBe('all');
   });
 
-  it('项目态绑定为权威：agentSkillId 从 activeSkill 派生（批 C）', async () => {
+  it('项目态绑定为权威：agentSkillId 从 activeSkill 派生', async () => {
     const prefs = await loadPrefs({ studioAgentSkill: 'doc:other' }, PROVIDERS, DOC_SKILLS);
     const core = await import('@/stores/studio-core');
     core.setState('activeSkill', { slug: 'demo', source: 'user' });
     expect(prefs.agentSkillId()).toBe('doc:demo');
     expect(prefs.agentSkill()?.id).toBe('doc:demo');
-    // 摘除态（空 slug）= 显式自由对话，不再回落建议值/usedSkills
+    // 2026-10-16 用户裁决：空 slug 不再等于「关闭技能」——文档区唯一权威，
+    // 空值回落 usedSkills 倒序（此处 usedSkills 空 → 真无 Skill）
     core.setState('activeSkill', { slug: '', source: 'user' });
     expect(prefs.agentSkillId()).toBe('');
     expect(prefs.suggestedSkillId()).toBe('doc:other');
+  });
+
+  it('空 slug 回落 usedSkills（9999 自愈口径）：不因「无显式偏好」而裸跑', async () => {
+    const prefs = await loadPrefs({}, PROVIDERS, DOC_SKILLS);
+    const core = await import('@/stores/studio-core');
+    core.setState('activeSkill', { slug: '', source: 'user' });
+    core.setState('usedSkills', ['demo']);
+    expect(prefs.agentSkillId()).toBe('doc:demo');
+  });
+
+  it('usedSkills 倒序跳过已删文档留下的陈旧登记', async () => {
+    const prefs = await loadPrefs({}, PROVIDERS, DOC_SKILLS);
+    const core = await import('@/stores/studio-core');
+    core.setState('activeSkill', null);
+    // 'gone' 不在文档清单（已删）→ 跳过取 'demo'
+    core.setState('usedSkills', ['demo', 'gone']);
+    expect(prefs.agentSkillId()).toBe('doc:demo');
   });
 
   it('残留的已删除代码 Skill id（production-agent）回退到默认无技能（D2 基线）', async () => {

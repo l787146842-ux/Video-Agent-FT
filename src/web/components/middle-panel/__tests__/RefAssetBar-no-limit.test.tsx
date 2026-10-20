@@ -31,7 +31,11 @@ vi.mock('@/lib/prompt-mentions', async (importOriginal) => {
     // 只桩掉媒体映射（画布素材面），`mentionNamesIn` 用**真实现**——
     // 本次修复的正是「计数与提示词框同口径」，桩掉它就等于测不到。
     ...actual,
-    storyboardMediaMap: () => ({ '月球': { url: '/assets/moon.png', kind: 'image' } }),
+    storyboardMediaMap: () => ({
+      '月球': { url: '/assets/moon.png', kind: 'image' },
+      // 2026-10-19 音色引用批：音色卡按 label 可达（模型写的 `@音色·程心`）
+      '音色·程心': { url: '/assets/cx.mp3', kind: 'audio' },
+    }),
   };
 });
 vi.mock('@/api/upload', () => ({
@@ -210,5 +214,20 @@ describe('参考素材栏添加入口不受数量限制（台账 #16）', () => 
     expect(container.querySelectorAll('.shot-ref-chip')).toHaveLength(0);
     // 方图仍在（删胶囊不得连带删缩略图）
     expect(container.querySelectorAll('.ref-thumb-wrap')).toHaveLength(2);
+  });
+
+  it('提示词 @ 引用的音频必须出现在参考栏里（2026-10-19 用户裁决）', () => {
+    // 现场：用户把「音色·程心」的音频上传进音色卡后，视频卡参考栏里
+    // **一个音频标识都没有**，与右侧「已加载参考素材 N 个」的计数自相矛盾
+    // ——因为本栏此前只画卡上 refAssets，不画提示词 @ 引用到的素材。
+    // 用户原话：「视频生成的参考素材栏里面本来就能参考视频、音频、图片」。
+    const rec = seedShotDraft([], '{程心说："打击来了？"} @音色·程心');
+    const { container } = render(() => (
+      <RefAssetBar rec={() => rec} refAssets={() => []} maxRefs={() => Infinity} />
+    ));
+    // 缩略图出现，且是音频样式（♬ 图标槽），角标「引用」
+    expect(container.querySelectorAll('.ref-thumb-audio')).toHaveLength(1);
+    const badge = container.querySelector('.ref-count-badge') as HTMLElement;
+    expect(badge.title).toContain('音频 1');
   });
 });

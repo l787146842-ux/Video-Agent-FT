@@ -126,6 +126,89 @@ def test_r3_bare_name_alias_for_prefixed_group_title():
     assert refs2 == ["/a/cx.png"], "带前缀写法仍可用"
 
 
+# ---------- 2026-10-16 音色抢名批（用户裁决「先写引用、音频出来自动解析」配套） ----------
+# 病灶：音色卡（mediaType=audio）与角色设定图同住一个 keyElement 组，而组标题
+# 只登记「该组第一张有媒体的卡」——音色卡排在前面时（9999 实测「音色·程心」在
+# 「设定图·程心」之前）音频抢走组标题 ⇒ `@程心` 解析成**参考音频**而非角色图。
+# 实测：给音色卡挂上 audioUrl 后，`@程心` 变成「[参考音频1：程心]」，角色图丢失。
+# 后果：音频一旦落地，全篇 `@角色名` 集体从「角色的脸」变成「角色的声音」。
+# 本组钉死「音频不抢组标题」+「纯音色卡组仍可引用」两侧边界。
+
+def _ke_group_with_voice_first(img_url: str = "/a/cx.png",
+                               audio_url: str = "/a/cx.mp3") -> dict:
+    """程心组：**音色卡在设定图之前**（9999 实测顺序），两者都有媒体。"""
+    return {
+        "keyElements": [{
+            "id": "ke-1", "title": "Element_程心",
+            "drafts": [
+                {"id": "d1", "label": "音色·程心", "mediaType": "audio",
+                 "audioType": "voice", "audioUrl": audio_url},
+                {"id": "d2", "label": "设定图·程心", "mediaType": "image",
+                 "imgUrl": img_url},
+            ],
+        }],
+        "shots": [], "audioItems": [],
+    }
+
+
+def test_voice_card_does_not_steal_group_title_for_image():
+    """核心回归：组标题（含裸名）必须指向**角色设定图**，不被音色卡抢走。"""
+    m = build_storyboard_media_map(_ke_group_with_voice_first())
+    assert m["程心"]["kind"] == "image", "组标题是「角色的脸」，不得为音频"
+    assert m["程心"]["url"] == "/a/cx.png"
+    assert m["Element_程心"]["kind"] == "image"
+
+    resolved, refs = resolve_prompt_mentions("[角色]: @程心 —— 站在舱内", [], m)
+    assert refs == ["/a/cx.png"], "角色图必须被挂上（探测：音频是否抢名）"
+    assert "[参考图1：程心]" in resolved
+
+
+def test_voice_card_still_reachable_by_its_label():
+    """对偶：音色卡自身仍可用 label（`音色·程心`）引用到音频。"""
+    m = build_storyboard_media_map(_ke_group_with_voice_first())
+    assert m["音色·程心"]["kind"] == "audio"
+    resolved, refs = resolve_prompt_mentions(
+        '[台词]: {程心说: "打击来了？"} @音色·程心', [], m)
+    assert refs == ["/a/cx.mp3"]
+    assert "[参考音频1：音色·程心]" in resolved
+
+
+def test_voice_only_group_still_reachable_by_title():
+    """边界（防静默降级）：组内**只有音色卡**没有图时，组标题兜底给音频。
+
+    若「音频一律不登记组标题」而不留这条兜底，「只有音色卡」的元素
+    （4444 实测形状）会让 `@AA` 变成未命中 ⇒ **静默去记号留文字**
+    （不报错、不回喂），即 9999 同一失效类。
+    """
+    state = {
+        "keyElements": [{
+            "id": "ke-1", "title": "Element_AA",
+            "drafts": [{"id": "d1", "label": "音色·AA", "mediaType": "audio",
+                        "audioType": "voice", "audioUrl": "/a/aa.mp3"}],
+        }],
+        "shots": [], "audioItems": [],
+    }
+    m = build_storyboard_media_map(state)
+    assert m["AA"]["kind"] == "audio", "纯音色卡组：组标题兜底给音频（不静默落空）"
+    _, refs = resolve_prompt_mentions("@AA", [], m)
+    assert refs == ["/a/aa.mp3"]
+
+
+def test_image_not_yet_generated_still_reserves_title_for_audio_card():
+    """边界（防时间窗复发）：设定图**尚未出图**（无 imgUrl）时，
+    组标题仍不得让给音色卡——判据是「组内有视觉**卡**」，与出图进度无关。
+
+    若按「有无 imgUrl」判定，「图未生成」期间就会把标题让给音频 ⇒
+    原故障按时间窗复发（本批必须堵住的形状）。
+    """
+    state = _ke_group_with_voice_first()
+    # 抹掉设定图的 URL，模拟「卡在、图还没出」
+    state["keyElements"][0]["drafts"][1]["imgUrl"] = ""
+    m = build_storyboard_media_map(state)
+    assert "程心" not in m, "图未出：组标题暂不登记（不得落到音频上）"
+    assert m["音色·程心"]["kind"] == "audio", "音色卡仍按 label 可达"
+
+
 def test_escaped_placeholder_not_parsed_as_element_token():
     """批3 附带修复：模板转义占位 `\\[角色描述…\\]` 不得被当元素令牌。
 
@@ -207,3 +290,55 @@ def test_bracket_notation_single_group_unchanged():
     resolved, refs = resolve_prompt_mentions("<<<image_程心>>>。", [], MEDIA_MAP)
     assert refs == ["http://m/1.png"]
     assert resolved == "[参考图1：程心]。"
+
+
+# ---------- 2026-10-19 音色引用批（用户裁决「图与音频各算各的」） ----------
+# 病灶（9999 实测 S2）：合并列表 = 4 张图 + 1 条音色，音色排总列表第 5 位 ⇒
+# 正文写成 `[参考音频5：音色·程心]`；而发送时按类型分桶（out_audios 只有 1 条）
+# ⇒ 模型收到 1 条音频，文本却说「第 5 条」，对不上号。
+# 修法：标记序号按**素材类型**独立编号。图片侧口径保持不变。
+
+def _map_with_images_then_voice() -> dict:
+    """4 张角色图 + 1 条音色（9999/S2 现场形状：图在前、音色在后）。"""
+    return {
+        "程心": {"url": "/a/cx.png", "kind": "image"},
+        "AA": {"url": "/a/aa.png", "kind": "image"},
+        "曹彬": {"url": "/a/cb.png", "kind": "image"},
+        "星环号球形舱": {"url": "/a/scene.png", "kind": "image"},
+        "音色·程心": {"url": "/a/cx.mp3", "kind": "audio"},
+    }
+
+
+def test_audio_marker_numbered_within_audio_bucket():
+    """音频标记用**音频桶内**序号（第 1 条），不是总列表第 5 位。"""
+    m = _map_with_images_then_voice()
+    base = ["/a/cx.png", "/a/aa.png", "/a/cb.png", "/a/scene.png"]
+    resolved, refs = resolve_prompt_mentions(
+        "【台词】{程心说：“打击来了？”} @音色·程心", base, m, max_refs=50)
+    assert refs == base + ["/a/cx.mp3"]
+    assert "[参考音频1：音色·程心]" in resolved, "音频序号必须是音频桶内的 1，不是总列表的 5"
+    assert "参考音频5" not in resolved
+
+
+def test_image_marker_numbering_unchanged_by_audio_rule():
+    """对照：图片序号仍是图片桶内序号（本次改动不得动既有图片口径）。"""
+    m = _map_with_images_then_voice()
+    resolved, refs = resolve_prompt_mentions("@AA 与 @音色·程心", [], m, max_refs=50)
+    assert refs == ["/a/aa.png", "/a/cx.mp3"]
+    assert "[参考图1：AA]" in resolved, "图片侧从 1 起算（不受音频影响）"
+    assert "[参考音频1：音色·程心]" in resolved
+
+
+def test_multiple_audio_markers_numbered_sequentially_in_audio_bucket():
+    """多条音色：音频桶内 1、2、3 连续；中间夹的图片不占音频序号。"""
+    m = _map_with_images_then_voice()
+    m["音色·AA"] = {"url": "/a/aa.mp3", "kind": "audio"}
+    m["音色·曹彬"] = {"url": "/a/cb.mp3", "kind": "audio"}
+    prompt = ("{AA说：“为什么…”} @音色·AA {程心说：“打击来了？”} @音色·程心 "
+              "{曹彬说：“已经确认。”} @音色·曹彬")
+    resolved, _refs = resolve_prompt_mentions(prompt, ["/a/scene.png"], m, max_refs=50)
+    assert "[参考音频1：音色·AA]" in resolved
+    assert "[参考音频2：音色·程心]" in resolved
+    assert "[参考音频3：音色·曹彬]" in resolved
+    assert resolved.count("[参考图") == 0, "本组无图片引用，不得凭空产生参考图标记"
+

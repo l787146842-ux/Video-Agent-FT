@@ -6,6 +6,7 @@ import { pickDimension, kindForDim, ConfigProviderModelSelect, type ConfirmOptio
 import { ConfirmOptionCards } from './ConfirmOptionCards';
 import { ConfirmCustomInput } from './ConfirmCustomInput';
 import { PauseQuestionFlow } from './PauseQuestionFlow';
+import { PauseDetailBlock } from './PauseDetailBlock';
 
 /** 无 group 的普通选项组使用的内部键 */
 const SINGLE_KEY = '__single__';
@@ -126,15 +127,14 @@ export function ConfirmActions(props: { message: ChatMessage }) {
     />
   );
 
-  /** 问题级短标题 + 辅助说明（dsh header/detail；两分支共用，缺省不渲染） */
+  /** 问题级短标题 + 辅助说明（dsh header/detail；两分支共用，缺省不渲染）。
+   *  2026-10-09（事故 6666）：说明经 PauseDetailBlock——长清单默认折叠。 */
   const headerBlock = () => (
     <>
       <Show when={header()}>
         <div class="confirm-wizard-header">{header()}</div>
       </Show>
-      <Show when={detail()}>
-        <div class="confirm-wizard-detail">{detail()}</div>
-      </Show>
+      <PauseDetailBlock text={detail()} />
     </>
   );
 

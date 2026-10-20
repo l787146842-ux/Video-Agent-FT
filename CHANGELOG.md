@@ -36,6 +36,39 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-20 · 文本剧本分析回主代理（用户裁决；部分翻案 2026-09-19 纯编排）
+
+- **背景（用户对照 Flova 1.5 转录后裁决）**：主代理此前只拿到 `analysis.summary` 一行，
+  完整报告是 write-only——`state.analysis` 不进模型快照（`state/context_builder.py`
+  2026-09-19 挪出）、`script_analysis_report` 回喂又被当「已投影进状态 JSON」消化
+  （`core/fc_feedback.py`），导致主代理无法就剧本细节与用户讨论。用户裁决：
+  **文本剧本的素材分析由主代理亲做**；落点 = `state.analysis`，
+  **不建 `素材分析.md`、不进文档区**。
+- **范围**：仅文本剧本（.txt/.docx/粘贴文本）；PDF/图片/音视频/超长文本仍委派
+  `script_analyze`（阶段、`_STAGE_TOOLS`、章节注入原样保留）。故事板结构写入/
+  提示词草稿仍按纯编排委派（`MAIN_AGENT_DENY` 保留 6 个故事板工具）。
+- **改动**：
+  1. `core/subagent.py`：`MAIN_AGENT_DENY` 移除 `script_analysis_report`
+     （主代理可登记分析；`MAIN_AGENT_DENY ⊆ _STAGE_TOOLS` 的 fail-loud 校验自然满足）。
+  2. `prompts/planner/protocol.md` 首句：声明文本分析例外（其余专业创作仍不亲做）。
+  3. `prompts/planner/skill_runtime.md` 纪律 #5：纯编排 + 文本分析例外。
+  4. `prompts/planner/subagent.md` 两桶映射：主线程阶段增「文本分析」及例外说明。
+  5. 测试：`test_production_prune` 两处反向断言 + `test_protocol_role_and_spec_boundary`
+     新增例外探针。
+- **操作口径**：主代理读剧本 → `read_skill(section="script_analyze")` 取章节 →
+  **正文写出分析结论**（必须；`script_analysis_report` 回喂会被消化）→
+  `script_analysis_report` 登记 summary/report（分析卡/阶段探针/步骤环照常）。
+- **红线**：`data/skills` 一行不改（冻结 #16）；故事板三阶段委派与
+  `MAIN_AGENT_DENY` 其余条目不动；不新增文档、不新增工具。
+- **验证**：定点 pytest 22 passed（`test_production_prune`）+ 205 passed
+  （角色/子代理/故事板/分析卡/阶段标签等 12 文件）；4 条失败均为
+  `TaskStore` SQLite `unable to open database file`（`workspace/` 目录当前用户
+  不可写，非本批代码；`task_store.py` / 生图工具未改）。`acceptance.py --quick`
+  GATES 14/15 通过，`contract` 因同一 `workspace` 权限阻断（`gen_api_types.py`
+  导入 `web.app` 时 `TaskStore` 打不开库）；ACL 诊断已跑：`workspace` 属管理员组、
+  当前用户无改权限之权，修复被拒、零改动，报告
+  `.tmp_probe/acl/acl-report-eea7e2b46c75444287b39bb6238c8503.jsonl`。
+
 ### 2026-10-16 · 事故 9999 子代理线程泄漏 + 子任务入口迁址 + 左栏手势收窄（用户三裁决）
 
 - **立项（用户看 9999 截图三问，两轮确认后授权执行）**：①右侧会话标签栏出现一整排
@@ -88,6 +121,119 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
   `MiddlePanel.tsx`、`SubagentRail.tsx`、`LeftPanel.tsx`）按 P1 同批更正。
 - **存量处置**：9999 的 18 条子代理线程与事件流**原样保留**；活跃位已由本批不变量在加载时
   自愈，无需一次性迁移脚本。
+
+### 2026-10-19 · 参音各自编号批 + 音色就地写 + 参考栏音频可见（用户三裁决）
+
+- **立项（用户 9999 现场三连问）**：用户看到视频卡里 `【音色】对白分别采用 @音色·程心…`
+  单独成行、且自己上传的音色音频在参考栏里**毫无标识**，追问「发给视频模型也不知道是
+  哪个音色」；并裁决三点：②「音色写在台词旁边」（做）、③「图和音频各算各的」（做）、
+  「参考素材栏里面也要有音频——视频生成的参考素材栏本来就能参考视频、音频、图片」（做）。
+  第①条（台词搬进切镜）用户明确**不做平台字段说明**：「不做那是模型的问题」（desc 契约不动）。
+- **实测病灶（只读取证，`proj-1790513490-8468602e` 11 张视频卡 + 9 张音色卡）**：
+  - **音色解析大面积落空**：9 张音色卡仅「音色·程心」有 audioUrl（用户自行上传测试），
+    其余 8 张为空；而 `build_storyboard_media_map` 只登记**有媒体**的卡 ⇒ `@音色·AA`
+    等 7 张卡的点名全部查表落空、被**静默去记号留文字**。S2/S3 各只解析出 1 条音频。
+  - **序号串桶**：S2 合并列表 = 4 张图 + 1 条音色，音色排总列表第 5 ⇒ 正文写
+    `[参考音频5：音色·程心]`；而发送时按类型分桶（`generation_submit` 的 out_audios
+    只有 1 条）⇒ 模型收 1 条音频却被告知「第 5 条」。
+  - **前端顿号吞名**：`@音色·程心、@音色·曹彬` 经 `MENTION_RE` 捕获成 `'音色·程心、'`
+    ⇒ 查表落空 ⇒ 参考栏音频计数**恒 0**（后端早有「最长前缀回退」，前端未跟上）。
+  - **参考栏只画卡上 refAssets**：提示词 `@` 引用到的素材会随请求发出、也计入右侧徽标，
+    却一个缩略图都不显示 ⇒ 与「已加载 N 个」自相矛盾。
+- **批1 · 图音各自编号（`fix(core)`）**：`resolve_prompt_mentions` 的标记序号改为
+  **按素材类型独立编号**（`参考图N` = 图片桶内序、`参考音频N` = 音频桶内序，与发送侧
+  分桶一致）。图片侧口径零变化（既有实产与 26 例测试全保持）。前端
+  `resolvePromptForGeneration` 同口径镜像（P1）。
+- **批2 · 音色就地写（`fix(tools)`，仅模型可见契约）**：`_DRAFT_FIELDS_HINT` 补正面形态
+  「写完 `{某角色说：“…”}` 紧接着写 `@音色·该角色名`」+ 点名禁止「对白分别采用 A、B、C
+  的音色」汇总句。理由：汇总句建立不了「哪句台词用哪个音色」的对应关系，Flova 实产是
+  就地写。**Skill 零改动**（D-16 冻结口径内，落在平台字段契约）。
+- **批3 · 参考栏音频可见（`fix(web)`）**：`RefAssetBar` 新增**只读**的「@ 引用」缩略图行
+  （角标「引用」、不可删——它由提示词里的 `@记号` 决定，删这里会变成两份事实源），
+  音频渲染 ♬ 图标槽；名称解析改走 `mentionNamesIn(text, map)` 的**最长前缀回退**，
+  顿号不再进名字。
+- **回归钉**：`tests/unit/test_prompt_refs.py` +3 例（音频用音频桶序号/图片序号不受影响/
+  多条音色在音频桶内 1·2·3 连续）；`tests/unit/test_11111_storyboard_contract_fixes.py`
+  +1 例（就地音色契约两侧齐备）；前端 `prompt-mentions.test.ts` +3 例（顿号不入名/
+  音频桶序号/图片序号不变）、`RefAssetBar-no-limit.test.tsx` +1 例（@ 引用的音频必须渲染）。
+- **诚实边界**：批1 只让「已解析到」的音频序号正确——**没有 audioUrl 的 8 张音色卡仍会
+  静默降级为纯文字**（属既有「懒解析」设计：等音频生成后才挂载，不是本批缺陷）；
+  要真正让模型「知道谁用什么声音」，前置条件是音色卡先有音频。
+- **验证**：`npx tsc --noEmit` 退出码 0；`acceptance.py --quick` 15 项 GATES 全绿；
+  受影响 pytest 49 例、vitest 35 例全绿；`npm run build` 通过（首屏 382.91 kB / 上限 400 kB）。
+  UI 面（参考栏音频缩略图）须构建后目测确认。
+
+### 2026-10-16 · 文档区 Skill 唯一权威批（消除「技能被静默关闭」根因）+ 音色引用名分离（用户两裁决）
+
+- **立项（用户三问后续裁决）**：用户在排查 9999「分镜提示词无音色 / 停轮不出卡片」两症状时
+  追问「skill 绑定已被摘除是什么意思?为什么会被摘除?」，随后裁决两点：
+  ①「既然文档区已经在了，还提示个毛线」——**彻底消除「关闭技能」这个状态**，把这次
+  Skill 被关掉的根本原因铲掉；②「音色引用能不能弄成，先引用，生成音频之后自动解析在提示词里面」。
+- **根因（9999 实证，两症状同一根因）**：项目态 `activeSkill.slug == ""` 曾**短路**
+  `fallback_skill_from_state` 直接 `return ""`，使十数处 Skill 门控**集体静默失效**且模型侧
+  看不出任何异常：假停机械续跑（`round_end_policies`，条件 `bool(ctx.skill)`）、阶段审阅卡
+  （`fc_reconcile`，条件 `ledger.skill_strict`）、提示词闸 / 结构完整性闸 / 生成确认闸
+  （`fc_gates` 三处判 `ctx.injected_skill`）、子代理 Skill 章节注入（`planner._launch_subagent`
+  判 `parent_ctx.skill_name`）。实测对照（同项目同 Skill，只差绑定态）：`skill=""` 时子代理流
+  里「注入 Skill 章节」**0 次**、`media_generator` 0 命中；10-07 绑定态那次为 **2 次 / 12 命中**。
+  `storyboard_stage_complete(st)` 本身返回 True，仅因 `skill_strict=False` 被卡在审阅卡门外。
+- **触发面（3 个可误触入口，同批全部移除）**：摘除动作只能由界面显式点击产生——
+  ①活跃 Skill 芯片右侧 ✕（`ActiveSkillChip`）；②SkillPicker「不使用技能」卡；
+  ③删除当前绑定 Skill 文档时顺带 `deactivateSkill`。9999 的摘除发生在
+  **2026-10-10 21:19:43**（`source=user`），时值当晚连续新建/删除测试项目
+  （21:07–21:22 之间 5555/3333 等），属切项目过程中的误触，非用户刻意关闭。
+  **归档说明**：本条与 `docs/history/2026-08.md` 均无 2026-08-27「批 C」自身的裁决留痕
+  （该实现 commit `69d3466f` 只含代码与测试），本批一并补齐口径。
+- **批1 · 文档区唯一权威（`fix(state)`，推翻批 C 的「空 slug = 显式自由对话」）**：
+  Skill 文档在 `data/skills/` 就是唯一真身，项目登记过的 Skill 一律生效——**不存在
+  「关掉技能」这个可用状态**，因而不存在「误触关掉后全平台门控静默失效」的失效面。
+  修法（根因）：空 slug 与「显式绑定不可加载」**同口径**——一律继续回落 `usedSkills` 倒序
+  （`registry.fallback_skill_from_state`），命中可加载性门户者胜。**存量项目自愈，零迁移脚本**。
+  全项目复算（只读）：9999 空值 → `AI-短剧一站式生成`（自愈）；2222/3333/live-* 四个项目
+  **输出零变化**（原本已绑定）。真自由对话仍可达：`usedSkills` 为空的新项目（唯一入口）。
+  - **P1 前后端同口径**：前端 `agent-prefs.agentSkillId()` 同步改为倒序回落，并**补上被停用
+    判定**（`isSkillEnabled`，数据源 `runtime_settings.skills_disabled`）——此前前端只查
+    `state.skills`（含停用项），与后端 `resolve_loadable_entry`（已注册 ∧ 未停用）**判据源不同**
+    ⇒ 后端返空、前端仍显芯片的漂移；现两侧同引同一可加载性口径。
+  - **入口清除**：`deactivateSkill` 整体移除；芯片 ✕、「不使用技能」卡、删文档顺带摘除
+    三处调用点同批删除（删文档后由倒序回落自然跳过陈旧 slug，不再写一次「关闭」）。
+    后端 `POST /api/skills/active` 保留空 slug 形参仅为存量兼容，语义改记为「清除显式偏好」。
+  - **回归钉**：`tests/unit/test_batch_c_active_skill_and_self_heal.py` 三条旧断言翻面
+    （空 slug 必须回落 usedSkills / 空 slug 且无登记才为空 / 端点语义改记）；
+    `tests/unit/test_skill_load_portal.py` 同批翻面；`src/web/stores/__tests__/agent-prefs.test.ts`
+    新增「空 slug 回落 usedSkills」与「倒序跳过已删文档」两例。
+- **批2 · 音色引用名分离（`fix(core)`；用户裁决「先写引用、后自动解析」配套）**：
+  **音频卡绝不抢占 keyElement 组标题**。病灶：音色卡与角色设定图同住一组，而组标题只登记
+  「该组第一张有媒体的卡」——音色卡排在前面时（9999 实测 `音色·程心` 在 `设定图·程心` 之前）
+  音频抢走组标题 ⇒ `@程心` 解析成**参考音频**而非角色图；一旦音频落地，全篇 `@角色名`
+  会集体从「角色的脸」变成「角色的声音」，画面生成失控。只读实验（内存合成 audioUrl、不落盘）：
+  修复前 `@程心` → `[参考音频1：程心]` 且角色图丢失；修复后 → `[参考图1：程心]` + 设定图。
+  - **修法**：组标题登记**分两遍**——①视觉卡（image/video）无条件登记；②仅当该组
+    **没有任何视觉卡**时才允许音频兜底登记一次（否则「只有音色卡」的元素如 4444 的
+    `Element_AA` 会让 `@AA` 未命中 ⇒ **静默去记号留文字**，即同类失效）。
+    **判据按「卡种类」（`infer_media_type`）而非「有无 URL」**：否则「组内只有音色卡」与
+    「设定图未出图」在 URL 面上不可区分，图未生成期间会把组标题让给音频、原故障**按时间窗复发**。
+  - **覆盖三条登记路径**（G4）：后端 `prompt_refs.build_storyboard_media_map`；
+    前端 `prompt-mentions.storyboardMediaMap` **与第三条独立命名路径 `storyboardMediaList`**
+    （@面板显示名，此前音色卡在「关键元素」页签同样借走组标题）。label 与文件名两路不受影响，
+    音色卡仍可用 `音色·程心` 引用音频。
+  - **懒解析确认（用户问题的正面回答）**：引用解析发生在**生成那一刻**（`resolve_prompt_mentions`
+    在 `generation_submit` 两条生成路径内按当时状态重建映射），故「先写 `@音色·名称`、等音频
+    生成/上传后自动解析并挂载」**无需新增机制**——音频未生成时记号原样保留于提示词、不报错；
+    `audioUrl` 一落地，`@音色·名称` 即自动解析为 `[参考音频N：…]` 并挂 `reference_audio`
+    （分镜自动挂音色锚点 `resolve_shot_audio_refs` 同源同效）。
+  - **回归钉**：`tests/unit/test_prompt_refs.py` 新增 4 例（音频不抢组标题 / 音色卡按 label 可达 /
+    纯音色卡组组标题兜底 / 图未出图仍不落到音频）；前端新增
+    `src/web/lib/__tests__/prompt-mentions-voice-title.test.ts` 5 例（含 @面板显示名同规则）。
+    **测试面缺口如实登记**：改动前全仓**无任何断言钉死「音色卡抢组标题」**（所有组标题夹具
+    均为「组内只有图卡」，4444 夹具虽含音色卡但图卡在前）⇒ 该病灶在测试面完全不可见，本批补齐钉子。
+- **未消解项（如实登记，非本批范围）**：①「用户主动要求自由对话」不能再在既有项目内临时表达，
+  唯一入口是新建无 Skill 项目（能力删除换取消失效面，属口径取舍）；②`usedSkills` 无删除路径
+  （`record_used_skill` 只 append），删文档后陈旧 slug 永留（已由倒序跳过不可加载项缓解）；
+  ③删光/停用全部 Skill 后残余失效面与改动前相同（触发路径从「误触」变为「真删光」）。
+- **验证**：`npx tsc --noEmit` 退出码 0；受影响 pytest 112 例全绿（prompt_refs 23 + batch10/9999
+  引用链 89 中相关项 + batch_c/portal/binding）；前端 vitest 32 例全绿。本机 `acceptance.py`
+  的 pytest/vitest 腿受已登记环境缺陷阻断（D-27 basetemp 权限，见 `docs/未清偿债务清单.md`）。
 
 ### 2026-10-10 · 事故 1010 附带清偿：Skill 正文点名不存在的工具（`reply_to_user`）归一为 `workflow_pause`
 

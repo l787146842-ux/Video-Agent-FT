@@ -2,8 +2,8 @@
 """主代理工具面契约单测（2026-09-19 主代理纯编排批更新）。
 
 钉死断言：
-① 顶级生产轮主代理结构性缺执行写入工具（MAIN_AGENT_DENY），但保留
-   读工具/媒体生成/文档/确认/编排工具；
+① 顶级生产轮主代理结构性缺故事板执行写入工具（MAIN_AGENT_DENY），但保留
+   读工具/媒体生成/文档/确认/编排工具；文本剧本分析 2026-10-20 起回主代理；
 ② 子级面持本阶段声明的生产工具（script_analyze 子级可调 read_uploaded_doc、
    storyboard 子级可调 storyboard_create_group），且**只**持本阶段声明的那部分
    （非本阶段的委派专属写入工具结构性不可见，2026-09-21 批0 事故 2222/Q5）；
@@ -52,22 +52,23 @@ def _ensure_platform_tools():
 # ---------- ① 顶级生产轮面 = 主代理纯编排（锁执行写入工具） ----------
 
 def test_top_level_production_main_agent_deny(svc):
-    """主代理纯编排（2026-09-19 用户裁决）：顶级生产轮主代理结构性缺
-    MAIN_AGENT_DENY 执行写入工具（只能经委派触达），但保留读工具/
-    媒体生成/文档/确认/编排工具。"""
+    """主代理纯编排（2026-09-19 用户裁决；2026-10-20 文本分析例外）：
+    顶级生产轮主代理结构性缺故事板执行写入工具（只能经委派触达），但保留
+    读工具/媒体生成/文档/确认/编排工具/文本分析登记工具。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
 
-    # 执行写入工具被锁（故事板结构/素材分析产出/提示词草稿）
+    # 故事板结构/提示词草稿写入被锁；素材分析已放回主代理（2026-10-20 用户裁决）
     for t in MAIN_AGENT_DENY:
         assert t in excluded, f"{t} 应被主代理结构性裁剪"
     assert "storyboard_create_group" in excluded
     assert "storyboard_delete_group" in excluded
     assert "storyboard_add_draft" in excluded
     assert "storyboard_patch_draft" in excluded
-    assert "script_analysis_report" in excluded
+    assert "script_analysis_report" not in excluded, \
+        "文本剧本分析已放回主代理（2026-10-20）"
     # 读工具不裁（主代理理解需求/读资料）
     assert "read_uploaded_doc" not in excluded
     assert "read_draft" not in excluded
@@ -159,15 +160,17 @@ def test_stage_tools_mapping():
 
 
 def test_main_agent_orchestrator_surface(svc):
-    """主代理纯编排（2026-09-19）：生产轮锁掉 5 个执行写入工具，保留
-    读工具/媒体生成；委派集 = 素材分析 + 故事板设计 + 媒体生成。"""
+    """主代理纯编排（2026-09-19；2026-10-20 文本分析例外）：生产轮锁掉
+    6 个故事板执行写入工具，保留读工具/媒体生成/文本分析登记；委派集仍含
+    素材分析（复杂素材）/故事板设计/媒体生成。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
-    # 执行写入工具被锁
+    # 执行写入工具被锁（故事板结构/提示词草稿）；文本分析已回主代理
     assert "storyboard_create_group" in excluded
-    assert "script_analysis_report" in excluded
+    assert "script_analysis_report" not in excluded, \
+        "文本剧本分析已放回主代理（2026-10-20）"
     assert "storyboard_add_draft" in excluded
     assert "storyboard_patch_draft" in excluded
     # 读工具保留

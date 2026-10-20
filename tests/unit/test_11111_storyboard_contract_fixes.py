@@ -147,6 +147,26 @@ def test_11111_audio_kinds_contract_matches_gate():
     """R7 同源：契约里点名「挂角色组」的种类，必须正是闸机放行的种类。"""
     allowed = subagent_mod.STAGE_CARD_AUDIO_TYPES["storyboard_design"]
     assert allowed == frozenset({"voice"})
+
+
+def test_1019_voice_reference_written_inline_beside_dialogue():
+    """2026-10-19 音色就地下（用户裁决「音色写在台词旁边，不要汇总成一行」）。
+
+    病灶（9999 实测 7/11 张视频卡）：模型把音色写成卡尾一句汇总——
+    「【音色】对白分别采用 @音色·AA、@音色·程心、@音色·曹彬 的音色参考。」
+    汇总句建立不了「哪句台词用哪个音色」的对应关系，用户原话「发给视频模型
+    也不知道是哪个音色」。Flova 实产是就地写（台词旁紧跟音色记号）。
+
+    本钉锁死模型可见契约里必须**同时**有：
+    ① 正面形态：音色紧跟在那句台词旁边；
+    ② 禁止形态：不得写成卡尾「对白分别采用…」汇总句。
+    只断言语义片段（不抄整句），措辞微调不误伤，但契约真被删掉就必红。
+    """
+    assert "音色就地写在那句台词旁边" in _DRAFT_FIELDS_HINT, "就地音色契约丢了"
+    assert "@音色·该角色名" in _DRAFT_FIELDS_HINT, "就地写法必须给出具体记号形态"
+    assert "对白分别采用" in _DRAFT_FIELDS_HINT, "必须点名被禁止的汇总句式"
+    # 既有「拆开写」契约不得被本批改坏（角色图 vs 音色两轴仍分离）
+    assert "角色图写 @角色名" in _DRAFT_FIELDS_HINT
     assert "音色卡（voice）" in _DRAFT_FIELDS_HINT
 
 

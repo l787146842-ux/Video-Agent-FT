@@ -16,6 +16,7 @@ import type { PauseAnswer, PauseQuestion } from '@/types';
 import type { ConfirmOptionItem } from './ConfirmPicker';
 import { ConfirmOptionCards } from './ConfirmOptionCards';
 import { ConfirmCustomInput } from './ConfirmCustomInput';
+import { PauseDetailBlock } from './PauseDetailBlock';
 
 export function PauseQuestionFlow(props: {
   questions: PauseQuestion[];
@@ -149,7 +150,7 @@ export function PauseQuestionFlow(props: {
           <div class="confirm-wizard-question">{cur().question}</div>
         </Show>
         <Show when={(cur().detail || '').trim()}>
-          <div class="confirm-wizard-detail">{cur().detail}</div>
+          <PauseDetailBlock text={cur().detail || ''} />
         </Show>
         <Show
           when={(cur().options || []).length > 0}

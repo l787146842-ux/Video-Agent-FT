@@ -57,10 +57,13 @@ def test_role_line_drops_creator_identity():
 
 
 def test_role_line_declares_dispatch_position():
-    """首句改为调度层定位（对齐 flova：主代理是调度层，不是创作者）。"""
+    """首句改为调度层定位（对齐 flova：主代理是调度层，不是创作者）；
+    2026-10-20 用户裁决再加唯一例外：文本剧本的素材分析由主代理亲做。"""
     first = _protocol_text().splitlines()[0]
     assert "制片调度" in first, "protocol.md 首句缺调度层定位（制片调度）"
     assert "不亲做" in first, "首句未声明「专业创作由执行环节完成、你不亲做」"
+    assert "文本剧本" in first and "script_analysis_report" in first, (
+        "首句缺文本分析例外声明（2026-10-20 用户裁决：文本剧本分析归主代理）")
 
 
 def test_role_line_keeps_action_channel_sentence():

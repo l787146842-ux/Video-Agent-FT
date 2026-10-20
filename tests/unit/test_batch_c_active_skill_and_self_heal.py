@@ -1,10 +1,11 @@
 """批 C：Skill 激活归项目态 + 轮始自愈对账。
 
 钉死：
-- StateManager.set_active_skill 写 activeSkill 绑定（source 归一；空串=显式自由对话）；
-- registry.fallback_skill_from_state 优先 activeSkill；未登记绑定的存量项目
-  保持 usedSkills 末位旧口径（向后兼容）；
-- /api/skills/active 端点激活（校验存在+留账）/摘除/未知 404；
+- StateManager.set_active_skill 写 activeSkill 绑定（source 归一）；
+- registry.fallback_skill_from_state 优先 activeSkill；**空 slug / 显式绑定不可加载
+  一律回落 usedSkills 倒序**（2026-10-16 用户裁决：文档区 Skill 是唯一权威，
+  推翻批 C 的「空 slug = 显式自由对话」，见 CHANGELOG 2026-10-16 文档区唯一权威批）；
+- /api/skills/active 端点：显式绑定（校验存在+留账）/ 清除显式偏好 / 未知 404；
 - _record_active_skill 随消息激活同步写项目态绑定；
 - 轮始 turn_seq 递增；自愈对账退役过期残留暂停卡
   （缺戳存量立即退役/超阈退役/阈值内保留/本轮正回应跳过）；
@@ -49,10 +50,17 @@ class TestSetActiveSkill:
         svc.set_active_skill("demo", "任意其它值")
         assert svc.state_dict["activeSkill"]["source"] == "user"
 
-    def test_empty_slug_is_explicit_free_chat(self, svc):
+    def test_empty_slug_clears_preference_not_skill(self, svc):
+        """2026-10-16 用户裁决：空 slug 不再等于「关闭技能」。
+        文档区 Skill 是唯一权威——空值只是「清除显式偏好」，
+        由 fallback_skill_from_state 回落 usedSkills 继续生效。
+        场景对齐 9999 实况：usedSkills 有登记、activeSkill 被写空。"""
         svc.set_active_skill(_SKILL)
+        svc.record_used_skill(_SKILL)
         svc.set_active_skill("")
         assert svc.state_dict["activeSkill"] == {"slug": "", "source": "user"}
+        # 关键：空值不再使项目「裸跑」，文档区登记仍生效
+        assert registry.fallback_skill_from_state(svc.state_dict) == _SKILL
 
 
 class TestFallbackActiveSkillPriority:
@@ -64,11 +72,20 @@ class TestFallbackActiveSkillPriority:
         state = {"activeSkill": {"slug": a, "source": "user"}, "usedSkills": [b]}
         assert registry.fallback_skill_from_state(state) == a
 
-    def test_empty_slug_explicit_free_chat_no_fallback(self):
+    def test_empty_slug_falls_back_to_used(self):
+        """2026-10-16 用户裁决（9999 事故根因）：空 slug **不再短路**。
+        曾几何时 `activeSkill.slug == ""` 立即 return ""，使十数处 Skill 门控
+        静默失效且模型侧看不出异常；且该状态可被 3 个界面动作误触产生。
+        现口径：空 slug 与「显式绑定不可加载」同级——一律继续回落 usedSkills。"""
         entries = registry.loadable_entries()
         state = {"activeSkill": {"slug": "", "source": "user"},
                  "usedSkills": [entries[0].slug]}
-        assert registry.fallback_skill_from_state(state) == ""
+        assert registry.fallback_skill_from_state(state) == entries[0].slug
+
+    def test_empty_slug_and_no_used_is_empty(self):
+        """真正无 Skill：空 slug **且** usedSkills 空（新项目）→ 空。"""
+        assert registry.fallback_skill_from_state(
+            {"activeSkill": {"slug": "", "source": "user"}, "usedSkills": []}) == ""
 
     def test_legacy_project_keeps_last_used(self):
         entries = registry.loadable_entries()
@@ -95,7 +112,8 @@ class TestActiveSkillEndpoint:
         assert svc.state_dict["activeSkill"] == {"slug": _SKILL, "source": "user"}
         assert _SKILL in (svc.state_dict.get("usedSkills") or [])
 
-    def test_deactivate_returns_to_free_chat(self, client, svc):
+    def test_empty_slug_clears_preference_only(self, client, svc):
+        """空 slug 端点语义（2026-10-16）：清除显式偏好，不是关闭技能。"""
         r = client.post("/api/skills/active", json={"slug": ""})
         assert r.status_code == 200
         assert svc.state_dict["activeSkill"] == {"slug": "", "source": "user"}

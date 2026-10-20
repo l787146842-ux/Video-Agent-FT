@@ -72,6 +72,21 @@ describe('批B：暂停提问结构对齐 dsh ask_user_question', () => {
     expect(labels).not.toContain('这会决定后续所有镜头的基调。');
   });
 
+  it('短说明不折叠；长清单折叠（2026-10-09 事故 6666 起的长说明呈现口径）', () => {
+    // 短说明：保持内联，不出现折叠开关（见 ConfirmActions-pause-detail-collapse.test.tsx 全量契约）
+    const short = render(() => (
+      <ConfirmActions message={pauseMessage({ pauseDetail: '影响全部后续镜头。' })} />
+    ));
+    expect(short.container.querySelector('[data-testid="pause-detail-toggle"]')).toBeNull();
+
+    // 长清单：默认收起，只露首行摘要
+    const long = render(() => (
+      <ConfirmActions message={pauseMessage({ pauseDetail: '拟生成 9 张：\n1. 甲\n2. 乙' })} />
+    ));
+    expect(long.container.querySelector('[data-testid="pause-detail-toggle"]')).not.toBeNull();
+    expect(long.container.querySelector('.confirm-detail-text')?.textContent).toBe('拟生成 9 张：');
+  });
+
   it('两字段缺省时不渲染空标题/空说明（防旧卡出现空白行）', () => {
     const { container } = render(() => <ConfirmActions message={pauseMessage()} />);
     expect(container.querySelector('.confirm-wizard-header')).toBeNull();

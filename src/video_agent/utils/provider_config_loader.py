@@ -17,6 +17,7 @@ import json
 import os
 import re
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -66,7 +67,48 @@ def save_api_providers(providers: List[Dict[str, Any]]) -> None:
     """保存 provider 配置（原子写）"""
     with _config_lock:
         atomic_write_text(PROVIDERS_FILE, json.dumps(providers, ensure_ascii=False, indent=2))
+    _bump_config_revision()
     logger.info(f"[ProviderConfig] 已保存 {len(providers)} 个供应商配置")
+
+
+# ---------- 配置新鲜度（配置变更判定的唯一事实源） ----------
+
+# 进程内配置写入计数：文件 stat 之外的第二重证据——同一时间戳粒度内的连续写
+# （保存 Key 后立即取用）也能被识别为「已变更」。
+_config_revision = 0
+
+
+def _bump_config_revision() -> None:
+    """标记配置发生一次进程内写入（所有配置写口调用）。"""
+    global _config_revision
+    _config_revision += 1
+
+
+def _file_signature(path: Path) -> Tuple[int, int]:
+    """文件变更签名 (mtime_ns, size)；不存在/读不到按 (0, 0) 计。"""
+    try:
+        st = path.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (0, 0)
+
+
+def config_fingerprint() -> Tuple[Any, ...]:
+    """供应商配置 + API Key 的当前新鲜度指纹（配置变更判定的唯一事实源）。
+
+    消费方（典型：AdapterFactory 的适配器缓存）在**取用**时对比自持指纹，
+    不一致即说明配置已改（用户在 API 设置页保存 Key / Base URL / 模型列表，
+    或直接编辑 data/api_providers.json、API/.env），须按当前配置重建实例——
+    这样「配置了就能用」，不需要重启进程。
+
+    三重证据：两个文件各自 (mtime_ns, size) + 进程内写入计数。前者覆盖
+    跨进程/外部编辑，后者覆盖同时间戳粒度内的连续写。
+    """
+    return (
+        _file_signature(PROVIDERS_FILE),
+        _file_signature(ENV_FILE),
+        _config_revision,
+    )
 
 
 # ---------- provider 列表入口 ----------
@@ -200,6 +242,7 @@ def update_env_key(env_name: str, value: str) -> None:
             new_lines.append(f"{env_name}={value}")
         atomic_write_text(ENV_FILE, "\n".join(new_lines) + "\n")
     os.environ[env_name] = value
+    _bump_config_revision()
 
 
 def clear_env_key(env_name: str) -> None:
@@ -212,6 +255,7 @@ def clear_env_key(env_name: str) -> None:
             new_lines = [l for l in lines if not l.strip().startswith(f"{env_name}=")]
             atomic_write_text(ENV_FILE, "\n".join(new_lines) + "\n")
     os.environ.pop(env_name, None)
+    _bump_config_revision()
 
 
 def get_key_preview(env_name: str) -> Tuple[bool, str]:

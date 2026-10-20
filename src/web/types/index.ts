@@ -600,8 +600,9 @@ export interface ServerStateSnapshot {
   project_name?: string;
   /** 当前项目已发送给 Agent 的 Skill slug 列表（文档面板只展示这些 Skill 文档） */
   usedSkills?: string[];
-  /** 项目态活跃 Skill 绑定（批 C）：slug 空串 = 显式自由对话；
-   * 未登记过绑定的存量项目无此键（前端回落 usedSkills 旧口径） */
+  /** 项目态活跃 Skill 绑定：**空串 = 清除显式偏好**（与无此键同口径，
+   * 均由 agent-prefs.agentSkillId 回落 usedSkills 倒序）。
+   * 2026-10-16 用户裁决：文档区 Skill 是唯一权威，不存在「关掉技能」态。 */
   activeSkill?: { slug: string; source: 'user' | 'suggested' } | null;
   /** 多对话列表（仅元信息，E-2）；活跃对话消息由顶层 chatMessages 携带 */
   conversations?: Conversation[];

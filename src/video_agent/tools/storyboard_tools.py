@@ -113,6 +113,28 @@ _DRAFT_FIELDS_HINT = (
     "就地写 @元素名（如 @程心、@木星轨道·星环号球形舱）——"
     "系统会把该处就地重写成「[参考图N：名称]」并自动把该元素图纳入参考图，"
     "使第 N 张图与画面描述一一对应；只在尾部罗列图片清单不足以建立对应关系。"
+    # 2026-10-16 音色引用批（用户裁决「先引用、生成音频之后自动解析在提示词里面」）：
+    # 音色卡（`音色·<角色名>`）的引用名与角色图**严格分开**——`@<角色名>` 固定指向
+    # 角色设定图，音色一律用 `@音色·<角色名>`。平台侧已保证音频**不抢占**角色组标题
+    # （见 `prompt_refs.build_storyboard_media_map`）；本句即那条模型可见的正面契约
+    # （P2 约束下沉：能被代码消费的写法写成契约，不靠 prose 说服模型"记得挂音色"）。
+    # 懒解析口径：引用记号**写下来即可**——音频尚未生成时记号原样保留、不报错；
+    # 等该音色卡的 audioUrl 落地（生成或手动上传），生成那一刻自动解析为
+    # 「[参考音频N：音色·名称]」并挂 `reference_audio`。故**不必等音频就绪**。
+    "**音色引用与角色图引用分开写**：角色图写 @角色名（系统取该角色设定图）；"
+    "角色音色写 @音色·角色名（系统取该角色的音色卡音频）。"
+    "音频尚未生成时也照常写下来——系统在生成那一刻按当时状态解析，"
+    "音频就绪后自动挂为参考音频，无需回头改提示词。"
+    # 2026-10-19 音色就地下批（用户裁决「音色写在台词旁边，不要汇总成一行」）：
+    # 病灶（9999 实测 7/11 张视频卡）：模型把音色写成卡尾一句汇总——
+    # 「【音色】对白分别采用 @音色·AA、@音色·程心、@音色·曹彬 的音色参考。」
+    # 汇总句里没有「这句台词是谁说的」这层绑定：解析成 `[参考音频N：名字]` 后，
+    # 模型只看到一串音频序号，仍不知道哪一句配哪条音频（用户原话「发给视频模型
+    # 也不知道是哪个音色」）。Flova 实产是**就地**写（台词旁紧跟音色记号）。
+    # 本句即那条缺失的形态契约（P2 约束下沉：可被代码消费的位置关系写成契约）。
+    "**音色就地写在那句台词旁边**：写完 `{某角色说：“…”}` 紧接着写 `@音色·该角色名`；"
+    "不要在卡片末尾另起一句「对白分别采用 A、B、C 的音色」这种汇总——"
+    "汇总句建立不了「哪句台词用哪个音色」的对应关系。"
 )
 
 # group patch 合法字段枚举（2026-09-23 批10，事故 4444/P1-1）：
@@ -136,14 +158,26 @@ _GROUP_FIELDS_HINT = (
 
 _ESCAPE_SEQUENCES = (("\\n", "\n"), ("\\t", "\t"))
 
+# 需要转义归一的**模型撰写自由文本字段**（唯一名单，G4：写口逐一引用本表，
+# 不得各自内联字段名，防再漏一条路径——2026-10-09 事故 6666 就是 prompt 漏网）。
+# 只列「模型可能写成多段」的字段：label 是卡名短语、model/providerId 等是枚举值，
+# 归一它们无收益且徒增误伤面，故不入表。
+_DRAFT_TEXT_FIELDS = ("prompt", "desc")
 
-def _unescape_desc(text: str) -> str:
-    """把 desc 里**字面两字符序列** `\\n`/`\\t` 还原为真换行/真制表符。
+
+def _unescape_text(text: str) -> str:
+    """把文本里**字面两字符序列** `\\n`/`\\t` 还原为真换行/真制表符。
 
     为什么需要（2026-09-24 批，分镜 desc 复述与转义修复）：模型偶发把换行写成
     字面 `\\n` 两个字符（而非 JSON 转义），落库后整段分镜塌成一整行文字墙
     （前端 pre-wrap 呈现不出分段）。实测证据：09-24 18:25 跑 13/13 镜全部命中
     （历史三次跑 97/97 全为真换行）——属采样波动，不能靠「模型会守规矩」。
+
+    2026-10-09 扩面（事故 6666）：同一病灶第二次现场命中，载体换成**卡 prompt**
+    ——9/9 张设定图卡的提示词全是字面 `\\n`（真换行 0 处），用户在提示词框里
+    直接看见「\\n」字面。原实现只接在组 desc 上、prompt 写口一路原样透传，
+    属 2026-09-24 修复时漏掉的同类路径（G4 未全覆盖）。故本函数不再绑定 desc
+    这一个字段，凡「模型撰写的自由文本」都归它（调用点见 `_DRAFT_TEXT_FIELDS`）。
 
     口径（无损归一，不是纠错闸）：
     - **只还原转义、不改不丢任何其他内容**——非转义文本逐字保留；
@@ -157,6 +191,22 @@ def _unescape_desc(text: str) -> str:
         if esc in text:
             text = text.replace(esc, real)
     return text
+
+
+def _normalize_free_text(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """就地归一 payload 里的模型撰写自由文本字段（`_DRAFT_TEXT_FIELDS`）。
+
+    单一入口（2026-10-09 事故 6666，G4）：建卡（add_draft / 建组内联 draft）、
+    改卡（patch_draft）与改组（patch_group 的 desc）**全部经此**——不在各调用点
+    各写一遍字段名，本事故的成因正是「desc 归一了、prompt 没归一」这种逐字段抄写。
+    非字符串/缺省字段原样不动，故对本表未出现的字段零影响。
+    """
+    if not isinstance(payload, dict):
+        return payload
+    for field in _DRAFT_TEXT_FIELDS:
+        if field in payload:
+            payload[field] = _unescape_text(payload.get(field))
+    return payload
 
 
 def _derive_duration_from_summary(summary: str) -> str:
@@ -357,6 +407,10 @@ class StoryboardCreateGroupTool(BaseTool):
                            "卡片描述统一放 desc 字段（角色：年龄/外貌/服装；场景：空间/材质/光源/氛围）。"),
                     error_code="validation", retryable=False,
                 )
+            # 2026-10-09 事故 6666（G4）：内联 draft 的 prompt/desc 同样做转义归一
+            # ——建卡两条写口（此处内联、storyboard_add_draft）与改卡写口共引
+            # 同一名单；拒收路径不产生任何文本改写。
+            draft_payload = _normalize_free_text(draft_payload)
             # 批 3 · B6 原子性：显式草稿 id 查重（写入前拦截，防重复卡假成功）
             _explicit_id = str(draft_payload.get("id") or "").strip()
             if _explicit_id and ops.draft_id_exists(svc.state_dict, _explicit_id):
@@ -376,7 +430,7 @@ class StoryboardCreateGroupTool(BaseTool):
         # 模型偶发把换行写成字面 `\n` 两字符（采样波动，18:25 跑 13/13 命中），
         # 落库即整段塌成一行文字墙。归一后 desc 与下游令牌解析/引用合并**同一口径**
         # （令牌与裸名都从归一后的正文解析，避免「存的」与「解析的」两份事实源）。
-        _desc = _unescape_desc(params.desc)
+        _desc = _unescape_text(params.desc)
         new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": _desc, "drafts": []}
         # 2026-09-23 批5（D-2/D-3）：元素种类落库（仅关键元素组有意义；
         # 空串=未声明，不强制不判错——给字段而非加闸）。
@@ -473,11 +527,16 @@ class StoryboardPatchDraftTool(BaseTool):
             found = ops.find_draft(svc.state_dict, params.draft_id, params.draft_type)
             if found:
                 group, draft = found
+                # 2026-10-09 事故 6666（G4）：改卡写口的 prompt/desc 转义归一
+                # （与两条建卡写口共引同一名单）。**只在本工具层做**——
+                # REST `/storyboard/drafts/{id}` 是用户手编路径，不归平台改写
+                # （P2：代码校验只裁定模型产出，不拦用户意志）。
+                patch = _normalize_free_text(dict(params.patch))
                 # 统一白名单（含 imageResolution/genType，与文本轨一致）
-                changed, _ = ops.patch_draft(draft, params.patch, svc.state_dict)
+                changed, _ = ops.patch_draft(draft, patch, svc.state_dict)
                 if changed:
                     # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
-                    ops.sync_shot_duration(group, draft, params.patch)
+                    ops.sync_shot_duration(group, draft, patch)
                     # 全局设置补印（与文本轨一致，草稿缺分辨率/时长时
                     # 按顶部「全局设置」填充，硬参数不依赖规格文档）
                     cat = ops.category_for_group_type(str(group.get("group_type") or ""))
@@ -525,6 +584,9 @@ class StoryboardAddDraftTool(BaseTool):
                        "卡片描述统一放 desc 字段（角色：年龄/外貌/服装；场景：空间/材质/光源/氛围）。"),
                 error_code="validation", retryable=False,
             )
+        # 2026-10-09 事故 6666（G4）：建卡写口的 prompt/desc 转义归一
+        # （与建组内联 draft / 改卡写口共引 `_normalize_free_text` 同一名单）。
+        draft_payload = _normalize_free_text(draft_payload)
         # 批 3 · B6 原子性：显式草稿 id 查重（写入前拦截，防重复卡假成功）
         _explicit_id = str((draft_payload or {}).get("id") or "").strip()
         if _explicit_id and ops.draft_id_exists(svc.state_dict, _explicit_id):
@@ -655,8 +717,9 @@ class StoryboardPatchGroupTool(BaseTool):
                         ops.category_for_group_type(params.group_type))
                 # 2026-09-24 批（同建组写口）：desc 更新同样做转义无损归一，
                 # 否则「建组已归一、改一次 desc 又退回文字墙」——同一写口同一口径。
-                if "desc" in patch:
-                    patch["desc"] = _unescape_desc(patch.get("desc"))
+                # 2026-10-09（事故 6666）：改经 `_normalize_free_text` 同一名单，
+                # 组 desc 与卡 prompt/desc 收敛到一处（不再逐字段各写一行）。
+                _normalize_free_text(patch)
                 # 2026-09-25（用户裁决「不能传裸名」）：显式 shotRefs 归一为元素组
                 # 全称（与建组写口 canonicalize_shot_refs 同一实现）。此前仅 canonical
                 # 去重、不改形态，模型重抄裸名即落裸名 ⇒ 前端 chip 逐字比对点不动。

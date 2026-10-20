@@ -46,6 +46,10 @@ _MENTION_RE = re.compile(
 
 _KIND_LABEL = {"image": "参考图", "video": "参考视频", "audio": "参考音频"}
 
+# 音频扩展名（与 `web/generation_submit.is_audio_url` 同口径）：
+# 仅用于给**不在 media_map 里的裸 URL** 判类型，使「按类型编号」与发送侧分桶一致。
+_AUDIO_URL_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg")
+
 
 def _match_longest_name(raw: str, media_map: Dict[str, Dict[str, str]]) -> Tuple[str, str]:
     """把 @ 捕获到的原始串解析为 (命中的名称, 未消费的尾部)。
@@ -95,13 +99,42 @@ def media_of_draft(d: Dict[str, Any]) -> Tuple[str, str]:
     return url, "image"
 
 
+def _group_has_visual_card(group: Dict[str, Any]) -> bool:
+    """该关键元素组是否存在**视觉卡**（图像/视频）——按卡的 mediaType 判定，
+    **不看是否已出图**（2026-10-16 音色抢名批）。
+
+    判据必须走 `infer_media_type`（唯一缺省入口）而非「有无 imgUrl」：
+    「组内只有音色卡」与「组内有设定图但尚未出图」在 URL 面上无法区分，
+    若按 URL 判就会在「图未生成」的时间窗内把组标题让给音频 ⇒ 原故障按时间窗
+    复发。按**卡种类**判则两种形状天然分开，与出图进度无关。
+    """
+    for d in group.get("drafts", []) or []:
+        if not isinstance(d, dict):
+            continue
+        if infer_media_type(d) in ("image", "video"):
+            return True
+    return False
+
+
 def build_storyboard_media_map(state: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
     """构建 名称 → {url, kind} 映射（与前端 PromptEditor 命名规则对齐）。
 
-    命名来源（后写不覆盖先写，保证关键元素标题优先）：
+    命名来源（**先到先得**，同名后到不覆盖）：
     - 关键元素：分组 title（如 Element_月球）**及其剥前缀裸名**（月球）
     - 所有草稿：label
     - URL 文件名（兜底，与前端 refAssetName 的文件名规则一致）
+
+    2026-10-16 音色抢名批（用户裁决「先写引用、音频出来自动解析」配套）：
+    **音色卡（mediaType=audio）不得抢占关键元素组标题**。病灶：音色卡与角色
+    设定图同组，标题登记只记「该组第一张有媒体的卡」——音色卡排在前面时
+    （9999 实测 `音色·程心` 在 `设定图·程心` 之前）音频抢走组标题，导致
+    `@程心` 解析成**参考音频**而非角色图；一旦音频落地，全篇 `@角色名`
+    会集体从「角色的脸」变成「角色的声音」，画面生成失控。
+    修法：组标题登记**分两遍**——
+      ① 先只由视觉卡（image/video）登记组标题；
+      ② 仅当该组**没有任何视觉卡**（纯音色卡组）时，才允许音频兜底登记组标题
+         （否则 @AA 这类「只有音色卡」的形状会静默降级为纯文字）。
+    label 与文件名两路不受影响：音色卡仍可用 `音色·程心`（label）引用。
 
     2026-09-23 批3 R3（Q4/Q6）：写口 `normalize_group_title` **无条件补类型前缀**
     （`Element_程心`），而模型在提示词里写的是**裸名**（`<<<image_程心>>>`）——
@@ -119,22 +152,39 @@ def build_storyboard_media_map(state: Dict[str, Any]) -> Dict[str, Dict[str, str
         if name not in media_map:
             media_map[name] = {"url": url, "kind": kind}
 
+    def put_title_aliases(group: Dict[str, Any], url: str, kind: str) -> None:
+        # 2026-09-26：形态集走 `element_name_variants` 唯一入口
+        # （全称 + 剥前缀 + **括注主名**）。此前只登记前两式，
+        # 模型在提示词里写主名（`<<<image_艾AA>>>`）时查表落空
+        # ⇒ 引用静默降级为纯文字（与 desc 内联块同一处口径缺口）。
+        for _name in element_name_variants(group.get("title", "")):
+            put(_name, url, kind)
+
     for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS):
         for g in state.get(cat, []) or []:
+            if not isinstance(g, dict):
+                continue
+            # 组标题登记的两遍法（仅关键元素有组标题语义）：
+            # 第一遍（视觉卡优先）在下方循环内完成；第二遍（音频兜底）就此打标。
+            title_reserved = cat == CAT_KEY_ELEMENTS and _group_has_visual_card(g)
+            audio_fallback_done = False
             for d in g.get("drafts", []) or []:
+                if not isinstance(d, dict):
+                    continue
                 for field in ("imgUrl", "videoUrl", "audioUrl"):
                     url = d.get(field) or ""
                     if not url:
                         continue
                     kind = {"imgUrl": "image", "videoUrl": "video", "audioUrl": "audio"}[field]
-                    # 关键元素用分组标题命名（对齐前端 refAssetName）
                     if cat == CAT_KEY_ELEMENTS:
-                        # 2026-09-26：形态集走 `element_name_variants` 唯一入口
-                        # （全称 + 剥前缀 + **括注主名**）。此前只登记前两式，
-                        # 模型在提示词里写主名（`<<<image_艾AA>>>`）时查表落空
-                        # ⇒ 引用静默降级为纯文字（与 desc 内联块同一处口径缺口）。
-                        for _name in element_name_variants(g.get("title", "")):
-                            put(_name, url, kind)
+                        if kind == "audio":
+                            # 音频：组标题只在「纯音色卡组」才兜底登记一次
+                            if not title_reserved and not audio_fallback_done:
+                                put_title_aliases(g, url, kind)
+                                audio_fallback_done = True
+                        else:
+                            # 视觉卡：无条件登记组标题（真正的「角色图」语义）
+                            put_title_aliases(g, url, kind)
                     put(d.get("label", ""), url, kind)
                     fname = Path(str(url).split("?")[0].split("#")[0]).name
                     put(fname, url, kind)
@@ -151,13 +201,36 @@ def resolve_prompt_mentions(
 
     - base_refs：草稿已有的参考素材（refAssets），保持原顺序；
     - @名称 命中的素材若不在 base_refs 且未满上限则自动追加；
-    - @名称 重写为 [参考图N：名称]（N 为该素材在最终列表中的序号）；
+    - @名称 重写为 [参考图N：名称]（N = 该素材在**同类型素材**中的序号）；
       未命中 / 超限的 @名称 仅去掉 @ 前缀保留文字，避免模型困惑。
+
+    2026-10-19 音色引用批（用户裁决「图和音频各算各的」）：
+    标记序号**按素材类型独立编号**，不再是「在总列表里排第几」。病灶（9999 实测）：
+    S2 合并列表 = 4 张图 + 1 条音色，音色排在总列表第 5 位 ⇒ 正文写成
+    `[参考音频5：音色·程心]`；而发送时按类型分桶（`generation_submit` 的
+    out_audios 桶），音频桶里**只有 1 条** ⇒ 模型收到 1 条音频，文本却说「第 5 条」，
+    对不上号。按类型编号后 `[参考音频1：音色·程心]` 与音频桶序号一致。
+    图片侧口径不变（`参考图N` 仍是图片桶内序号，既有实产与测试全部保持）。
     """
     refs: List[str] = [u for u in (base_refs or []) if u][:max_refs]
 
-    def index_of(url: str) -> int:
-        return refs.index(url) if url in refs else -1
+    def kind_of(url: str) -> str:
+        info = media_map.get(url) or {}
+        kind = str(info.get("kind") or "")
+        if kind in ("image", "video", "audio"):
+            return kind
+        # 未在映射里（外部裸 URL 等）：与 `generation_submit.is_audio_url` 同口径
+        clean = str(url or "").strip().lower().split("?")[0].split("#")[0]
+        return "audio" if clean.endswith(_AUDIO_URL_EXTS) else "image"
+
+    def index_in_kind(url: str) -> int:
+        """该素材在**同类型素材**中的 0 基序号（类型内首次出现序）。"""
+        want = kind_of(url)
+        seen: List[str] = []
+        for u in refs:
+            if kind_of(u) == want and u not in seen:
+                seen.append(u)
+        return seen.index(url) if url in seen else -1
 
     def replace(m: re.Match) -> str:
         raw = (m.group(1) or m.group(2) or "").strip()
@@ -173,12 +246,12 @@ def resolve_prompt_mentions(
         if not info:
             return name + tail  # 未命中：去掉记号，保留文字（含标点尾部）
         url = info["url"]
-        idx = index_of(url)
+        idx = index_in_kind(url)
         if idx < 0:
             if len(refs) >= max_refs:
                 return name + tail  # 超限：无法随请求发送，仅保留文字
             refs.append(url)
-            idx = len(refs) - 1
+            idx = index_in_kind(url)
         label = _KIND_LABEL.get(info.get("kind", "image"), "参考图")
         return f"[{label}{idx + 1}：{name}]" + tail
 

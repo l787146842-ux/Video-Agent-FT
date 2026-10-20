@@ -645,9 +645,21 @@ def skill_manifest_of(skill_name: str) -> Optional[Dict[str, dict]]:
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
     """项目当前 Skill 归属兜底（可加载性门户收口，M2 停用=真停用）。
 
+    **文档区 Skill 是唯一权威**（2026-10-16 用户裁决，推翻 2026-09「批C」的
+    「空 slug = 显式自由对话，不回落」）：Skill 文档在 `data/skills/`（文档区）
+    就是唯一真身，项目里登记过的 Skill 一律生效——**不存在「关掉技能」这个
+    可用状态**，因而不存在「误触关掉后全平台门控静默失效」的失效面。
+
+    病灶（9999 实证）：`activeSkill.slug == ""` 曾短路 return ""，使十数处
+    Skill 门控（假停续跑 / 阶段审阅卡 / 提示词闸 / 生成确认闸 / 子代理章节
+    注入）**全部静默失效**，而模型侧看不出任何异常；且该状态可被 3 个界面
+    动作误触产生（芯片 ✕ / 面板「不使用技能」卡 / 删除当前绑定文档）。
+    修法（根因）：空 slug 与「显式绑定不可加载」同口径——**一律继续回落
+    `usedSkills` 倒序**，文档区登记过的 Skill 自动恢复生效（存量项目自愈，
+    无需迁移脚本）。界面侧 3 个可误触入口同批移除（见 CHANGELOG 2026-10-16）。
+
     候选序列 = activeSkill → usedSkills 倒序，取首个命中门户者；全盲返回空。
-    不改项目态（不清 activeSkill/usedSkills，重新启用后自动恢复）；
-    显式自由对话（批 C：activeSkill 已登记且 slug 为空）即终止不再滑落。
+    不改项目态（不清 activeSkill/usedSkills，重新启用后自动恢复）。
     这是「当前 Skill 归属」的单一实现：chat_service / planner / agent_loop
     统一走这里，禁止各自再写一份兜底（单一事实源）。
     """
@@ -656,9 +668,8 @@ def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
     active = raw_state.get("activeSkill")
     if isinstance(active, dict):
         slug = str(active.get("slug") or "").strip()
-        if not slug:
-            return ""  # 显式自由对话（批 C）：不回落 usedSkills
-        if resolve_loadable_entry(slug) is not None:
+        # 空 slug / 显式绑定不可加载：同口径继续回落（不再短路）。
+        if slug and resolve_loadable_entry(slug) is not None:
             return slug
     for item in reversed(list(raw_state.get("usedSkills") or [])):
         cand = str(item or "").strip()

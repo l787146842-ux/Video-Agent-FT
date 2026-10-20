@@ -109,10 +109,14 @@ class ActiveSkillRequest(BaseModel):
 
 @router.post("/skills/active")
 async def set_active_skill(body: ActiveSkillRequest):
-    """项目态 Skill 激活/摘除（批 C：激活事实归项目态）。
+    """项目态 Skill 显式绑定（激活事实归项目态）。
 
-    slug 非空 = 激活（校验文档存在 + usedSkills 留账）；
-    slug 空 = 摘除，回到自由对话。状态写入唯一走 StateManager。
+    slug 非空 = 显式绑定（校验文档存在 + usedSkills 留账）；
+    slug 空 = **清除显式偏好**（不再是「关闭技能」——2026-10-16 用户裁决：
+    文档区 Skill 是唯一权威，项目登记过的 Skill 一律生效；空值由
+    registry.fallback_skill_from_state 回落 usedSkills，与该字段缺失同义）。
+    界面侧已无任何入口写空值（芯片 ✕ / 「不使用技能」卡 / 删除顺带摘除均已移除），
+    本形参保留仅为向后兼容存量调用方。状态写入唯一走 StateManager。
     """
     svc = StateManager.get_instance()
     slug = str(body.slug or "").strip()
@@ -127,9 +131,10 @@ async def set_active_skill(body: ActiveSkillRequest):
     svc.set_active_skill(slug, source)
     svc.record_flow_event(
         "skill_active",
-        f"活跃 Skill {'摘除（自由对话）' if not slug else '激活 ' + slug}（来源：{'建议采纳' if source == 'suggested' else '用户选择'}）",
+        f"{'清除显式 Skill 偏好（回落文档区登记）' if not slug else '显式绑定 ' + slug}"
+        f"（来源：{'建议采纳' if source == 'suggested' else '用户选择'}）",
     )
-    logger.info(f"[Skills] 活跃 Skill 绑定更新: slug={slug or '（摘除）'} source={source}")
+    logger.info(f"[Skills] 活跃 Skill 绑定更新: slug={slug or '（清除偏好）'} source={source}")
     return {"ok": True, "active_skill": svc.state_dict.get("activeSkill")}
 
 

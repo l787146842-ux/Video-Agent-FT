@@ -55,7 +55,9 @@ export function RefAssetBar(props: {
     const prompt = props.rec()?.draft.prompt || '';
     if (prompt.includes('@') || prompt.includes('＠') || prompt.includes('<<<')) {
       const map = storyboardMediaMap();
-      for (const [name] of mentionNamesIn(prompt)) {
+      // 2026-10-19：名称解析改走 `mentionNamesIn(text, map)`——传入同一份映射，
+      // 顿号不再被吞进名字（`@音色·程心、` 曾导致音频计数恒 0、缩略图不显示）。
+      for (const [name] of mentionNamesIn(prompt, map)) {
         const info = map[name];
         if (!info || seen.has(info.url)) continue;
         seen.add(info.url);
@@ -65,6 +67,31 @@ export function RefAssetBar(props: {
     return counts;
   });
   const refTotal = () => refCounts().image + refCounts().video + refCounts().audio;
+
+  /** 提示词里 `@` 引用、但**不在卡上 refAssets** 的故事板素材（只读展示）。
+   *
+   * 2026-10-19 参考栏可见性批（用户：「视频生成的参考素材栏本来就能参考视频、
+   * 音频、图片，参考栏里面也要有音频」）：此前本栏只画 `refAssets`（卡上挂的
+   * 素材），而提示词里 `@音色·程心` 这类引用**会随请求发出、也计入右侧徽标**，
+   * 却一个缩略图都不显示——用户上传了音色音频后，参考栏里看不到任何音频标识，
+   * 与「已加载参考素材 N 个」的计数自相矛盾。
+   * 现按「计数即所见」补齐：引用到的素材作为只读缩略图追加在可删素材之后，
+   * 角标写「引用」（不可删——它由提示词里的 `@记号` 决定，删这里会变成
+   * 只改计数不改提示词的两份事实源）。 */
+  const mentionRefs = createMemo(() => {
+    const prompt = props.rec()?.draft.prompt || '';
+    const out: Array<{ name: string; url: string; kind: 'image' | 'video' | 'audio' }> = [];
+    if (!prompt.includes('@') && !prompt.includes('＠') && !prompt.includes('<<<')) return out;
+    const map = storyboardMediaMap();
+    const seen = new Set<string>(props.refAssets());
+    for (const [name] of mentionNamesIn(prompt, map)) {
+      const info = map[name];
+      if (!info || seen.has(info.url)) continue;
+      seen.add(info.url);
+      out.push({ name, url: info.url, kind: info.kind });
+    }
+    return out;
+  });
 
   /** 添加参考素材（去重 + 上限） */
   function addRefUrl(url: string, name?: string) {
@@ -155,6 +182,30 @@ export function RefAssetBar(props: {
                 <Show when={state.selectedType === 'shot'}>
                   <span class="ref-thumb-badge">参考</span>
                 </Show>
+              </div>
+            )}
+          </For>
+
+          {/* 提示词 @ 引用到的故事板素材（含音色音频）：只读展示，与右侧计数同源 */}
+          <For each={mentionRefs()}>
+            {(item) => (
+              <div
+                class="ref-thumb-wrap ref-thumb-wrap-readonly"
+                title={`${item.name}（提示词 @ 引用，随请求发送）`}
+              >
+                <Show when={item.kind === 'video'}>
+                  <span class="ref-video-wrap">
+                    <video src={videoThumb(item.url)} class="ref-thumb" muted playsinline preload="metadata" />
+                    <span class="ref-video-badge">▶</span>
+                  </span>
+                </Show>
+                <Show when={item.kind === 'audio'}>
+                  <div class="ref-thumb ref-thumb-audio"><FiMusic size={16} /></div>
+                </Show>
+                <Show when={item.kind === 'image'}>
+                  <img src={safeUrl(item.url)} alt={item.name} class="ref-thumb" />
+                </Show>
+                <span class="ref-thumb-badge">引用</span>
               </div>
             )}
           </For>

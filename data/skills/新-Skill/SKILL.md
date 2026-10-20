@@ -6,7 +6,7 @@ skill_description: "上传脚本以生成视频。使用 Nano Banana + Seedance 
 2. 编写 `Final_Video_Spec.md`（标题、类型、画幅、时长、视觉风格、语言、模型偏好） → **text_editor**。
 3. 生成与第1步相符的故事板（关键元素、镜头列表、音频层） → **storyboard_designer**。
 4. **Prompt Draft 编制与确认（生成图/视频素材前的强制前置步骤）**：
-   - 将每条提示词以 **Prompt Draft** 形式通过 reply_to_user 展示给用户，每份 Prompt Draft 须包含：资产类型（元素图/镜头视频）、对应的 element_id 或 shot_id、完整 prompt 文本、推荐模型与分辨率参数。
+   - 将每条提示词以 **Prompt Draft** 形式通过 workflow_pause 展示给用户，每份 Prompt Draft 须包含：资产类型（元素图/镜头视频）、对应的 element_id 或 shot_id、完整 prompt 文本、推荐模型与分辨率参数。
    - **分批次确认**：先编制并展示元素图像的 Prompt Draft，用户确认后再进入步骤 5；元素图像生成完毕后，再编制并展示镜头视频的 Prompt Draft，用户确认后再进入步骤 6。
    - **【强制暂停点】** 必须等待用户审阅并明确确认 Prompt Draft 后，方可执行对应的生成操作。**严禁**跳过此步骤、默认直接调用 **media_generator** 生成图/视频。
    - 用户提出修改时，须先更新 Prompt Draft 并再次确认，确认通过后方可执行生成。
@@ -21,7 +21,7 @@ skill_description: "上传脚本以生成视频。使用 Nano Banana + Seedance 
 
 **注意 — 用户提供或预先存在的媒体（主要影响步骤3–7）：** 在填补生成内容之前，通过 **media_generator** 将其绑定并分配到适当的分镜位置；避免重复生成用户已提供的内容。用户已上传且可直接绑定的资产，无需编写 Prompt Draft 或重新生成。
 
-**何时暂停：** 不要一次性完成所有步骤。在上述每个关键阶段（例如：规范确认后、故事板生成后、**Prompt Draft 确认后**、元素图像生成后、镜头视频生成后、音频生成后）停下来，与用户确认，然后再继续。在继续之前，使用卡片或 reply_to_user 邀请用户进行审阅。
+**何时暂停：** 不要一次性完成所有步骤。在上述每个关键阶段（例如：规范确认后、故事板生成后、**Prompt Draft 确认后**、元素图像生成后、镜头视频生成后、音频生成后）停下来，与用户确认，然后再继续。在继续之前，使用卡片或 workflow_pause 邀请用户进行审阅。
 </planner>
 
 <multimodal_analyze_tool>

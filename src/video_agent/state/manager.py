@@ -473,11 +473,13 @@ class StateManager(UndoRedoMixin):
             self.save()
 
     def set_active_skill(self, slug: str, source: str = "user") -> None:
-        """写入项目态当前活跃 Skill 绑定（批 C：激活语义归项目态）。
+        """写入项目态当前活跃 Skill 绑定（激活语义归项目态）。
 
-        slug 为空串 = 显式自由对话（摘除）；source 记激活来源（用户选择/
-        建议采纳）。与 usedSkills 同属项目事实（随完整快照下发前端），
-        不走 update（避免污染 undo 栈）。
+        slug 非空 = 显式绑定；**slug 为空串 = 清除显式偏好**（2026-10-16 用户裁决：
+        文档区 Skill 是唯一权威，不存在「关掉技能」这个可用状态；空值由
+        `registry.fallback_skill_from_state` 回落 `usedSkills`，与字段缺失同义）。
+        source 记激活来源（用户选择/建议采纳）。与 usedSkills 同属项目事实
+        （随完整快照下发前端），不走 update（避免污染 undo 栈）。
         """
         self._raw_state["activeSkill"] = {
             "slug": str(slug or ""),

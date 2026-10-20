@@ -74,7 +74,7 @@ def test_no_model_hidden_fields_anywhere():
 
 def test_unescape_desc_restores_literal_escapes():
     """写入侧无损归一：字面 `\\n`/`\\t` → 真换行/真制表符；其他内容逐字不变。"""
-    from src.video_agent.tools.storyboard_tools import _unescape_desc as u
+    from src.video_agent.tools.storyboard_tools import _unescape_text as u
     assert u("A\\nB") == "A\nB"
     assert u("A\\tB") == "A\tB"
     assert u("【空间锚点】\\n· 程心：左舱壁\\n光影基调：冷白") == \
@@ -151,6 +151,85 @@ class TestShotDurationDerivedFromSummary:
         stored = next(g for g in svc.state_dict["shots"] if g["id"] == gid)["desc"]
         assert "\\n" not in stored and "\\t" not in stored
         assert stored == "【空间锚点 / S1】\n改稿正文。\t带制表。"
+
+
+class TestDraftPromptEscapeNormalized:
+    """事故 6666（2026-10-09）：卡 prompt/desc 的字面 `\\n` 必须落库为真换行。
+
+    病灶：2026-09-24 的 desc 归一修复只接了组 desc 两条写口，**卡 prompt 一路
+    原样透传** ⇒ 6666 实跑 9/9 张设定图卡的提示词全是字面 `\\n`（真换行 0 处），
+    用户在提示词框里直接看见「\\n」字面。本轮按 G4 把**三条模型写口**全覆盖：
+    ① 建组内联 draft；② `storyboard_add_draft`；③ `storyboard_patch_draft`。
+    """
+
+    @pytest.fixture
+    def svc(self, tmp_path):
+        StateManager.reset_instance()
+        instance = StateManager(str(tmp_path))
+        StateManager._instance = instance
+        instance.state_dict["keyElements"] = [
+            {"id": "ke-1", "title": "程心", "desc": "", "drafts": []},
+        ]
+        yield instance
+        StateManager.reset_instance()
+
+    PROMPT = "角色全身三视图展示图：程心。\\n正面视角 | 侧面视角 | 背面视角。\\n画面无文字。"
+    EXPECTED = "角色全身三视图展示图：程心。\n正面视角 | 侧面视角 | 背面视角。\n画面无文字。"
+
+    async def test_prompt_normalized_on_add_draft(self, svc):
+        """写口②：`storyboard_add_draft`（6666 现场命中的那条路径）。"""
+        result = await ToolManager.invoke_tool(
+            "storyboard_add_draft",
+            {"group_id": "ke-1", "group_type": "keyElement",
+             "draft": {"label": "程心_角色三视图设定图", "mediaType": "image",
+                       "prompt": self.PROMPT}})
+        assert result.success is True, result.error
+        stored = svc.state_dict["keyElements"][0]["drafts"][0]["prompt"]
+        assert "\\n" not in stored, "字面 \\n 未归一（6666 病灶复发）"
+        assert stored == self.EXPECTED
+
+    async def test_prompt_normalized_on_create_group_inline_draft(self, svc):
+        """写口①：建组时内联携带的 draft（同批另一条建卡路径）。"""
+        result = await ToolManager.invoke_tool(
+            "storyboard_create_group",
+            {"group_type": "keyElement", "title": "AA",
+             "desc": "【视觉设定】\\n年龄约23岁。",
+             "draft": {"label": "AA_角色三视图设定图", "mediaType": "image",
+                       "prompt": self.PROMPT}})
+        assert result.success is True, result.error
+        group = svc.state_dict["keyElements"][-1]
+        # 卡 prompt 与组 desc 两个字段同等归一（同一名单）
+        assert group["drafts"][0]["prompt"] == self.EXPECTED
+        assert group["desc"] == "【视觉设定】\n年龄约23岁。"
+
+    async def test_prompt_normalized_on_patch_draft(self, svc):
+        """写口③：`storyboard_patch_draft` 改写提示词同样归一。"""
+        added = await ToolManager.invoke_tool(
+            "storyboard_add_draft",
+            {"group_id": "ke-1", "group_type": "keyElement",
+             "draft": {"label": "草稿", "mediaType": "image", "prompt": "初稿。"}})
+        assert added.success is True, added.error
+        did = added.data["draft_id"]
+
+        result = await ToolManager.invoke_tool(
+            "storyboard_patch_draft",
+            {"draft_id": did, "draft_type": "keyElement",
+             "patch": {"prompt": "【风格】\\n改稿提示词。\\t带制表。"}})
+        assert result.success is True, result.error
+        stored = svc.state_dict["keyElements"][0]["drafts"][0]["prompt"]
+        assert stored == "【风格】\n改稿提示词。\t带制表。"
+
+    async def test_user_rest_edit_path_not_rewritten(self, svc):
+        """反面对照：REST 用户手编路径不经归一（P2 不拦用户意志）。
+
+        用户若确要写一个字面 `\\n`，平台不得私自改写其输入——归一只是
+        **模型产出的落库口径**，故本包络只覆盖工具层三条写口。
+        """
+        import inspect
+        from src.video_agent.web.routes import storyboard as route_mod
+        src = inspect.getsource(route_mod.update_draft)
+        assert "_normalize_draft_text" not in src
+        assert "_unescape_text" not in src
 
 
 class TestK4ThreeSourceRefMerge:

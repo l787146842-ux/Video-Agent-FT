@@ -5,6 +5,7 @@ import {
 } from '@/lib/providers';
 import { setActiveSkillApi } from '@/api/docs';
 import { showToast } from '@/stores/toast';
+import { isSkillEnabled } from '@/stores/skill-prefs';
 import type { Skill } from '@/types';
 
 /**
@@ -77,16 +78,30 @@ export function setAgentModel(v: string) {
 }
 
 export function agentSkillId(): string {
-  // 批 C：激活事实归项目态（后端 activeSkill 为权威，随快照下发）。
-  // 已登记绑定：slug 空串 = 显式自由对话。
+  // 文档区 Skill 为唯一权威（2026-10-16 用户裁决，推翻批 C 的「空 slug =
+  // 显式自由对话」）：项目里登记过的 Skill 一律生效，空 slug 不再等于关闭，
+  // 而是「无显式偏好」→ 回落 usedSkills 倒序（与后端
+  // registry.fallback_skill_from_state 同口径，P1 单一事实源）。
+  //
+  // 可加载性判据与后端 `resolve_loadable_entry` 对齐：**已登记 ∧ 未停用**。
+  // 此前前端只查 `state.skills`（含被停用项）⇒ 后端返空、前端仍显芯片的漂移；
+  // 现同引 `isSkillEnabled`（数据源 = runtime_settings.skills_disabled）。
+  const loadable = (id: string) =>
+    state.skills.some((s) => s.id === id)
+    && isSkillEnabled(id.replace(/^doc:/, ''));
   const active = state.activeSkill;
-  if (active) return active.slug ? `doc:${active.slug}` : '';
-  // 未登记绑定的存量项目：保持旧口径（全局建议值校验后生效），
-  // 不丢失既有选择；新项目（无 usedSkills）默认自由对话，
-  // 全局值仅以建议形态呈现（suggestedSkillId + 采纳芯片）。
-  if (!state.usedSkills.length) return '';
-  const id = skillId();
-  if (id && state.skills.some((s) => s.id === id)) return id;
+  if (active?.slug) {
+    const id = `doc:${active.slug}`;
+    if (loadable(id)) return id;
+    // 显式绑定不可加载（文档已删/被停用）：不再短路，继续回落（同后端口径）
+  }
+  // 倒序取首个仍可加载的（跳过已删文档/已停用项留下的陈旧登记）
+  for (let i = state.usedSkills.length - 1; i >= 0; i -= 1) {
+    const id = `doc:${state.usedSkills[i]}`;
+    if (loadable(id)) return id;
+  }
+  // 新项目（usedSkills 为空）不回落全局建议值——建议只以建议芯片呈现，
+  // 新项目是唯一获准的「无 Skill」入口（自由对话）。
   return '';
 }
 
@@ -109,7 +124,7 @@ export function setAgentSkill(v: string) {
   setSkillSig(v);
 }
 
-/** 激活 Skill 到项目态（批 C）：乐观写本地态 + 后端落盘；
+/** 激活 Skill 到项目态：乐观写本地态 + 后端落盘；
  * 同步更新全局建议值（不丢失）。失败回滚本地态。 */
 export async function activateSkill(skillId: string, source: 'user' | 'suggested' = 'user'): Promise<boolean> {
   const slug = skillId.startsWith('doc:') ? skillId.slice(4) : '';
@@ -127,22 +142,11 @@ export async function activateSkill(skillId: string, source: 'user' | 'suggested
   }
 }
 
-/** 摘除活跃 Skill（批 C）：回到自由对话（写项目态 + 后端留痕）；
- * 全局建议值不受影响（不丢失）。 */
-export async function deactivateSkill(): Promise<boolean> {
-  const prev = state.activeSkill;
-  setState('activeSkill', { slug: '', source: 'user' });
-  try {
-    await setActiveSkillApi('', 'user');
-    return true;
-  } catch (err) {
-    setState('activeSkill', prev);
-    showToast(`Skill 摘除失败：${(err as Error).message}`, 'error');
-    return false;
-  }
-}
+// 2026-10-16 用户裁决：`deactivateSkill` 已整体移除——
+// 文档区 Skill 是唯一权威，「关闭技能」不再是可用状态（详见 CHANGELOG）。
+// 需要自由对话时新建一个没有 Skill 的项目；不需要在既有项目里「关掉」技能。
 
-/** 忽略建议（批 C）：仅清全局建议值，不动项目态（激活事实与建议分离） */
+/** 忽略建议：仅清全局建议值，不动项目态（激活事实与建议分离） */
 export function dismissSkillSuggestion() {
   setAgentSkill('');
 }

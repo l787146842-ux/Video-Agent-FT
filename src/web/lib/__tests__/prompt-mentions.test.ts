@@ -30,6 +30,24 @@ vi.mock('@/stores/studio', () => ({
   },
 }));
 
+/** 2026-10-19 音色引用批夹具：音色卡在设定图之前（9999 实测顺序） */
+const VOICE_KE = [
+  {
+    id: 'ke-1', title: 'Element_程心',
+    drafts: [
+      { id: 'd1', label: '音色·程心', mediaType: 'audio', audioType: 'voice', audioUrl: '/a/cx.mp3' },
+      { id: 'd2', label: '设定图·程心', mediaType: 'image', imgUrl: '/a/cx.png' },
+    ],
+  },
+  {
+    id: 'ke-2', title: 'Element_AA',
+    drafts: [
+      { id: 'd3', label: '音色·AA', mediaType: 'audio', audioType: 'voice', audioUrl: '/a/aa.mp3' },
+      { id: 'd4', label: '设定图·AA', mediaType: 'image', imgUrl: '/a/aa.png' },
+    ],
+  },
+];
+
 const { storyboardMediaMap, resolvePromptForGeneration, stripTypePrefix } = await import('@/lib/prompt-mentions');
 
 describe('批3 · R3 裸名别名（写口补前缀，引用链必须同口径）', () => {
@@ -144,3 +162,48 @@ describe('批3 · Q6② 前端渲染 `<<<image_>>>`（此前零匹配）', () =>
     expect(el.textContent).toContain('<<<image_未知>>>');
   });
 });
+
+/**
+ * 2026-10-19 音色引用批（用户裁决「参考栏里也要有音频 / 图和音频各算各的」）。
+ *
+ * 病灶一（顿号吞进名字）：提示词 `@音色·程心、@音色·曹彬 的音色参考` 里
+ * `MENTION_RE` 捕获出 `'音色·程心、'`（顿号进名）⇒ 查表落空 ⇒ `RefAssetBar`
+ * 的音频计数恒 0、该条音频也不计入。后端早有「最长前缀回退」，前端没跟上。
+ * 病灶二（序号串桶）：`[参考音频5]` 用的是总列表序号，而发送时音频单独成桶。
+ */
+describe('2026-10-19 音色引用批 · 顿号不吞名 + 图音各自编号', () => {
+  async function loadVoiceLib() {
+    vi.resetModules();
+    vi.doMock('@/stores/studio', () => ({ state: { keyElements: VOICE_KE, shots: [], audioItems: [] } }));
+    return import('@/lib/prompt-mentions');
+  }
+
+  it('顿号不得进名字：`@音色·程心、` 的音频必须被计入', async () => {
+    const { mentionNamesIn } = await loadVoiceLib();
+    const names = [...mentionNamesIn('【音色】对白分别采用 @音色·程心、@音色·AA 的音色参考。')]
+      .map(([n]) => n);
+    expect(names).toContain('音色·程心');
+    expect(names).toContain('音色·AA');
+    expect(names.some((n) => n.includes('、'))).toBe(false);
+  });
+
+  it('音频标记用音频桶内序号（不是总列表序号）', async () => {
+    const { resolvePromptForGeneration } = await loadVoiceLib();
+    // 4 张图在前 + 音色在后（9999/S2 现场形状）
+    const base = ['/a/cx.png', '/a/aa.png'];
+    const r = resolvePromptForGeneration(
+      '{程心说："打击来了？"} @音色·程心', base, 50,
+    );
+    expect(r.refs).toEqual([...base, '/a/cx.mp3']);
+    expect(r.prompt).toContain('[参考音频1：音色·程心]');
+    expect(r.prompt).not.toContain('参考音频3');
+  });
+
+  it('图片序号不受音频影响（仍从图片桶 1 起算）', async () => {
+    const { resolvePromptForGeneration } = await loadVoiceLib();
+    const r = resolvePromptForGeneration('@AA 与 @音色·程心', [], 50);
+    expect(r.prompt).toContain('[参考图1：AA]');
+    expect(r.prompt).toContain('[参考音频1：音色·程心]');
+  });
+});
+

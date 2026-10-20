@@ -72,7 +72,7 @@ def test_selected_block_planner_only_for_real_skill():
     assert "当前选中 Skill" in block and "read_skill" in block
     assert "正文头部到此为止" not in block  # 预算续读指引退役
     # planner 段探针在场；其余章节正文探针零注入（只进目录）
-    assert "启动协议" in block
+    assert "全流程阶段与依赖关系" in block
     assert "**导出基准**" not in block
     # 历史注入形态措辞保持退役（压制性包壳同批退役）
     assert "已注册独立执行器" not in block

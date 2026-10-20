@@ -28,6 +28,16 @@
      问题短标题（header）+ 辅助说明（detail，只作说明不参与选项） */
   .confirm-wizard-header { font-size: var(--font-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
   .confirm-wizard-detail { font-size: var(--font-sm); line-height: 1.6; color: var(--text-muted); margin-bottom: 8px; }
+  /* 2026-10-09（事故 6666，用户裁决「改成折叠展示」）：长说明/清单默认收起。
+     折叠态=首行摘要 + 「展开全部（N 条）」；展开态=完整正文（pre-wrap 呈现换行）。
+     内容一字不少，只是不再把题面与选项区挤出视野。 */
+  .confirm-wizard-detail.collapsible { margin-bottom: 8px; }
+  .confirm-detail-toggle { display: block; width: 100%; padding: 0; border: none; background: transparent; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+  .confirm-detail-text { display: block; white-space: pre-wrap; word-break: break-word; }
+  .confirm-detail-cue { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: var(--font-xs); color: var(--color-confirm-text-soft); }
+  .confirm-detail-toggle:hover .confirm-detail-cue { color: var(--color-confirm); }
+  .confirm-detail-arrow { transition: transform 0.15s ease; }
+  .confirm-detail-arrow.expanded { transform: rotate(180deg); }
   /* 2026-09-21 批F（事故 4444/Q2③+Q3）：多问题卡（一次问 N 问，对齐 dsh
      `questions[]`）——每问一块，块内自带 header/问句/detail/选项 */
   .confirm-question-block { padding: 8px 0; border-top: 1px solid var(--color-confirm-border-faint); }

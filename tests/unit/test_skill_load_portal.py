@@ -145,9 +145,9 @@ def test_fallback_skips_disabled_and_all_blind(set_global_setting):
     assert state["usedSkills"] == [b.slug]
     set_global_setting("skills_disabled", [])
     assert registry.fallback_skill_from_state(state) == a.slug
-    # 显式自由对话（批 C 口径）不受门户改写：空绑定仍是空
+    # 2026-10-16 用户裁决：空绑定不再「关掉技能」——回落 usedSkills 取启用项
     free = {"activeSkill": {"slug": "", "source": "user"}, "usedSkills": [a.slug]}
-    assert registry.fallback_skill_from_state(free) == ""
+    assert registry.fallback_skill_from_state(free) == a.slug
 
 
 # ---------- 消费面：read_skill 三形态 / 目录段 / 风格层 ----------

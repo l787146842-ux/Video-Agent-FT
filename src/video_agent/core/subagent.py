@@ -35,6 +35,13 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 明确传递的资源，不能自由读其他章节（规则按职责隔离、项目状态按需共享）。RC1
 （4444 取证：stage 隔离使 shot 规则不可达）由「按正确 stage 粒度委派 + 精准章节
 注入 + 跨阶段数据经共享状态可见」化解，非靠解禁 read_skill。
+
+2026-10-20 文本分析回主代理（用户裁决，部分翻案 2026-09-19）：
+文本剧本的**素材分析**改由主代理亲做（read_uploaded_doc 读剧本 →
+read_skill(section="script_analyze") 取章节 → 正文写出结论 →
+script_analysis_report 登记），`MAIN_AGENT_DENY` 因此移除该工具；
+PDF/图片/音视频/超长文本仍委派 script_analyze（阶段与 _STAGE_TOOLS 原样保留）。
+其余生产阶段（故事板结构写入/提示词草稿）仍按纯编排委派。
 """
 from typing import Dict, FrozenSet
 
@@ -164,16 +171,18 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
 
-# 主代理结构性 deny 集（2026-09-19 主代理纯编排批，翻案 2026-09-18「工具要给全」）：
-# 主代理是纯编排角色，物理上缺少各执行阶段的专业写入工具——这些工具只能经
-# run_subagent 委派给子代理触达（planner._compute_excluded_tools 在 depth==0 时
-# 并入本集；one visibility = one permission：schema 不可见 + 误调拒执行，
-# turn_excluded.md 渲染「经委派执行对应阶段」路由提示）。范围 = 素材分析产出 +
-# 故事板结构写入 + 提示词草稿写入（提示词撰写与故事板设计共用 add/patch_draft）。
-# 媒体生成（image_generate/generate_video）与读工具/文档/确认/编排工具不在本集
-# （主代理保留：理解需求/读资料/维护文档/处理确认节点/编排/花钱生成带确认闸）。
+# 主代理结构性 deny 集（2026-09-19 主代理纯编排批，翻案 2026-09-18「工具要给全」；
+# 2026-10-20 文本分析例外）：主代理是制片调度，物理上缺少故事板结构写入工具——
+# 这些工具只能经 run_subagent 委派给子代理触达（planner._compute_excluded_tools
+# 在 depth==0 时并入本集；one visibility = one permission：schema 不可见 +
+# 误调拒执行，turn_excluded.md 渲染「经委派执行对应阶段」路由提示）。
+# 范围 = 故事板结构写入 + 提示词草稿写入（提示词撰写与故事板设计共用 add/patch_draft）。
+# 2026-10-20（用户裁决）：`script_analysis_report` 移出本集——文本剧本分析由主代理
+# 亲做（读剧本 + read_skill 章节 + 报告登记），复杂素材仍委派 script_analyze
+# （该阶段与 _STAGE_TOOLS 保留）。媒体生成（image_generate/generate_video）与
+# 读工具/文档/确认/编排工具不在本集（主代理保留：理解需求/读资料/维护文档/
+# 处理确认节点/编排/花钱生成带确认闸）。
 MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
-    "script_analysis_report",
     "storyboard_create_group", "storyboard_delete_group",
     "storyboard_delete_draft",
     # 2026-09-23 批10（事故 4444/P1-1）：改分组同属「故事板结构写入」，

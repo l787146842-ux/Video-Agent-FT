@@ -1,9 +1,7 @@
 import { createSignal, For, Show, onCleanup } from 'solid-js';
 import { FiEye, FiZap, FiChevronDown, FiPlus, FiTrash2 } from 'solid-icons/fi';
 import { state, refreshSkills } from '@/stores/studio';
-import { agentSkillId, activateSkill, deactivateSkill, setAgentSkill } from '@/stores/agent-prefs';
-import { chatActions } from '@/stores/chat';
-import { editorToPlainText } from '@/lib/rich-input';
+import { agentSkillId, activateSkill, setAgentSkill } from '@/stores/agent-prefs';
 import { deleteSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
 import { requestInsertSkill } from '@/lib/chat/chat-input-bridge';
@@ -76,7 +74,10 @@ export function SkillPicker() {
     try {
       await deleteSkillDoc(slug);
       await refreshSkills();
-      if (agentSkillId() === skill.id) void deactivateSkill();
+      // 2026-10-16 用户裁决：删除文档**不再**顺带摘除绑定。
+      // 文档既已从文档区消失，agentSkillId 的倒序回落会自动跳过它
+      // （口径见 agent-prefs.agentSkillId）——不需要也不应该再写一次
+      // 「关闭技能」，那次写入正是可误触的失效入口。
       // 已删文档不再可作建议（建议值与文档清单同源校验）
       setAgentSkill('');
       showToast(t('rp.skill.deleted', { name: skill.name }), 'success');
@@ -101,25 +102,11 @@ export function SkillPicker() {
 
       <Show when={open()}>
         <div class="skill-picker" style={panelStyle()}>
-          {/* B4/F28·D2：「不使用技能」卡——摘除项目态绑定回到自由对话（批 C）。
-              同时清空输入框里已插入的 Skill 引用块（防正文匹配回退重新绑定） */}
-          <div
-            class={`skill-picker-card skill-picker-none ${agentSkillId() === '' ? 'active' : ''}`}
-            onClick={() => {
-              void deactivateSkill();
-              const editor = document.getElementById('chatInputTextarea');
-              if (editor) {
-                editor.querySelectorAll('.skill-chip').forEach((n) => n.remove());
-                chatActions.setInput(editorToPlainText(editor as HTMLDivElement));
-              }
-              setOpen(false);
-            }}
-          >
-            <div class="skill-picker-info">
-              <span class="skill-picker-name">{t('rp.skill.noneOption')}</span>
-              <span class="skill-picker-desc">{t('rp.skill.noneOptionHint')}</span>
-            </div>
-          </div>
+          {/* 2026-10-16 用户裁决：**移除「不使用技能」卡**——文档区 Skill 是唯一
+              权威，项目登记过的 Skill 一律生效，「关掉技能」不再是可用状态。
+              该卡是可被误触并致全平台 Skill 门控静默失效的入口之一（9999 事故）；
+              想自由对话 → 新建一个没有 Skill 的项目即可。
+              面板只作「选择/切换 Skill」用途。 */}
           <For each={visibleSkills()}>
             {(skill) => (
               <div

@@ -45,8 +45,10 @@ export function deleteSkillDoc(slug: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/api/skills/docs/${encodeURIComponent(slug)}`);
 }
 
-/** 项目态 Skill 激活/摘除（批 C）：slug 空 = 摘除回到自由对话；
- * 激活事实写项目态（随快照下发），全局 KEY_SKILL 仅作建议值 */
+/** 项目态 Skill 显式绑定：slug 空 = **清除显式偏好**（不是「关闭技能」——
+ * 2026-10-16 用户裁决：文档区 Skill 是唯一权威，空值由前端 agentSkillId /
+ * 后端 fallback_skill_from_state 回落 usedSkills 继续生效）。
+ * 界面已无任何入口写空值；本形参保留仅为向后兼容存量调用方。 */
 export function setActiveSkillApi(
   slug: string, source: 'user' | 'suggested' = 'user',
 ): Promise<{ ok: boolean; active_skill?: { slug: string; source: string } | null }> {

@@ -120,8 +120,6 @@ const zhCN = {
   'rp.skill.confirm': '确定',
   'rp.skill.cancel': '取消',
   'rp.skill.none': '暂无可用 Skill',
-  'rp.skill.noneOption': '不使用技能',
-  'rp.skill.noneOptionHint': '不激活任何 Skill，自由对话模式',
   'rp.skill.import': '导入 Skill',
   'rp.skill.styleSection': '叠加风格层',
   'rp.skill.styleSectionHint': '可多选；风格层在目录中告知模型，由模型按需读取',
