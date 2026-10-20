@@ -36,6 +36,33 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-20 · 分镜面板：删引用 chips + 卡片支持图片/视频生成（用户两裁决）
+
+- **立项（用户截图两问，直接裁决）**：①「把分镜的引用删掉，不要」；②「在分镜面板添加图片生成，
+  也就是分镜面板建的卡可以有图片生成和视频生成。能让分镜表格图可以出。」
+- **① 删除分镜引用行**：`GroupCard` 不再渲染 `ShotRefsChips`（「引用: … + 添加」整行）；
+  组件 `group-card/ShotRefsChips.tsx` 与专属测试删除；`left-panel.css` 的 `.shot-ref-*`
+  样式同批清除；拖拽空白判定里的 `.shot-refs` 选择器一并移除。
+  **保留**：`shotRefs` 数据、分镜正文内联引用块（`ShotDescEditor` 点块跳转 + 失焦同步）、
+  出视频时后端按 `shotRefs` 自动挂元素参考图——本次只删 UI 行，不改引用数据链。
+- **② 分镜卡图片/视频生成**：`GenTypeTabs` 由「仅关键元素」扩到「关键元素/分镜」，
+  分镜只给「图片生成 / 视频生成」两标签（切换仍只写 `genType`、不清已有媒体）；
+  `ParamControls` 分镜分支按 `genType` 分发：图片 → `ImageParams(type="shot")`，
+  视频 → `VideoParams`；`ImageParams` 新增 `type` 入参（此前硬编码写 `keyElement`，
+  分镜图卡改参数会写错域）；`MediaViewer` 对分镜显示标签并按 `genType` 给空态文案
+  （图片卡不再显示「暂无视频预览」）。**效果**：Agent 建的 `mediaType=image`
+  分镜表格图卡（或手动卡切到「图片生成」）现在出图片参数栏 +「生成图片」，
+  不再被当成视频任务提交。
+- **测试**：`GenTypeTabs.test.tsx` +1（分镜只两标签、切换写 shot 域）；
+  新增 `ParamControls.test.tsx` 3 条（图片卡→图片栏、视频卡→视频栏、genType 优先）；
+  `GroupCard-badge.test.tsx` +1（存量 shotRefs 也不渲染引用行）。定向 vitest 46 passed；
+  `tsc --noEmit` 干净；`npm run build` 成功（首屏 381.03 kB ≤ 400 kB）；
+  `acceptance.py --quick` 15/15 PASS；全量 `acceptance.py` **20/20 PASS**
+  （环境注记：本机 DSH 注入的 `NO_PROXY` 含带方括号的 IPv6 条目 `[::1]`，
+  httpx 解析成非法端口使 adapter 测试全红；验收包装脚本内归一为
+  `localhost,127.0.0.1,::1` 后 pytest 全绿，未改任何代码/配置）。
+- **交付口径**：UI 变更已构建，待用户刷新页面目测确认。
+
 ### 2026-10-20 · 文本剧本分析回主代理（用户裁决；部分翻案 2026-09-19 纯编排）
 
 - **背景（用户对照 Flova 1.5 转录后裁决）**：主代理此前只拿到 `analysis.summary` 一行，

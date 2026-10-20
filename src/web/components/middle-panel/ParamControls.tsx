@@ -11,9 +11,8 @@ import type { Draft, DraftType } from '@/types';
 
 /** 根据草稿类型与生成类型推导供应商种类（image/video/chat） */
 function providerKindFor(type: DraftType, genType: string): 'image' | 'video' | 'chat' {
-  if (type === 'shot') return 'video';
   if (type === 'audio') return 'chat';
-  // 关键元素：跟随当前生成类型 genType（图片/视频/音频生成）
+  // 关键元素 / 分镜：跟随当前生成类型 genType（图片/视频/音频生成）
   if (genType === 'video') return 'video';
   if (genType === 'audio') return 'chat';
   return 'image';
@@ -49,7 +48,7 @@ export function ParamControls() {
       tag: '', mediaType: 'audio', prompt: '',
     } as Draft;
   };
-  /** 关键元素当前生成类型：genType 优先，缺省回退 mediaType */
+  /** 当前生成类型：genType 优先，缺省回退 mediaType */
   const genType = () => {
     const d = draft();
     return d?.genType || d?.mediaType || 'image';
@@ -129,6 +128,10 @@ export function ParamControls() {
     <Show when={draft() || audioGroupFallback()}>
       <div class="param-controls-bar">
         <Switch>
+          {/* 分镜：按生成类型分发图片（分镜表格图）/视频参数栏；默认仍为视频 */}
+          <Match when={state.selectedType === 'shot' && genType() === 'image'}>
+            <ImageParams draft={draft()!} type="shot" />
+          </Match>
           <Match when={state.selectedType === 'shot'}>
             <VideoParams draft={draft()!} type="shot" />
           </Match>

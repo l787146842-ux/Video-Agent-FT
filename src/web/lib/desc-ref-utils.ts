@@ -23,7 +23,7 @@ export interface KeyElementLike {
 // 并消除 `stripTypePrefix` 的两份抄写）；此处 re-export 保持既有导入路径不变。
 export { GROUP_TITLE_PREFIX, stripTypePrefix, canonicalGroupTitle, elementAliasName, elementNameVariants };
 
-/** shotRefs 存关键元素 id（ke-xxx）或标题；统一解析为归一标题（同 ShotRefsChips 口径） */
+/** shotRefs 存关键元素 id（ke-xxx）或标题；统一解析为归一标题（与引用解析同口径） */
 export function resolveRefTitle(ref: string, keyElements: KeyElementLike[]): string {
   const el = resolveRefElement(ref, keyElements);
   return stripTypePrefix(el?.title || String(ref));

@@ -12,7 +12,6 @@ import { render } from '@solidjs/testing-library';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@/components/left-panel/DraftCard', () => ({ DraftCard: () => null }));
-vi.mock('@/components/left-panel/group-card/ShotRefsChips', () => ({ ShotRefsChips: () => null }));
 vi.mock('@/components/left-panel/group-card/GroupAdjustBox', () => ({ GroupAdjustBox: () => null }));
 vi.mock('@/lib/agent-actions', () => ({ sendUserMessage: vi.fn() }));
 

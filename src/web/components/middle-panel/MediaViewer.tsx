@@ -47,12 +47,14 @@ export function MediaViewer() {
     return safeUrl(d.imgUrl || '');
   };
 
-  // 空态提示文案：按当前存储的媒体类型（mediaType）区分
+  // 空态提示文案：按当前生成类型（genType 优先，回退 mediaType）区分；
+  // 分镜卡可能正在图片生成（分镜表格图），不再一律显示「暂无视频预览」
   const emptyHint = () => {
-    const mt = draft()?.mediaType;
+    const d = draft();
+    const mt = d?.genType || d?.mediaType;
     if (mt === 'video') return '暂无视频预览';
     if (mt === 'audio') return '暂无音频预览';
-    if (state.selectedType === 'shot') return '暂无视频预览';
+    if (mt === 'image' && state.selectedType === 'shot') return '暂无图片预览';
     return '暂无媒体预览';
   };
 
@@ -151,8 +153,8 @@ export function MediaViewer() {
       }}
       onContextMenu={onContextMenu}
     >
-      {/* 关键元素面板：图片/视频/音频 生成类型切换标签 */}
-      <Show when={state.selectedType === 'keyElement' && draft()}>
+      {/* 关键元素面板：图片/视频/音频 生成类型切换；分镜面板：图片/视频 生成类型切换 */}
+      <Show when={(state.selectedType === 'keyElement' || state.selectedType === 'shot') && draft()}>
         <GenTypeTabs />
       </Show>
       <Show when={draft()} fallback={

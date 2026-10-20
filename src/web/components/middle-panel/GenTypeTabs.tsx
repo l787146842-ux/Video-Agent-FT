@@ -4,15 +4,18 @@ import { state, findDraftRecord, studioActions } from '@/stores/studio';
 import type { MediaType } from '@/types';
 import type { IconTypes } from 'solid-icons';
 
-/** 关键元素预览区：图片生成 / 视频生成 / 音频生成 三选一 */
+/** 生成类型标签全集：关键元素三选一、分镜仅图片/视频（分镜不生成音频） */
 const TABS: Array<{ key: MediaType; label: string; Icon: IconTypes }> = [
   { key: 'image', label: '图片生成', Icon: FiImage },
   { key: 'video', label: '视频生成', Icon: FiVideo },
   { key: 'audio', label: '音频生成', Icon: FiMusic },
 ];
 
+/** 分镜卡可选生成类型：分镜表格图（图片）与分镜视频（视频） */
+const SHOT_TYPES: MediaType[] = ['image', 'video'];
+
 /**
- * 生成类型切换标签（仅关键元素面板显示）。
+ * 生成类型切换标签（关键元素 / 分镜面板显示）。
  * 以 draft.genType（缺省回退 mediaType）为当前生成类型：切换仅联动底部参数栏，
  * 不清空已有预览媒体（一张卡片只存一个媒体，预览始终展示该媒体）。
  * 底部箭头可收缩/展开：收缩后预览框内容完整展示、无遮挡。
@@ -23,6 +26,12 @@ export function GenTypeTabs() {
   const active = () => {
     const d = rec()?.draft;
     return d?.genType || d?.mediaType || 'image';
+  };
+
+  /** 可选类型：分镜卡只给图片/视频（2026-10-20 用户裁决：分镜卡可出图与出视频） */
+  const tabs = () => {
+    const allowed = state.selectedType === 'shot' ? SHOT_TYPES : null;
+    return allowed ? TABS.filter((t) => allowed.includes(t.key)) : TABS;
   };
 
   function select(key: MediaType) {
@@ -40,7 +49,7 @@ export function GenTypeTabs() {
     >
       <Show when={!collapsed()}>
         <div class="gen-type-tabs">
-          <For each={TABS}>
+          <For each={tabs()}>
             {(t) => (
               <button
                 type="button"

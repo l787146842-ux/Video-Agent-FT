@@ -6,7 +6,7 @@
  * ② 徽标按类型落在：分镜=无类别角标（2026-09-18 批 D 删「分镜」角标，右上改显 summary 摘要徽标）、音频=时段或「音频」；
  * ③ 徽标/标题双击可编辑且能退出（音频时段承载编辑面不锁死）。
  *
- * 与条款无关的旁路子件（草稿卡/引用/描述/微调行）以桩替代控制测试面。
+ * 与条款无关的旁路子件（草稿卡/描述/微调行）以桩替代控制测试面。
  *
  * 任务 #15（用户裁决后补）：条款「左上标题纯中文（剥离 Element_ 等英文前缀）」
  * 的展示层剥离逻辑已在 034747f 重构中丢失，现已按 b6011a5 原口径恢复于
@@ -17,7 +17,6 @@ import { describe, it, expect, vi } from 'vitest';
 
 /** 条款断言不涉及的旁路子件打桩（防无关模块进入测试面） */
 vi.mock('@/components/left-panel/DraftCard', () => ({ DraftCard: () => null }));
-vi.mock('@/components/left-panel/group-card/ShotRefsChips', () => ({ ShotRefsChips: () => null }));
 vi.mock('@/components/left-panel/group-card/GroupDescEditor', () => ({ GroupDescEditor: () => null }));
 vi.mock('@/components/left-panel/group-card/GroupAdjustBox', () => ({ GroupAdjustBox: () => null }));
 vi.mock('@/lib/agent-actions', () => ({ sendUserMessage: vi.fn() }));
@@ -91,6 +90,17 @@ describe('分组卡右上徽标（台账 #10；2026-09-17 裁决：keyElement �
     // shot 类别角标已删（旧数据残留 shotType 也不入角标）；右上角改由 summary 徽标承载
     expect(setup(legacyType, 'shot').container.querySelector('.sb-badge')).toBeNull();
     expect(setup(plain, 'shot').container.querySelector('.sb-badge')).toBeNull();
+  });
+
+  it('分镜卡不再渲染「引用:」chips 行（2026-10-20 用户裁决：引用不要）', () => {
+    const group: ShotGroup = {
+      id: 'g5', title: '开场', shotRefs: ['Element_程心', 'Element_曹彬'],
+      drafts: [{ id: 'd1', label: '分镜 1', mediaType: 'video', videoUrl: '', prompt: '' }],
+    };
+    const { container } = setup(group, 'shot');
+    // 即便存量 shotRefs 仍在，卡片也不渲染引用行（引用语义只剩正文内联图块）
+    expect(container.querySelector('.shot-refs')).toBeNull();
+    expect(container.querySelector('.shot-ref-chip')).toBeNull();
   });
 
   it('音频：缺省回落「音频」类型词', () => {

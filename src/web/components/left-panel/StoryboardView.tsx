@@ -105,7 +105,7 @@ export function StoryboardView() {
     containerRef.classList.add('board-flash');
   });
 
-  // ===== 预览框导航按钮 / 分镜引用跳转：滚动定位到目标卡片并闪烁高亮 =====
+  // ===== 预览框导航按钮 / 分镜正文引用跳转：滚动定位到目标卡片并闪烁高亮 =====
   createEffect(() => {
     const tick = state.locateTick;
     if (!tick) return;
@@ -115,7 +115,7 @@ export function StoryboardView() {
     // 改为短重试一轮（DOM 尚未渲染完是常态），仍失败则如实提示。
     let tries = 0;
     const locate = () => {
-      // 优先按分组定位（分镜 shotRefs 跳转：目标元素没有草稿卡时也能看到）
+      // 优先按分组定位（分镜正文引用跳转：目标元素没有草稿卡时也能看到）
       const gid = state.locateGroupId;
       let target: HTMLElement | null = null;
       if (gid) {

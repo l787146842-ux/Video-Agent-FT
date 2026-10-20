@@ -23,7 +23,7 @@ import type { AnyGroup, DraftType } from '@/types';
 export async function generateImage(): Promise<void> {
   const rec = findDraftRecord(state.selectedDraftId, state.selectedType);
   const draft = rec?.draft;
-  if (!draft) { showToast('请先在左侧选中一个关键元素草稿卡片', 'warning'); return; }
+  if (!draft) { showToast('请先在左侧选中一个草稿卡片', 'warning'); return; }
   const draftType = rec?.type || 'keyElement';
 
   const providerId = draft.imageProviderId || draft.providerId || '';

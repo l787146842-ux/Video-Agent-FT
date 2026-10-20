@@ -7,7 +7,7 @@ import {
 import { ProviderModelSelects } from './ProviderModelSelects';
 import { ExportButton } from './ExportButton';
 import { studioActions } from '@/stores/studio';
-import type { Draft } from '@/types';
+import type { Draft, DraftType } from '@/types';
 
 const ASPECT_OPTIONS = ['1:1', '16:9', '9:16', '3:4', '4:3', '2:3', '3:2', '21:9', '9:21']
   .map((v) => ({ value: v, label: v }));
@@ -15,12 +15,14 @@ const ASPECT_OPTIONS = ['1:1', '16:9', '9:16', '3:4', '4:3', '2:3', '3:2', '21:9
 /** 分辨率档位：1K=基准尺寸，2K/4K 按比例放大（尺寸映射见 image-sizes.ts） */
 const RESOLUTION_OPTIONS = ['1K', '2K', '4K'].map((v) => ({ value: v, label: v }));
 
-/** 图片参数：API/模型/比例（含自定义宽高）/分辨率 + 保存/生成 */
-export function ImageParams(props: { draft: Draft }) {
+/** 图片参数：API/模型/比例（含自定义宽高）/分辨率 + 保存/生成。
+ *  type 决定写回哪个故事板域：关键元素默认 keyElement，分镜表格图 = shot。 */
+export function ImageParams(props: { draft: Draft; type?: DraftType }) {
   const d = () => props.draft;
+  const draftType = () => props.type || 'keyElement';
 
   function updateField(patch: Partial<Draft>) {
-    studioActions.updateDraftLocal('keyElement', d().id, patch);
+    studioActions.updateDraftLocal(draftType(), d().id, patch);
   }
 
   return (

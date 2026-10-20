@@ -141,7 +141,7 @@ export const uiActions = {
     setState('lastAppliedAt', Date.now());
   },
 
-  /** 按标题或分组 id 跳转到关键元素（分镜 shotRefs chip 点击）。
+  /** 按标题或分组 id 跳转到关键元素（分镜正文内联引用块点击）。
    * 2026-09-25 修：命中改走 canonical 单一入口 `resolveRefElement`
    * （组 id → 逐字标题 → 裸名↔带前缀双向等同）。此前逐字比对，而存量引用
    * 多为裸名 ⇒ 91.5% 点击落空，表现为「有时跳有时不跳」。
