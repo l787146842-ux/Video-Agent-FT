@@ -68,6 +68,33 @@ def test_load_providers_fallback_when_missing():
     assert any(p["id"] == "modelscope" for p in providers)
 
 
+# ---------- 模型自动分类：audio 分类 ----------
+
+def test_classify_models_audio_bucket():
+    """语音/音频模型独立归入 audio_models，不再被旧分类器塞进 chat_models"""
+    result = pcl.classify_models([
+        "MiniMax/speech-02-hd",
+        "gpt-4o-mini-tts",
+        "Qwen/Qwen3-ASR-Flash",
+        "Tongyi-MAI/Z-Image-Turbo",
+        "Wan-AI/Wan2.1-T2V-14B",
+        "Qwen/Qwen3-235B-A22B",
+    ])
+    assert result["audio_models"] == [
+        "MiniMax/speech-02-hd", "gpt-4o-mini-tts", "Qwen/Qwen3-ASR-Flash",
+    ]
+    assert result["image_models"] == ["Tongyi-MAI/Z-Image-Turbo"]
+    assert result["video_models"] == ["Wan-AI/Wan2.1-T2V-14B"]
+    assert result["chat_models"] == ["Qwen/Qwen3-235B-A22B"]
+
+
+def test_classify_models_empty_audio_bucket():
+    """无音频模型时 audio_models 仍返回空表（前端归一口径）"""
+    result = pcl.classify_models(["gpt-4o"])
+    assert result["audio_models"] == []
+    assert result["chat_models"] == ["gpt-4o"]
+
+
 # ---------- provider 列表入口：纯本地文件源 ----------
 
 def test_merged_providers_pure_local_source(tmp_path, monkeypatch):

@@ -98,6 +98,7 @@ export default function SettingsView() {
         chat_models: (p.chat_models || []).map((s) => s.trim()).filter(Boolean),
         image_models: (p.image_models || []).map((s) => s.trim()).filter(Boolean),
         video_models: (p.video_models || []).map((s) => s.trim()).filter(Boolean),
+        audio_models: (p.audio_models || []).map((s) => s.trim()).filter(Boolean),
         // 模型编辑面板配置：胶囊侧随时写 studio store，设置页本地快照可能
         // 陈旧——若按快照透传，设置页一保存就会把胶囊写的 1M 窗口/思考档
         // 洗回空（2026-09-12 二次反馈实证）。设置页不编辑 meta，保存时以

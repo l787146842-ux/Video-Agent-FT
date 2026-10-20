@@ -36,6 +36,25 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-20 · API 配置新增「音频」模型分类（用户裁决）
+
+- **立项（用户原话）**：「再在本项目的api配置里面加个音频分类。」——上游语音/音频模型
+  （如 MiniMax `speech-*`）此前被旧分类器一律归进聊天模型。
+- **分类器（`utils/provider_config_loader.classify_models`）**：新增 `AUDIO_KEYWORDS`
+  （audio / speech / tts / asr / voice / music / suno / whisper / cosyvoice / sensevoice /
+  paraformer / sovits / vits）与 `audio_models` 桶；判定优先级 image > video > audio > chat
+  （图像/视频关键词先判，语音模型不再落聊天）。`FetchModelsResponse` /
+  `TestConnectionResponse` 与 `ProviderBase` 同步补 `audio_models`（缺省空表，旧配置零迁移）。
+- **API 配置页**：拉取弹窗新增「音频 n/m」页签、行内分类徽标与应用徽标；模型列表新增
+  「音频模型」分区；`applyFetched` / `saveAll` 写回 `audio_models`，`newProvider` 补空表。
+  存量归位：分类判定中音频优先于「已配置聊天」（已配置的生图/视频仍优先）——否则旧配置里
+  的 `speech-*` 永远停在 LLM 页签、挪不进音频表。
+- **契约**：`gen_api_types.py` 已重生成（FetchModelsResponse / TestConnectionResponse）。
+- **测试**：`tests/unit/test_provider_config.py` 新增音频桶两例；
+  `src/web/components/layout/__tests__/FetchModelsModal.audio.test.tsx` 三例
+  （页签计数 / 存量归位 / 应用写回）；`settings-meta.test.ts` 同步四表口径。
+- **交付口径**：前端需构建后刷新，待用户目测。
+
 ### 2026-10-20 · Skill 创作模式：新建即用 AI 生成合规草稿 + 服务端自检/一次自修复（用户裁决）
 
 - **立项（用户提问）**：「skill 创作要求有点高，可以让用户直接在 skill 优化助手里通过 AI

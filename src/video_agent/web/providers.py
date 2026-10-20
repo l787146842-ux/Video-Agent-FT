@@ -34,6 +34,7 @@ def get_available_providers() -> List[Dict[str, Any]]:
                 "chat_models": p.get("chat_models", []),
                 "image_models": p.get("image_models", []),
                 "video_models": p.get("video_models", []),
+                "audio_models": p.get("audio_models", []),
             })
     return result
 

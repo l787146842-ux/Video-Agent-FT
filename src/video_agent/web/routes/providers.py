@@ -51,6 +51,7 @@ class FetchModelsResponse(BaseModel):
     image_models: List[str] = []
     chat_models: List[str] = []
     video_models: List[str] = []
+    audio_models: List[str] = []
     total: int = 0
     protocol: str = "openai"
     error: str = ""
@@ -66,6 +67,7 @@ class TestConnectionResponse(BaseModel):
     image_models: List[str] = []
     chat_models: List[str] = []
     video_models: List[str] = []
+    audio_models: List[str] = []
     image_request_mode: str = "openai"
 
 
@@ -214,6 +216,7 @@ async def fetch_models(req: ProviderProbeRequest):
             "image_models": models,
             "chat_models": [],
             "video_models": [],
+            "audio_models": [],
             "total": len(models),
             "protocol": protocol,
         }
@@ -296,6 +299,7 @@ async def _check_cli_protocol(protocol: str) -> Dict[str, Any]:
         # CLI 通道不支持聊天，聊天模型恒空
         "chat_models": [],
         "video_models": [],
+        "audio_models": [],
         "image_request_mode": "openai",
         "message": f"{cli_name} 已就绪 ({exe})",
     }

@@ -304,6 +304,7 @@ export interface FetchModelsResponse {
   image_models?: string[];
   chat_models?: string[];
   video_models?: string[];
+  audio_models?: string[];
   total?: number;
   protocol?: string;
   error?: string;
@@ -597,6 +598,7 @@ export interface TestConnectionResponse {
   image_models?: string[];
   chat_models?: string[];
   video_models?: string[];
+  audio_models?: string[];
   image_request_mode?: string;
 }
 

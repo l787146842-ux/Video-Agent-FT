@@ -204,7 +204,7 @@ export function ProviderDetail(props: { api: SettingsApi }) {
         <div class="aps-card-head">
           <div>
             <div class="aps-sec-title">模型列表</div>
-            <div class="aps-sec-desc">从上游 API 自动拉取所有可用模型并按类型分类（image / chat / video）</div>
+            <div class="aps-sec-desc">从上游 API 自动拉取所有可用模型并按类型分类（image / chat / video / audio）</div>
           </div>
           <button type="button" class="aps-btn light" onClick={() => api().fetchModels()}>
             <FiDownload size={12} /> 拉取模型
@@ -215,6 +215,7 @@ export function ProviderDetail(props: { api: SettingsApi }) {
       <ModelCard title="生图模型" desc="在线生图和无限画布 API 生成使用。" kind="image_models" />
       <ModelCard title="聊天模型" desc="GPT 对话和 LLM 节点使用。" kind="chat_models" />
       <ModelCard title="视频模型" desc="无限画布视频生成节点使用。" kind="video_models" />
+      <ModelCard title="音频模型" desc="配音、音色与音频生成使用。" kind="audio_models" />
 
       <div class="aps-card">
         <div class="aps-sec-title"><FiKey size={12} /> 安全说明（生产环境）</div>

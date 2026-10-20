@@ -82,8 +82,8 @@ export const RH_GUIDE = {
   walletUrl: 'https://www.runninghub.ai/enterprise-api/sharedApi?inviteCode=rh-v1331',
 };
 
-export type ModelKind = 'chat_models' | 'image_models' | 'video_models';
-export type ModelCat = 'image' | 'chat' | 'video';
+export type ModelKind = 'chat_models' | 'image_models' | 'video_models' | 'audio_models';
+export type ModelCat = 'image' | 'chat' | 'video' | 'audio';
 
 /** fetch-models 读形态：以生成物为唯一来源（use-model-fetch 归一化补齐缺省字段） */
 export type FetchedModels = FetchModelsResponse;
@@ -91,7 +91,7 @@ export type FetchedModels = FetchModelsResponse;
 export function newProvider(id: string): EditableProvider {
   return {
     id, name: '', protocol: 'openai', base_url: '',
-    enabled: true, chat_models: [], image_models: [], video_models: [],
+    enabled: true, chat_models: [], image_models: [], video_models: [], audio_models: [],
     api_key: '', has_key: false,
   };
 }

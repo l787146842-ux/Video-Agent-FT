@@ -59,7 +59,7 @@ describe('settings-meta 常量一致性', () => {
     const p = newProvider('my');
     expect(p).toMatchObject({
       id: 'my', protocol: 'openai', enabled: true, has_key: false,
-      chat_models: [], image_models: [], video_models: [],
+      chat_models: [], image_models: [], video_models: [], audio_models: [],
     });
   });
 
@@ -71,7 +71,7 @@ describe('settings-meta 常量一致性', () => {
 describe('use-model-fetch 拉取模型分支', () => {
   const provider: EditableProvider = {
     id: 'prov1', name: 'P1', protocol: 'openai', base_url: 'https://x',
-    enabled: true, chat_models: ['c1'], image_models: [' i2 '], video_models: [],
+    enabled: true, chat_models: ['c1'], image_models: [' i2 '], video_models: [], audio_models: [' a0 '],
   };
 
   beforeEach(() => {
@@ -94,10 +94,11 @@ describe('use-model-fetch 拉取模型分支', () => {
     });
     const f = m.fetched();
     // 已配置 'i2'（trim 后）并入清单且字典序
-    expect(f?.all).toEqual(['a-model', 'b-model', 'c1', 'i2']);
-    expect(f?.total).toBe(4);
+    expect(f?.all).toEqual(['a-model', 'a0', 'b-model', 'c1', 'i2']);
+    expect(f?.total).toBe(5);
     expect(m.savedCats().chat.has('c1')).toBe(true);
     expect(m.savedCats().image.has('i2')).toBe(true);
+    expect(m.savedCats().audio.has('a0')).toBe(true);
   });
 
   it('上游空清单 / 显式 error：toast 报错不进入选择弹窗', async () => {
@@ -121,13 +122,14 @@ describe('use-model-fetch 拉取模型分支', () => {
     expect(showToast).toHaveBeenCalledWith(expect.stringContaining('网络不通'), 'error');
   });
 
-  it('applyFetched：勾选结果写回三模型表并关闭弹窗', () => {
+  it('applyFetched：勾选结果写回四模型表并关闭弹窗', () => {
     const patch = vi.fn();
     const m = useModelFetch(() => provider, () => '', patch);
-    m.applyFetched({ image: ['i1'], chat: ['c1', 'c2'], video: [] });
+    m.applyFetched({ image: ['i1'], chat: ['c1', 'c2'], video: [], audio: ['MiniMax/speech-02-hd'] });
     expect(patch).toHaveBeenCalledWith('image_models', ['i1']);
     expect(patch).toHaveBeenCalledWith('chat_models', ['c1', 'c2']);
     expect(patch).toHaveBeenCalledWith('video_models', []);
+    expect(patch).toHaveBeenCalledWith('audio_models', ['MiniMax/speech-02-hd']);
     expect(m.fetched()).toBeNull();
   });
 });

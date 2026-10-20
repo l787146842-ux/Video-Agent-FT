@@ -16,9 +16,9 @@ export function useModelFetch(
 ) {
   const [fetched, setFetched] = createSignal<FetchedModels | null>(null);
   // 已配置模型分类集合（画布同款：类别以已配置优先，默认勾选=已在配置里）
-  const [savedCats, setSavedCats] = createSignal<{ image: Set<string>; chat: Set<string>; video: Set<string> }>(
-    { image: new Set(), chat: new Set(), video: new Set() },
-  );
+  const [savedCats, setSavedCats] = createSignal<{
+    image: Set<string>; chat: Set<string>; video: Set<string>; audio: Set<string>;
+  }>({ image: new Set(), chat: new Set(), video: new Set(), audio: new Set() });
 
   async function fetchModels() {
     const p = current();
@@ -37,10 +37,11 @@ export function useModelFetch(
         image: new Set((p.image_models || []).map((s) => s.trim()).filter(Boolean)),
         chat: new Set((p.chat_models || []).map((s) => s.trim()).filter(Boolean)),
         video: new Set((p.video_models || []).map((s) => s.trim()).filter(Boolean)),
+        audio: new Set((p.audio_models || []).map((s) => s.trim()).filter(Boolean)),
       };
       setSavedCats(saved);
       const all = Array.from(new Set([
-        ...(data.all || []), ...saved.image, ...saved.chat, ...saved.video,
+        ...(data.all || []), ...saved.image, ...saved.chat, ...saved.video, ...saved.audio,
       ])).sort();
       // 归一化补齐缺省字段：视图态信号拿到的始终是完整清单形态
       setFetched({
@@ -49,6 +50,7 @@ export function useModelFetch(
         image_models: data.image_models ?? [],
         chat_models: data.chat_models ?? [],
         video_models: data.video_models ?? [],
+        audio_models: data.audio_models ?? [],
         total: all.length,
         protocol: data.protocol ?? 'openai',
       });
@@ -62,8 +64,12 @@ export function useModelFetch(
     patch('image_models', picked.image);
     patch('chat_models', picked.chat);
     patch('video_models', picked.video);
+    patch('audio_models', picked.audio);
     setFetched(null);
-    showToast(`已应用到模型列表（生图 ${picked.image.length} / LLM ${picked.chat.length} / 视频 ${picked.video.length}）`, 'success');
+    showToast(
+      `已应用到模型列表（生图 ${picked.image.length} / LLM ${picked.chat.length} / 视频 ${picked.video.length} / 音频 ${picked.audio.length}）`,
+      'success',
+    );
   }
 
   return { fetched, savedCats, fetchModels, applyFetched, closeFetched: () => setFetched(null) };

@@ -189,6 +189,7 @@ export interface ApiProvider {
   chat_models?: string[];
   image_models?: string[];
   video_models?: string[];
+  audio_models?: string[];
   /** 模型级配置（编辑面板写入；后端查窗口与思考参数用） */
   chat_models_meta?: ChatModelMeta[];
   [key: string]: unknown;

@@ -7,17 +7,18 @@ import { For, Show, createSignal, untrack } from 'solid-js';
 import { FiX } from 'solid-icons/fi';
 import type { FetchedModels, ModelCat } from '../settings-meta';
 
-const CAT_LABEL: Record<ModelCat, string> = { image: '生图', chat: 'LLM', video: '视频' };
+const CAT_LABEL: Record<ModelCat, string> = { image: '生图', chat: 'LLM', video: '视频', audio: '音频' };
 
 export interface ModelPicked {
   image: string[];
   chat: string[];
   video: string[];
+  audio: string[];
 }
 
 export function FetchModelsModal(props: {
   fetched: () => FetchedModels;
-  savedCats: () => { image: Set<string>; chat: Set<string>; video: Set<string> };
+  savedCats: () => { image: Set<string>; chat: Set<string>; video: Set<string>; audio: Set<string> };
   onApply: (picked: ModelPicked) => void;
   onClose: () => void;
 }) {
@@ -26,15 +27,18 @@ export function FetchModelsModal(props: {
   // 画布同款：默认勾选 = 已在配置里的（挂载时一次性快照，不随外部变化重算）
   const init = untrack(() => props.savedCats());
   const [checked, setChecked] = createSignal<Set<string>>(
-    new Set([...init.image, ...init.chat, ...init.video]),
+    new Set([...init.image, ...init.chat, ...init.video, ...init.audio]),
   );
 
   const catOf = (m: string): ModelCat => {
     const s = props.savedCats();
     if (s.image.has(m)) return 'image';
     if (s.video.has(m)) return 'video';
-    if (s.chat.has(m)) return 'chat';
+    // 音频是新增分类：历史语音模型都被旧分类器塞进 chat_models，按上游类型归位，
+    // 否则存量配置永远停在 LLM 页签、挪不进音频表。
     const f = props.fetched();
+    if (s.audio.has(m) || (f.audio_models ?? []).includes(m)) return 'audio';
+    if (s.chat.has(m)) return 'chat';
     if ((f.image_models ?? []).includes(m)) return 'image';
     if ((f.video_models ?? []).includes(m)) return 'video';
     return 'chat';
@@ -63,6 +67,7 @@ export function FetchModelsModal(props: {
       image: (f.all ?? []).filter((m) => catOf(m) === 'image' && checked().has(m)),
       chat: (f.all ?? []).filter((m) => catOf(m) === 'chat' && checked().has(m)),
       video: (f.all ?? []).filter((m) => catOf(m) === 'video' && checked().has(m)),
+      audio: (f.all ?? []).filter((m) => catOf(m) === 'audio' && checked().has(m)),
     });
   }
 
@@ -95,6 +100,9 @@ export function FetchModelsModal(props: {
           <button type="button" class={`aps-tab ${mTab() === 'video' ? 'active' : ''}`} onClick={() => setMTab('video')}>
             视频 {catCount('video').on}/{catCount('video').total}
           </button>
+          <button type="button" class={`aps-tab ${mTab() === 'audio' ? 'active' : ''}`} onClick={() => setMTab('audio')}>
+            音频 {catCount('audio').on}/{catCount('audio').total}
+          </button>
         </div>
         <div class="aps-modal-list">
           <Show when={modalRows().length > 0} fallback={<div class="aps-empty">无匹配模型</div>}>
@@ -114,6 +122,7 @@ export function FetchModelsModal(props: {
           <span class="aps-apply-badge">生图 {catCount('image').on}</span>
           <span class="aps-apply-badge">LLM {catCount('chat').on}</span>
           <span class="aps-apply-badge">视频 {catCount('video').on}</span>
+          <span class="aps-apply-badge">音频 {catCount('audio').on}</span>
           <span class="aps-foot-unsel">未选 {catCount('all').total - catCount('all').on}</span>
           <span class="aps-foot-spacer" />
           <button type="button" class="aps-btn" onClick={() => props.onClose()}>取消</button>

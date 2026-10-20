@@ -272,12 +272,16 @@ IMAGE_KEYWORDS = ["image", "img", "flux", "sdxl", "dall", "kolors", "z-image",
                   "wanx", "cogview", "jimeng", "imagen", "gpt-image"]
 VIDEO_KEYWORDS = ["video", "veo", "sora", "kling", "seedance", "wan2", "cogvideo",
                   "runway", "pika", "t2v", "i2v"]
+# 音频族：语音合成/识别/音色克隆/音乐生成（MiniMax speech-*、qwen-tts/asr、cosyvoice 等）
+AUDIO_KEYWORDS = ["audio", "speech", "tts", "asr", "voice", "music", "suno", "whisper",
+                  "cosyvoice", "sensevoice", "paraformer", "sovits", "vits"]
 
 
 def classify_models(all_models: List[str]) -> Dict[str, List[str]]:
-    """自动将模型列表分类为 image/chat/video"""
+    """自动将模型列表分类为 image/chat/video/audio"""
     image_models: List[str] = []
     video_models: List[str] = []
+    audio_models: List[str] = []
     chat_models: List[str] = []
     for m in all_models:
         ml = m.lower()
@@ -285,9 +289,16 @@ def classify_models(all_models: List[str]) -> Dict[str, List[str]]:
             video_models.append(m)
         elif any(kw in ml for kw in IMAGE_KEYWORDS):
             image_models.append(m)
+        elif any(kw in ml for kw in AUDIO_KEYWORDS):
+            audio_models.append(m)
         else:
             chat_models.append(m)
-    return {"image_models": image_models, "chat_models": chat_models, "video_models": video_models}
+    return {
+        "image_models": image_models,
+        "chat_models": chat_models,
+        "video_models": video_models,
+        "audio_models": audio_models,
+    }
 
 
 def detect_protocol(base_url: str, fallback: str = "openai") -> str:

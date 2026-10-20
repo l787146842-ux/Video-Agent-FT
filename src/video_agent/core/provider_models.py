@@ -22,6 +22,7 @@ class ProviderBase(BaseModel):
     image_models: List[str] = Field(default_factory=list)
     chat_models: List[str] = Field(default_factory=list)
     video_models: List[str] = Field(default_factory=list)
+    audio_models: List[str] = Field(default_factory=list)
     # 扩展字段（前端用）
     image_request_mode: str = "openai"
     video_request_mode: str = "classic"  # classic: ModelScope/Seedance；openai: OpenAI /video/generations

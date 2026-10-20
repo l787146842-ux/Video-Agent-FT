@@ -170,7 +170,7 @@
   .aps-mrow input[type="checkbox"] { width: 15px; height: 15px; flex-shrink: 0; }
   .aps-mcat { flex-shrink: 0; font-size: var(--font-3xs); letter-spacing: 0.5px; border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 5px; color: var(--text-muted); text-transform: uppercase; }
   .aps-mname { font-family: Consolas, monospace; font-size: var(--font-sm); color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .aps-modal-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border-color); }
+  .aps-modal-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--border-color); }
   .aps-foot-label { font-size: var(--font-xs); color: var(--text-muted); }
   .aps-apply-badge { background: var(--text-main); color: var(--bg-primary); font-size: var(--font-xs); font-weight: 600; border-radius: 6px; padding: 3px 8px; }
   .aps-foot-unsel { font-size: var(--font-xs); color: var(--text-dim); }
