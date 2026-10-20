@@ -61,12 +61,13 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **红线**：`data/skills` 一行不改（冻结 #16）；故事板三阶段委派与
   `MAIN_AGENT_DENY` 其余条目不动；不新增文档、不新增工具。
 - **验证**：定点 pytest 22 passed（`test_production_prune`）+ 205 passed
-  （角色/子代理/故事板/分析卡/阶段标签等 12 文件）；4 条失败均为
-  `TaskStore` SQLite `unable to open database file`（`workspace/` 目录当前用户
-  不可写，非本批代码；`task_store.py` / 生图工具未改）。`acceptance.py --quick`
-  GATES 14/15 通过，`contract` 因同一 `workspace` 权限阻断（`gen_api_types.py`
-  导入 `web.app` 时 `TaskStore` 打不开库）；ACL 诊断已跑：`workspace` 属管理员组、
-  当前用户无改权限之权，修复被拒、零改动，报告
+  （角色/子代理/故事板/分析卡/阶段标签等 12 文件）+ 61 passed（prompt/subagent
+  补测），共 288 passed；4 条 pytest 失败与 `contract` 首跑失败均为
+  `TaskStore` SQLite `unable to open database file`（`workspace/` 在受限沙箱下
+  不可写，非本批代码；`task_store.py` / 生图工具未改）。切到完全访问后
+  `python scripts/acceptance.py --quick` **全绿 15/15**（含 `contract`）。
+- **环境留痕**：ACL 诊断确认 `workspace` 属管理员组、当前用户无改权限之权，
+  受限沙箱下修复被拒、零改动；报告
   `.tmp_probe/acl/acl-report-eea7e2b46c75444287b39bb6238c8503.jsonl`。
 
 ### 2026-10-16 · 事故 9999 子代理线程泄漏 + 子任务入口迁址 + 左栏手势收窄（用户三裁决）
