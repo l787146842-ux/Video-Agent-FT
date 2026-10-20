@@ -22,19 +22,21 @@ def client():
 
 class _FakeResult:
     def __init__(self, text: str):
-        self.text = text
+        self.content = text
 
 
 class _FakeAdapter:
     def __init__(self, text: str):
         self._text = text
+        self.calls = []
 
-    async def generate(self, messages, temperature=0.3):  # noqa: ARG002
+    async def chat(self, messages, temperature=0.3):  # noqa: ARG002
+        self.calls.append(messages)
         return _FakeResult(self._text)
 
 
 class _BoomAdapter:
-    async def generate(self, messages, temperature=0.3):  # noqa: ARG002
+    async def chat(self, messages, temperature=0.3):  # noqa: ARG002
         raise RuntimeError("boom")
 
 
@@ -53,11 +55,8 @@ def test_extract_skill_block_block_without_title():
 
 
 def test_route_returns_content(client, monkeypatch):
-    monkeypatch.setattr(
-        pr, "_resolve_chat_adapter",
-        lambda provider, model: _FakeAdapter(
-            "已优化。\n```markdown\n# 探针 Skill\n\n> 调用规则：x\n```"),
-    )
+    fake = _FakeAdapter("已优化。\n```markdown\n# 探针 Skill\n\n> 调用规则：x\n```")
+    monkeypatch.setattr(pr, "_resolve_chat_adapter", lambda provider, model: fake)
     resp = client.post("/api/skills/assistant", json={
         "content": "# 旧\n", "messages": [{"role": "user", "content": "改标题"}],
     })
@@ -65,6 +64,28 @@ def test_route_returns_content(client, monkeypatch):
     data = resp.json()
     assert data["content"] and "# 探针 Skill" in data["content"]
     assert "已优化" in data["reply"]
+    # 走 BaseChatAdapter.chat（generate 是媒体适配器接口，chat 适配器没有）：
+    # 首两条 = system + 当前全文；其后为用户历史
+    assert fake.calls and fake.calls[0][0]["role"] == "system"
+    assert "当前 Skill 文档全文" in fake.calls[0][1]["content"]
+    assert fake.calls[0][-1] == {"role": "user", "content": "改标题"}
+
+
+def test_format_route_uses_chat_adapter(client, monkeypatch):
+    """整理接口同走 chat：此前误调媒体接口 generate，模型调用永远失败。"""
+    fake = _FakeAdapter("# 整理后\n\n> 调用规则：测试")
+    monkeypatch.setattr(pr, "_resolve_chat_adapter", lambda provider, model: fake)
+    resp = client.post("/api/skills/format", json={"content": "随手记的流程"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["content"].startswith("# 整理后")
+    assert fake.calls[0][1] == {"role": "user", "content": "随手记的流程"}
+
+
+def test_format_route_no_provider_returns_original(client, monkeypatch):
+    monkeypatch.setattr(pr, "_resolve_chat_adapter", lambda provider, model: None)
+    resp = client.post("/api/skills/format", json={"content": "原文"})
+    assert resp.status_code == 200
+    assert resp.json()["content"] == "原文"
 
 
 def test_route_no_block_content_null(client, monkeypatch):

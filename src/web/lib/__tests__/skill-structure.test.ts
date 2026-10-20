@@ -205,6 +205,26 @@ describe('工具函数', () => {
     expect(s.name).toBe('新 Skill');
     expect(s.sections.map((x) => x.title)).toContain('流程规划');
   });
+  it('blankSkillTemplate 六章节齐全（新建 Skill 模板，2026-10-20 用户裁决）', () => {
+    const s = parseSkillStructure(blankSkillTemplate());
+    // 顺序 = 平台 Skill 的章节惯例（流程→分析→故事板→生成→提示词→组装）
+    expect(s.sections.map((x) => x.title)).toEqual([
+      '流程规划', '素材分析', '故事板设计', '媒体生成', '提示词写法', '组装导出',
+    ]);
+    // 每节都有占位正文，保存后能力探针可识别（非空章节）
+    for (const sec of s.sections) expect(sec.body.trim().length).toBeGreaterThan(0);
+  });
+  it('标题式章节复用 tag 的 label/hint（六段标题不再是裸标题）', () => {
+    const s = parseSkillStructure(blankSkillTemplate());
+    const byTitle = new Map(s.sections.map((x) => [x.title, x]));
+    expect(sectionMeta(byTitle.get('流程规划')!)).toMatchObject({ label: '流程规划' });
+    expect(sectionMeta(byTitle.get('流程规划')!).hint).toContain('按什么顺序推进');
+    expect(sectionMeta(byTitle.get('素材分析')!).hint).toContain('看完素材后');
+    expect(sectionMeta(byTitle.get('故事板设计')!).hint).toContain('故事板');
+    expect(sectionMeta(byTitle.get('媒体生成')!).hint).toContain('出图');
+    expect(sectionMeta(byTitle.get('提示词写法')!).hint).toContain('提示词');
+    expect(sectionMeta(byTitle.get('组装导出')!).hint).toContain('剪辑');
+  });
   it('blankSkillTemplate 含可注册 frontmatter（name/description 非空）', () => {
     const raw = blankSkillTemplate();
     const s = parseSkillStructure(raw);

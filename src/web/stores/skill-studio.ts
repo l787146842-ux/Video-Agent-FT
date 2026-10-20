@@ -38,6 +38,14 @@ export async function loadAllDocs(): Promise<void> {
 const [draftRaw, setDraftRaw] = createSignal('');
 const [dirty, setDirty] = createSignal(false);
 export { draftRaw, dirty };
+// 编辑态（工作台受控）：只有「新建」与「编辑」两种状态才挂出优化助手右栏，
+// 纯查看时保持两栏（左列表 + 中结构化视图）。
+const [studioEditing, setStudioEditing] = createSignal(false);
+export { studioEditing, setStudioEditing };
+/** 右栏是否出现：新建草稿（未落盘）或正在编辑既有 Skill */
+export function assistantVisible(): boolean {
+  return studioEditing() || !selectedSlug();
+}
 let undoStack: string[] = [];
 let redoStack: string[] = [];
 const [stackTick, setStackTick] = createSignal(0);
@@ -55,6 +63,7 @@ export function selectSkill(slug: string) {
   setSelectedSlug(slug);
   setDraftRaw(doc.content || '');
   setDirty(false);
+  setStudioEditing(false);
   resetStacks();
 }
 
@@ -62,6 +71,7 @@ export function newDraft() {
   setSelectedSlug('');
   setDraftRaw(blankSkillTemplate());
   setDirty(true);
+  setStudioEditing(false);
   resetStacks();
 }
 

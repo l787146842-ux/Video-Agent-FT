@@ -61,10 +61,18 @@
 .skst-dirty { color: var(--accent-amber); margin-left: 6px; font-size: var(--font-2xs); }
 .skst-undo-redo { display: flex; gap: 4px; }
 
-/* ----- 右栏：优化助手（宽度由 Splitter 拖拽，输入区高度由把手拖拽） ----- */
+/* ----- 右栏：优化助手（仅编辑/新建态挂出；宽度由 Splitter 拖拽，输入区高度由把手拖拽） ----- */
 .skst-assistant {
   flex-shrink: 0; min-width: 0; display: flex; flex-direction: column;
   border-left: 1px solid var(--border-color);
+  animation: skst-assistant-in 0.18s ease-out;
+}
+@keyframes skst-assistant-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skst-assistant { animation: none; }
 }
 .skst-assistant-header {
   display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px;

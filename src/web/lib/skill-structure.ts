@@ -75,9 +75,23 @@ const SECTION_META: Record<string, { label: string; hint?: string }> = {
   video_assembler: { label: '组装导出', hint: '最终剪辑与导出引导规范。' },
 };
 
+/** 标题式章节 → 英文 tag 别名（新建模板六段走标题式；与后端
+ *  skill_docs `_HEADING_STAGE_HINTS` 同口径）。命中后复用 tag 的
+ *  label/hint，提示文案仍只有 SECTION_META 一份，避免两处漂移。 */
+const HEADING_TAG_ALIAS: Record<string, string> = {
+  '流程规划': 'planner',
+  '素材分析': 'script_analyze',
+  '故事板设计': 'storyboard_designer',
+  '媒体生成': 'media_generator',
+  '提示词写法': 'write_media_prompt',
+  '组装导出': 'video_assembler',
+};
+
 /** 章节显示元数据（label + hint） */
 export function sectionMeta(sec: SkillSection): { label: string; hint?: string } {
-  const meta = SECTION_META[sec.id] || SECTION_META[sec.title];
+  const meta = SECTION_META[sec.id] || SECTION_META[sec.title]
+    || SECTION_META[HEADING_TAG_ALIAS[sec.id]]
+    || SECTION_META[HEADING_TAG_ALIAS[sec.title]];
   return meta || { label: sec.title };
 }
 

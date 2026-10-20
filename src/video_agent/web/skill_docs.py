@@ -85,9 +85,9 @@ _HEADING_STAGE_HINTS: List[Tuple[Tuple[str, ...], Union[str, Tuple[str, ...]]]] 
     (("分镜设计", "镜头列表", "镜头设计", "分镜"), "storyboard_shot"),
     (("音频层", "音频设计"), "storyboard_audio"),
     (("故事板设计", "故事板规范"), ("storyboard_ke", "storyboard_shot", "storyboard_audio")),
-    (("生成规范", "元素生成", "视频生成"), "generation"),
+    (("生成规范", "元素生成", "视频生成", "媒体生成"), "generation"),
     (("组装", "导出"), "assembly"),
-    (("流程规划", "阶段逻辑", "依赖关系"), "planning"),
+    (("流程规划", "阶段逻辑", "依赖关系", "素材分析"), "planning"),
 ]
 
 

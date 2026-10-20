@@ -229,12 +229,15 @@ async def format_skill_content(body: SkillFormatRequest):
         )
     try:
         adapter = _resolve_chat_adapter("", "")
+        if adapter is None:
+            return {"content": body.content}
         messages = [
             {"role": "system", "content": _FORMAT_SYSTEM},
             {"role": "user", "content": body.content},
         ]
-        result = await adapter.generate(messages, temperature=0.3)
-        formatted = (result.text or "").strip()
+        # 统一走 BaseChatAdapter.chat（generate 是媒体适配器接口，chat 适配器没有）
+        result = await adapter.chat(messages, temperature=0.3)
+        formatted = (result.content or "").strip()
         if formatted:
             return {"content": formatted}
     except Exception as e:
@@ -343,8 +346,9 @@ async def skill_assistant(body: SkillAssistantRequest):
         role = m["role"] if m["role"] in ("user", "assistant") else "user"
         messages.append({"role": role, "content": m["content"]})
     try:
-        result = await adapter.generate(messages, temperature=0.3)
-        text = (result.text or "").strip()
+        # 统一走 BaseChatAdapter.chat（generate 是媒体适配器接口，chat 适配器没有）
+        result = await adapter.chat(messages, temperature=0.3)
+        text = (result.content or "").strip()
     except Exception as e:
         logger.warning(f"[SkillAssistant] LLM 调用失败: {e}")
         return {"reply": f"LLM 调用失败：{e}", "content": None}

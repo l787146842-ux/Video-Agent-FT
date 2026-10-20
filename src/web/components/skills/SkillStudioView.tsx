@@ -5,7 +5,7 @@ import {
 import {
   allDocs, selectedSlug, draftRaw, dirty, commitDraft, saveDraft,
   undoDraft, redoDraft, canUndo, canRedo, loadAllDocs, newDraft, resetAssistant,
-  selectSkill, studioLoading,
+  selectSkill, studioLoading, studioEditing, setStudioEditing, assistantVisible,
 } from '@/stores/skill-studio';
 import { parseSkillStructure, frontmatterMeta } from '@/lib/skill-structure';
 import { useSplitter } from '@/hooks/use-splitter';
@@ -17,9 +17,11 @@ import { SkillAssistantPanel } from './SkillAssistantPanel';
 const KEY_LEFT_COLLAPSED = 'skstLeftCollapsed';
 
 /**
- * Skill 工作台（/skills 路由）三栏：
+ * Skill 工作台（/skills 路由）：
  * 左 全部 Skill 列表（加入/删除/新建）｜ 中 结构化预览/编辑（撤销/保存）｜
  * 右 优化助手对话（会话级）。
+ * 右栏只在「编辑」或「新建」时出现（用户 2026-10-20 裁决）：纯查看保持两栏，
+ * 编辑态由工作台受控驱动（见 stores/skill-studio.assistantVisible）。
  */
 export default function SkillStudioView() {
   // 助手栏宽：280-650px，向左拖变宽（对齐影视工作台右栏手感，持久化）
@@ -106,6 +108,8 @@ export default function SkillStudioView() {
         <SkillStructuredView
           raw={draftRaw()}
           onCommit={commitDraft}
+          editing={studioEditing()}
+          onEditingChange={setStudioEditing}
           toolbarRight={
             <div class="skst-undo-redo">
               <button
@@ -131,11 +135,13 @@ export default function SkillStudioView() {
         />
       </div>
 
-      {/* 中栏与助手栏拖拽分界（同影视工作台） */}
-      <Splitter split={assistantSplit} />
-      <div class="skst-assistant" style={{ width: `${assistantSplit.size()}px` }}>
-        <SkillAssistantPanel />
-      </div>
+      {/* 优化助手右栏：仅编辑/新建态挂出（纯查看两栏，见 assistantVisible） */}
+      <Show when={assistantVisible()}>
+        <Splitter split={assistantSplit} />
+        <div class="skst-assistant" style={{ width: `${assistantSplit.size()}px` }}>
+          <SkillAssistantPanel />
+        </div>
+      </Show>
     </div>
   );
 }

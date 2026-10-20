@@ -18,6 +18,18 @@ from src.video_agent.web.skill_docs import (
 
 _SPLIT_TOOLS = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
 
+# 新建 Skill 模板六段（2026-10-20 用户裁决：新建时每个章节要齐全）
+_NEW_TEMPLATE_CONTENT = (
+    "# 新 Skill\n"
+    "> 调用规则：一句话说明何时使用本 Skill\n\n"
+    "## 流程规划\n流程正文\n\n"
+    "## 素材分析\n素材正文\n\n"
+    "## 故事板设计\n故事板正文\n\n"
+    "## 媒体生成\n媒体生成正文\n\n"
+    "## 提示词写法\n写法正文\n\n"
+    "## 组装导出\n组装正文\n"
+)
+
 
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
@@ -128,6 +140,30 @@ def test_prompt_heading_wins_over_storyboard_keyword():
     secs = split_skill_sections(content)
     assert "提示词正文" in secs.get("prompt_draft", "")
     assert "提示词正文" not in secs.get("storyboard_shot", "")
+
+
+# ---------- 2b. 新建模板六段标题映射（2026-10-20 用户裁决） ----------
+
+def test_new_template_headings_map_to_pipeline_stages():
+    """六段标题逐段落位；「媒体生成」不得沿用故事板阶段（模板能力探针要全）。"""
+    secs = split_skill_sections(_NEW_TEMPLATE_CONTENT)
+    assert "流程正文" in secs["planning"] and "素材正文" in secs["planning"]
+    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
+        assert "故事板正文" in secs[stage]
+        assert "媒体生成正文" not in secs[stage]
+    assert secs["generation"].strip() == "媒体生成正文"
+    assert secs["prompt_draft"].strip() == "写法正文"
+    assert secs["assembly"].strip() == "组装正文"
+
+
+def test_new_template_registers_all_capabilities_and_lints_clean():
+    """模板保存后六段能力全部可识别，且无结构缺失警告。"""
+    lint = lint_skill_content(_NEW_TEMPLATE_CONTENT)
+    assert set(lint["available_tools"]) == {
+        "script_analyze", "storyboard_key_elements", "storyboard_shots",
+        "storyboard_audio", "media_generate", "audio_generate", "video_assembler",
+    }
+    assert lint["warnings"] == []
 
 
 # ---------- 3. 注册结果（available_tools 完整性） ----------

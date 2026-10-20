@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, Show, type JSX } from 'solid-js';
 import { FiCode, FiCopy, FiEdit2, FiEye, FiMoreHorizontal } from 'solid-icons/fi';
 import {
   parseSkillStructure, serializeSkillStructure, frontmatterMeta, type SkillStructure,
@@ -12,6 +12,7 @@ import { SkillStructuredEdit } from './SkillStructuredEdit';
  * - 易读（结构化阅读/行内编辑）↔ Markdown（源码查看/编辑）
  * - 非编辑态：编辑按钮 + … 菜单（另存为副本）
  * - 编辑态：取消/更新；更新经 onSave 落盘或 onCommit 上抛草稿
+ * - 工作台传 `editing` 受控：编辑态驱动优化助手右栏的显隐（两栏/三栏）
  */
 export function SkillStructuredView(props: {
   /** 当前已提交的 raw markdown（单一数据源） */
@@ -24,20 +25,33 @@ export function SkillStructuredView(props: {
   toolbarRight?: JSX.Element;
   /** 是否显示 … 菜单（另存为副本） */
   showCopy?: boolean;
+  /** 受控编辑态：提供时由外部驱动（工作台），不提供则组件内部自管 */
+  editing?: boolean;
+  /** 编辑态切换回调（受控/非受控都会上抛） */
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const [viewMode, setViewMode] = createSignal<'read' | 'md'>('read');
-  const [editing, setEditing] = createSignal(false);
+  const [editingLocal, setEditingLocal] = createSignal(false);
+  const editing = () => props.editing ?? editingLocal();
   const [struct, setStruct] = createSignal<SkillStructure | null>(null);
   const [rawDraft, setRawDraft] = createSignal('');
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
+  // 编辑基线：外部改写 raw（选中切换/助手整篇覆盖）时重解析，防旧结构覆盖新内容
+  let editingBase = '';
 
   const parsed = createMemo(() => parseSkillStructure(props.raw));
   // 名称/描述展示权威 = frontmatter 元数据（与后端 /api/skills 解析同口径，
   // 批 C）：正文无 `# ` 标题的文档不再显示「未命名」
   const meta = createMemo(() => frontmatterMeta(props.raw));
 
+  function setEditing(v: boolean) {
+    if (props.editing === undefined) setEditingLocal(v);
+    props.onEditingChange?.(v);
+  }
+
   function startEdit() {
+    editingBase = props.raw;
     if (viewMode() === 'read') setStruct(parseSkillStructure(props.raw));
     else setRawDraft(props.raw);
     setEditing(true);
@@ -47,6 +61,15 @@ export function SkillStructuredView(props: {
     setEditing(false);
     setStruct(null);
   }
+
+  // 编辑期间 raw 被外部改写（如优化助手整篇覆盖）：重解析到新内容。
+  // 编辑器本体不会在输入时改 props.raw，故不会打断正在打字的内容。
+  createEffect(on(() => props.raw, (raw) => {
+    if (!editing() || raw === editingBase) return;
+    editingBase = raw;
+    if (viewMode() === 'read') setStruct(parseSkillStructure(raw));
+    else setRawDraft(raw);
+  }, { defer: true }));
 
   async function commit() {
     const next = viewMode() === 'read' && struct()

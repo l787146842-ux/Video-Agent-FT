@@ -36,6 +36,47 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-20 · Skill 工作台：编辑/新建才挂优化助手 + 模型调用打通 + 新建模板六章节（用户三裁决）
+
+- **立项（用户截图三问，直接裁决）**：①「把 skill 编辑的对话框，模型调用打通」；
+  ②「只有在编辑和新建的时候，才可以弹出 skill 优化助手聊天框，右栏都是没有的。
+  只有两栏」；③「新建的 skill 时候，每个章节要齐全。流程规划、素材分析、故事板设计、
+  媒体生成、提示词写法、组装导出等」。
+- **① 模型调用打通（真 bug）**：`POST /api/skills/assistant` 与 `POST /api/skills/format`
+  误用媒体适配器接口 `adapter.generate(...)` + 读 `.text`，而聊天适配器只有
+  `BaseChatAdapter.chat(...)` 且结果字段为 `ChatResponse.content` ⇒ 真实调用恒失败
+  （回给用户的原文即「LLM 调用失败：'OpenAICompatChatAdapter' object has no attribute
+  'generate'」）。两条路由统一改走 `chat()`；format 路由补「无可用供应商 → 原样返回」
+  守卫。真实链路探针（custom-api-7 / cn:deepseek-v4.1-flash）确认 reply+content 正常；
+  Playwright 端到端实跑（临时第二实例 8081）：编辑态右栏发送「只回复四个字：通道正常」
+  → 收到「通道正常」入列，无失败气泡。
+  环境注记：本机 DSH 会话注入的 `NO_PROXY` 含 `[::1]` 会让 httpx 报 `Invalid port`
+  （既有 D-22 类环境问题，与本批代码无关），探针/验收包装内按 `pytest_local.py` 同口径
+  归一后验证。
+- **② 右栏只在编辑/新建出现**：`stores/skill-studio` 新增会话级 `studioEditing` 与
+  `assistantVisible()`（编辑态 ∨ 未落盘草稿）；`SkillStructuredView` 支持受控编辑态
+  `editing` + `onEditingChange`（文档面板/详情弹窗不传则仍自管）；工作台仅在可见时
+  渲染 Splitter + 助手栏 ⇒ 纯查看回到两栏。`selectSkill`/`newDraft` 复位编辑态；
+  编辑期间 raw 被外部改写（助手整篇覆盖）按新基线重解析，防旧结构覆盖新内容；
+  右栏入场 0.18s 缓入（`prefers-reduced-motion` 关闭动画）。
+- **③ 新建模板六章节**：`blankSkillTemplate` 由两段扩为六段——流程规划、素材分析、
+  故事板设计、媒体生成、提示词写法、组装导出（顺序对齐存量 Skill 的章节惯例），
+  每段带占位指引。前端 `sectionMeta` 增「标题 → tag」别名（hint 仍只有 SECTION_META
+  一份）；后端 `_HEADING_STAGE_HINTS` 补「素材分析」→planning、「媒体生成」→generation
+  ——缺后者时该章会沿用上一节的故事板三元组，正文被注入三个故事板阶段（能力探针失真），
+  故这是模板可用的必要修复，不只是文案。
+- **测试**：`test_skill_assistant_route.py` 假适配器改 `chat()` 并新增 format 路由两例；
+  `test_skill_section_mapping.py` +2（六段标题逐段落位、模板保存能力探针全识别且零警告）；
+  前端 `skill-structure.test.ts` +2（六章节顺序/每节非空、标题复用 tag hint）；
+  新增 `SkillStudioView-assistant.test.tsx` 3 例（两栏→编辑挂出→取消收回 /
+  新建挂出+六章节+保存后两栏 / 编辑中切 Skill 自动收回）。
+  定向 pytest 27 passed；定向 vitest 26 passed；`tsc --noEmit`/eslint 干净；
+  `npm run build` 成功（首屏 381.24 kB ≤ 400 kB）；`acceptance.py --quick` 15/15 PASS；
+  全量 `acceptance.py` 20/20 PASS。
+- **交付口径**：前端已构建，Playwright 真浏览器实跑确认「查看两栏 / 编辑挂出右栏 /
+  新建挂出右栏+六章节」；待用户刷新页面目测。后端路由改动需重启服务生效
+  （当前 8080 实例启动早于本批）。
+
 ### 2026-10-20 · 分镜面板：删引用 chips + 卡片支持图片/视频生成（用户两裁决）
 
 - **立项（用户截图两问，直接裁决）**：①「把分镜的引用删掉，不要」；②「在分镜面板添加图片生成，
