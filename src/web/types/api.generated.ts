@@ -532,6 +532,7 @@ export interface SkillAssistantRequest {
   messages?: SkillAssistantMessage[];
   provider?: string;
   model?: string;
+  mode?: string;
 }
 
 export interface SkillDoc {

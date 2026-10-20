@@ -56,15 +56,29 @@ export function setActiveSkillApi(
   return apiPost('/api/skills/active', body);
 }
 
-/** Skill 优化助手（非流式）：返回 reply + 解析出的更新后全文
- * （content 为 null 时前端只展示回复、不覆盖预览） */
+/** Skill 草稿自检结果（创作模式后端机械校验；issues 为空 = 通过） */
+export interface SkillAssistantChecks {
+  passed: boolean;
+  issues: string[];
+}
+
+/** Skill 优化/创作助手（非流式）：返回 reply + 解析出的更新后全文
+ * （content 为 null 时前端只展示回复、不覆盖预览；checks 为自检结果）。
+ * mode=create：新建 Skill 的创作模式（六章节契约 + 一键自检/自修复）。 */
 export function assistantSkillChat(body: {
   content: string;
   messages: { role: string; content: string }[];
   provider?: string;
   model?: string;
-}): Promise<{ reply: string; content: string | null }> {
-  return apiPost<{ reply: string; content: string | null }>(
-    '/api/skills/assistant', body as SkillAssistantRequest,
-  );
+  mode?: 'create' | 'optimize';
+}): Promise<{
+  reply: string;
+  content: string | null;
+  checks?: SkillAssistantChecks | null;
+}> {
+  return apiPost<{
+    reply: string;
+    content: string | null;
+    checks?: SkillAssistantChecks | null;
+  }>('/api/skills/assistant', body as SkillAssistantRequest);
 }

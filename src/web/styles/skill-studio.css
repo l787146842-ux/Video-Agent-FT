@@ -79,6 +79,13 @@
   border-bottom: 1px solid var(--border-color); font-size: var(--font-md); font-weight: 600;
   flex-shrink: 0;
 }
+.skst-mode-tag {
+  margin-left: 2px; padding: 2px 8px; border-radius: 999px;
+  font-size: var(--font-2xs); font-weight: 500;
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info-strong) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-info-strong) 35%, transparent);
+}
 .skst-assistant-body {
   flex: 1; overflow-y: auto; padding: 14px;
   display: flex; flex-direction: column; gap: 10px;
@@ -91,6 +98,14 @@
 .skst-msg.user { align-self: flex-end; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); }
 .skst-msg.assistant { align-self: flex-start; background: var(--bg-secondary); border: 1px solid var(--border-color); }
 .skst-msg-text.dim { color: var(--text-dim); }
+.skst-checks {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);
+  font-size: var(--font-xs); line-height: 1.6;
+}
+.skst-checks.ok { color: var(--color-success); }
+.skst-checks.warn { color: var(--color-warning); }
+.skst-checks-title { font-weight: 600; }
+.skst-checks-item { color: var(--text-muted); margin-top: 2px; }
 
 /* 左栏收起/展开按钮（与删除钮共用方形图标钮基类） */
 .skst-collapse, .skst-del {

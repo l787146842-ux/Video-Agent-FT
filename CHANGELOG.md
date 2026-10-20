@@ -36,6 +36,41 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-20 · Skill 创作模式：新建即用 AI 生成合规草稿 + 服务端自检/一次自修复（用户裁决）
+
+- **立项（用户提问）**：「skill 创作要求有点高，可以让用户直接在 skill 优化助手里通过 AI
+  自动编写生成满足本项目要求的 skill？」→ 可以，且不能只靠模型自觉，须把要求变成
+  可机械校验的契约。
+- **① 创作契约（`web/skill_authoring.py` + `prompts/shared/skill_authoring.md`，新文件）**：
+  `build_create_system()` 下发「六章节顺序 + 每节写什么 + frontmatter/description≤200
+  + 只用真实工具 + 不写死模型/分辨率/时长 + 不写 skill_manifest + 暂停只能用
+  workflow_pause」；提示词按 Rule 6 外置到 `prompts/shared/skill_authoring.md`
+  （`CREATE_SYSTEM` / `REPAIR` 两节，`render_prompt_section` 渲染），工具目录
+  **带一句话说明**（唯一源 = ToolManager，画布工具补注册后取全集），不再只给名字。
+- **② 草稿自检 + 一次自修复**：`validate_skill_draft()` 机械校验 frontmatter/标题/
+  调用规则/六章节齐全非空/模板占位符残留/描述长度/lint（硬编码参数、能力章节、
+  外来标签、体量）；路由新增 `mode: Literal["optimize","create"]`（缺省 optimize，
+  兼容旧调用）。创建模式下若自检有问题，把问题清单回喂模型整篇重写**一次**
+  （最多一次，失败保留首版 + 问题清单），取问题更少的一版；响应新增
+  `checks: {passed, issues}`，前端右栏直接展示「✓ 通过 / ⚠ 问题清单」。
+- **③ 聊天区不再刷屏**：助手回复中的整篇 ```markdown 代码块从 `reply` 剥离
+  （正文只进左侧预览，`content` 字段不变），聊天区只留 ≤120 字说明；无说明但有
+  正文时回落「已生成 Skill 草稿…」。
+- **④ 前端接线**：新建草稿（`selectedSlug===''`）自动走 `mode=create`，右栏标题加
+  「创作模式」标签、空态与输入框换成创作引导；编辑既有 Skill 仍走 optimize。
+  `checks` 随消息入列并在气泡下方渲染（最多 4 条 + 余量提示）；保存仍由用户点
+  「保存」，不自动落盘。`gen_api_types.py` 已重生成（`SkillAssistantRequest.mode`）。
+- **实测（真实模型 custom-api-7 / cn:deepseek-v4.1-flash）**：空白模板 + 一句
+  「宠物用品广告短片」需求 → 生成 2642 字 Skill，六章节齐全、7 项能力全识别、
+  自检 0 问题，说明 166 字；Playwright 真浏览器（8081 临时实例）实跑「新建→生成→
+  自检通过」，右栏显示创作模式与通过徽标，左侧预览六章节齐全。
+- **测试**：新增 `tests/unit/test_skill_authoring.py`（工具目录/六章节契约/自检四类/
+  一次自修复/回复剥离，10 例）、`src/web/stores/__tests__/skill-studio-assistant.test.ts`
+  （create/optimize 模式、checks 入列、失败不覆盖草稿，3 例）；`test_skill_assistant_route.py`
+  回归 10 例通过。`tsc`/eslint 干净，build 首屏 381.82 kB ≤ 400 kB。
+  全量 `acceptance.py` 20/20 PASS。
+- **交付口径**：前端已构建；创作模式前后端均需重启服务后生效（当前 8080 实例启动早于本批）。
+
 ### 2026-10-20 · Skill 工作台：编辑/新建才挂优化助手 + 模型调用打通 + 新建模板六章节（用户三裁决）
 
 - **立项（用户截图三问，直接裁决）**：①「把 skill 编辑的对话框，模型调用打通」；

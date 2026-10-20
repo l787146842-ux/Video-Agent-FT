@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from loguru import logger
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.core.token_budget import window_recent_turns
@@ -25,6 +25,11 @@ from src.video_agent.core.provider_config import (
 )
 from src.video_agent.state.manager import StateManager
 from src.video_agent.skill_runtime import registry as skill_registry
+from src.video_agent.web.skill_authoring import (
+    build_create_system,
+    repair_messages,
+    validate_skill_draft,
+)
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
@@ -255,11 +260,14 @@ class SkillAssistantMessage(BaseModel):
 
 class SkillAssistantRequest(BaseModel):
     """当前 Skill 全文 + 会话历史（末条为本次用户请求）；
-    provider/model 与主对话胶囊同源（前端 agent-prefs），缺省回落首个可聊天供应商。"""
+    provider/model 与主对话胶囊同源（前端 agent-prefs），缺省回落首个可聊天供应商。
+    mode=create：新建 Skill 的创作模式（六章节契约 + 服务端自检/一次自修复）；
+    mode=optimize：改写既有 Skill（保留原结构）。"""
     content: str
     messages: List[SkillAssistantMessage] = []
     provider: str = ""
     model: str = ""
+    mode: Literal["optimize", "create"] = "optimize"
 
 
 def _resolve_chat_adapter(provider: str, model: str):
@@ -317,11 +325,21 @@ def _extract_skill_block(text: str) -> Optional[str]:
     return content
 
 
+def _display_reply(text: str, has_content: bool) -> str:
+    """聊天区展示文案：剥掉整篇 Skill 代码块（正文已进左侧预览，避免重复刷屏）。"""
+    cleaned = _ASSISTANT_BLOCK_RE.sub("", text or "").strip()
+    if cleaned:
+        return cleaned
+    if has_content:
+        return "已生成 Skill 草稿，左侧预览已更新；确认后点「保存」落盘。"
+    return ""
+
+
 @router.post("/skills/assistant")
 async def skill_assistant(body: SkillAssistantRequest):
-    """Skill 优化助手：单次 LLM 调用，返回 {reply, content}。
-    content 为解析出的更新后全文（解析失败为 null）；前端覆盖预览草稿，
-    落盘由用户点保存决定。"""
+    """Skill 优化/创作助手：单次 LLM 调用（创作模式最多一次自修复），
+    返回 {reply, content, checks}。content 为解析出的全文（解析失败为 null）；
+    前端覆盖预览草稿，落盘由用户点保存决定。"""
     if not body.content.strip() and not body.messages:
         raise VideoAgentError(
             "内容不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
@@ -335,8 +353,10 @@ async def skill_assistant(body: SkillAssistantRequest):
         raise VideoAgentError(
             "无可用聊天供应商，请先在 API 配置中添加", status_code=503
         )
+    # 创作模式：六章节契约 + 工具目录；优化模式：保留既有结构
+    system_prompt = build_create_system() if body.mode == "create" else _assistant_system()
     messages: List[Dict[str, str]] = [
-        {"role": "system", "content": _assistant_system()},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
     ]
     # 会话历史截尾（统一口径）：真实用户轮组原子窗口，
@@ -351,5 +371,34 @@ async def skill_assistant(body: SkillAssistantRequest):
         text = (result.content or "").strip()
     except Exception as e:
         logger.warning(f"[SkillAssistant] LLM 调用失败: {e}")
-        return {"reply": f"LLM 调用失败：{e}", "content": None}
-    return {"reply": text, "content": _extract_skill_block(text)}
+        return {"reply": f"LLM 调用失败：{e}", "content": None, "checks": None}
+
+    content = _extract_skill_block(text)
+    checks: Optional[Dict[str, object]] = None
+    if content:
+        issues = validate_skill_draft(content, create_mode=body.mode == "create")
+        # 创作模式一次自修复：把机械自检问题回喂，整篇重写后取问题更少的一版
+        if body.mode == "create" and issues:
+            try:
+                fixed = await adapter.chat(
+                    repair_messages(messages, content, issues), temperature=0.2,
+                )
+                fixed_text = (fixed.content or "").strip()
+                fixed_content = _extract_skill_block(fixed_text)
+                if fixed_content:
+                    fixed_issues = validate_skill_draft(fixed_content, create_mode=True)
+                    if len(fixed_issues) < len(issues):
+                        logger.info(
+                            f"[SkillAssistant] 创作草稿自修复：{len(issues)} → "
+                            f"{len(fixed_issues)} 项问题"
+                        )
+                        text, content, issues = fixed_text, fixed_content, fixed_issues
+            except Exception as e:
+                # 自修复失败不阻断：保留首版草稿 + 问题清单，用户仍可手改/保存
+                logger.warning(f"[SkillAssistant] 创作草稿自修复失败: {e}")
+        checks = {"passed": not issues, "issues": issues}
+    return {
+        "reply": _display_reply(text, bool(content)),
+        "content": content,
+        "checks": checks,
+    }

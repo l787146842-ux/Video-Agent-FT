@@ -3,7 +3,7 @@ import {
   FiArrowUp, FiCpu, FiGlobe, FiMessageSquare, FiPaperclip,
 } from 'solid-icons/fi';
 import {
-  assistantMessages, assistantBusy, sendAssistant,
+  assistantMessages, assistantBusy, sendAssistant, selectedSlug,
 } from '@/stores/skill-studio';
 import { renderMarkdown } from '@/lib/markdown';
 import { useSplitter } from '@/hooks/use-splitter';
@@ -16,7 +16,9 @@ import { getContextUsage, type ContextUsage } from '@/api/agent';
 
 /**
  * Skill 工作台右栏：优化助手对话（会话级，不持久化）。
- * 输入区对齐影视工作台聊天输入：上传 / 厂商-模型级联 / 发送 / 上下文用量；
+ * 新建草稿 = 创作模式（后端按项目规范生成六章节草稿并自检）；
+ * 编辑既有 Skill = 优化模式。输入区对齐影视工作台聊天输入：
+ * 上传 / 厂商-模型级联 / 发送 / 上下文用量；
  * 消息区与输入区分界线可上下拖拽调输入区高度（100-400px，持久化）。
  */
 export function SkillAssistantPanel() {
@@ -24,6 +26,8 @@ export function SkillAssistantPanel() {
   const [usage, setUsage] = createSignal<ContextUsage | null>(null);
   let scrollEl: HTMLDivElement | undefined;
   let fileRef: HTMLInputElement | undefined;
+  // 未落盘草稿 = 新建态 = 创作模式（后端六章节契约 + 自检/自修复）
+  const createMode = () => !selectedSlug();
 
   const inputSplit = useSplitter(150, {
     axis: 'y', min: 100, max: 400, invert: true, storageKey: 'splitSkillAssistantInput',
@@ -87,13 +91,27 @@ export function SkillAssistantPanel() {
     <>
       <div class="skst-assistant-header">
         <FiMessageSquare size={13} /> Skill优化助手
+        <Show when={createMode()}>
+          <span class="skst-mode-tag">创作模式</span>
+        </Show>
       </div>
       <div class="skst-assistant-body" ref={scrollEl}>
         <Show when={!assistantMessages().length}>
-          <div class="skst-assistant-empty">
-            说出你的想法，我帮你定制/优化左侧的 Skill 文档；
-            改动会实时覆盖到预览（未保存），是否落盘由你决定。
-          </div>
+          <Show
+            when={createMode()}
+            fallback={(
+              <div class="skst-assistant-empty">
+                说出你的想法，我帮你定制/优化左侧的 Skill 文档；
+                改动会实时覆盖到预览（未保存），是否落盘由你决定。
+              </div>
+            )}
+          >
+            <div class="skst-assistant-empty">
+              描述你想做的片子或制作流程，我按项目规范生成一版六章节草稿：
+              流程规划 / 素材分析 / 故事板设计 / 媒体生成 / 提示词写法 / 组装导出。
+              生成后左侧预览自动更新，确认无误再点「保存」落盘。
+            </div>
+          </Show>
         </Show>
         <For each={assistantMessages()}>
           {(m) => (
@@ -103,6 +121,33 @@ export function SkillAssistantPanel() {
                 fallback={<div class="skst-msg-text">{m.text}</div>}
               >
                 <div class="chat-markdown" innerHTML={renderMarkdown(m.text)} />
+                <Show when={m.checks}>
+                  <div class={`skst-checks ${m.checks!.passed ? 'ok' : 'warn'}`}>
+                    <Show
+                      when={m.checks!.passed}
+                      fallback={(
+                        <>
+                          <div class="skst-checks-title">
+                            ⚠ 自检未通过（{m.checks!.issues.length} 项）
+                          </div>
+                          <For each={m.checks!.issues.slice(0, 4)}>
+                            {(issue) => <div class="skst-checks-item">· {issue}</div>}
+                          </For>
+                          <Show when={m.checks!.issues.length > 4}>
+                            <div class="skst-checks-item">
+                              …还有 {m.checks!.issues.length - 4} 项，保存时会再提示
+                            </div>
+                          </Show>
+                        </>
+                      )}
+                    >
+                      <div class="skst-checks-title">
+                        ✓ 已通过项目规范自检
+                        {m.mode === 'create' ? '（六章节 / 工具名 / 参数纪律）' : '（工具名 / 参数纪律）'}
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
               </Show>
             </div>
           )}
@@ -125,7 +170,9 @@ export function SkillAssistantPanel() {
           <div class="chat-input-box">
             <textarea
               value={input()}
-              placeholder="请输入你想创建的Skill想法…"
+              placeholder={createMode()
+                ? '描述你想做的片子/流程，我生成一版六章节草稿…'
+                : '请输入你想创建的Skill想法…'}
               onInput={(e) => setInput(e.currentTarget.value)}
               onKeyDown={(e) => {
                 // 中文输入法选词期间的 Enter 不触发发送

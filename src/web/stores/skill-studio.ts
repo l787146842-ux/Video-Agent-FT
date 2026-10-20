@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js';
 import {
-  getSkillDocs, saveSkillDoc, deleteSkillDoc, assistantSkillChat, type SkillDoc,
+  getSkillDocs, saveSkillDoc, deleteSkillDoc, assistantSkillChat,
+  type SkillDoc, type SkillAssistantChecks,
 } from '@/api/docs';
 import type { SkillAssistantMessage } from '@/types/api.generated';
 import { refreshSkills } from '@/stores/studio';
@@ -183,7 +184,14 @@ export async function removeSkill(slug: string): Promise<void> {
 }
 
 // ---------- 优化助手（会话级） ----------
-export interface AssistantMsg { role: 'user' | 'assistant'; text: string; }
+export interface AssistantMsg {
+  role: 'user' | 'assistant';
+  text: string;
+  /** 本轮请求模式（决定自检徽标的检查口径文案） */
+  mode?: 'create' | 'optimize';
+  /** 创作/优化后端的项目规范自检结果（无全文可查时为空） */
+  checks?: SkillAssistantChecks | null;
+}
 
 const [assistantMessages, setAssistantMessages] = createSignal<AssistantMsg[]>([]);
 const [assistantBusy, setAssistantBusy] = createSignal(false);
@@ -193,13 +201,16 @@ export function resetAssistant() {
   setAssistantMessages([]);
 }
 
-/** 发送用户请求：回复入列；解析出全文则覆盖草稿（入撤销栈） */
+/** 发送用户请求：回复入列；解析出全文则覆盖草稿（入撤销栈）。
+ * 新建草稿走 create 模式（六章节契约 + 服务端自检/自修复），
+ * 编辑既有 Skill 走 optimize 模式（保留原结构）。 */
 export async function sendAssistant(text: string): Promise<void> {
   const msg = text.trim();
   if (!msg || assistantBusy()) return;
   setAssistantMessages((m) => [...m, { role: 'user', text: msg }]);
   setAssistantBusy(true);
   try {
+    const mode = selectedSlug() ? 'optimize' : 'create';
     const history: SkillAssistantMessage[] = assistantMessages().slice(-10)
       .map((m) => ({ role: m.role, content: m.text }));
     const res = await assistantSkillChat({
@@ -207,8 +218,11 @@ export async function sendAssistant(text: string): Promise<void> {
       messages: history,
       provider: agentProvider(),
       model: agentModel(),
+      mode,
     });
-    setAssistantMessages((m) => [...m, { role: 'assistant', text: res.reply || '（空回复）' }]);
+    setAssistantMessages((m) => [...m, {
+      role: 'assistant', text: res.reply || '（空回复）', mode, checks: res.checks ?? null,
+    }]);
     if (res.content) commitDraft(res.content);
   } catch (err) {
     setAssistantMessages((m) => [...m, {
