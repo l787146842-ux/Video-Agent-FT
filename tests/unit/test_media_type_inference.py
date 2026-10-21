@@ -111,7 +111,7 @@ class TestGateUsesSameInference:
     def ctx(self):
         from src.video_agent.core.fc_gates import GateContext
 
-        return GateContext(stage_card_media=frozenset({"audio", "video"}),
+        return GateContext(stage_card_media=frozenset({"audio"}),
                            stage_label="故事板设计")
 
     def test_audio_card_without_media_type_passes(self, ctx):
@@ -131,7 +131,7 @@ class TestGateUsesSameInference:
         err = card_media_gate(ctx, "storyboard_add_draft",
                               {"draft": {"mediaType": "image"}})
         assert err is not None
-        assert "只允许 mediaType=audio/video" in err
+        assert "只允许 mediaType=audio" in err
 
     def test_gate_and_factory_agree(self, ctx):
         """**同口径钉**：闸机放行 ⟺ 工厂落库的类型在允许集内。
@@ -140,7 +140,7 @@ class TestGateUsesSameInference:
         """
         from src.video_agent.core.fc_gates import card_media_gate
 
-        allowed = frozenset({"audio", "video"})
+        allowed = frozenset({"audio"})  # 2026-10-21 裁决：设计期只放音色卡
         for draft in ({"audioType": "voice"}, {"audioType": "bgm"},
                       {"mediaType": "image"}, {"mediaType": "video"},
                       {"label": "x"}, {}):

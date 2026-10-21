@@ -339,7 +339,8 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
     ② 子代理建 mediaType=image 的图像卡 → **被建卡媒体闸拒收**、不落账
        （用户裁决：图像卡含壳与提示词均归 write_media_prompt 阶段）；
     ③ 拒收文案要告诉模型"去哪里做"，防其原地重试。
-    批6（Q5）后本阶段名 = storyboard_design，允许集 = {audio, video}。
+    批6（Q5）后本阶段名 = storyboard_design；允许集 2026-10-21 用户裁决
+    收窄为 {audio}（只剩角色音色卡，分镜视频壳卡同归媒体生成阶段）。
     """
     adapter = _ScriptedAdapter([
         # 1) 父：委派故事板设计阶段
@@ -390,7 +391,7 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
 
     # ③ 拒收文案指向正确阶段（回喂给子代理的 tool 结果里可见）
     #    子代理被拒后会带着 tool 结果再发一轮，故在**全部**调用里搜（索引不稳）
-    #    批6 后允许集为 audio/video，文案随之变化
+    #    2026-10-21 裁决后允许集收窄为 audio，文案随之变化
     blob = json.dumps(adapter.calls, ensure_ascii=False)
-    assert "只允许 mediaType=audio/video" in blob, "建卡媒体闸未生效（图像卡未拒收）"
+    assert "只允许 mediaType=audio" in blob, "建卡媒体闸未生效（图像卡未拒收）"
     assert "write_media_prompt" in blob, "拒收文案须告诉模型去哪里建图像卡"

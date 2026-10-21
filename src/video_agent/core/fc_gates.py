@@ -481,12 +481,13 @@ def card_media_gate(
                 # 图像卡全归媒体生成阶段。本句把「该去哪做 + 音色卡怎么标」
                 # 一并交代（音色卡用 audioType=voice，即 Skill 的 key_element_audio）。
                 # 2026-10-01 媒体生成支（步骤3）：阶段名收敛为 media_generate。
-                "本阶段（故事板设计）产出关键元素分组、角色音色卡"
-                "（mediaType=audio 且 audioType=voice，即 Skill 明文的 key_element_audio）"
-                "与分镜卡（mediaType=video）；"
-                "角色/场景/道具的图像卡与提示词属媒体生成阶段，"
+                # 2026-10-21（用户裁决）：分镜视频卡同归媒体生成阶段——设计期
+                # 只建分组（含 shot 组）不建卡，唯一例外是角色音色卡。
+                "本阶段（故事板设计）产出关键元素/分镜/音频分组与角色音色卡"
+                "（mediaType=audio 且 audioType=voice，即 Skill 明文的 key_element_audio）；"
+                "分镜视频卡、图像卡与提示词属媒体生成阶段，"
                 "请在委派 media_generate 阶段时创建。"
-                if allowed == frozenset({"audio", "video"}) else ""
+                if allowed == frozenset({"audio"}) else ""
             )
         )
 
@@ -495,7 +496,8 @@ def card_media_gate(
     # ②「设计阶段只规划音频，只在提示词撰写才建卡」。
     # 病灶：本闸此前只读 mediaType，**完全不读 audioType** ⇒ 本意只为角色音色卡
     # 开的口子把 BGM/旁白卡一并放行（8888 实测 3 张 audioType=bgm 卡落库）。
-    # 仅对判定为 audio 的卡生效；video 卡不受影响（两维正交，见 subagent 注释）。
+    # 仅对判定为 audio 的卡生效（两维正交，见 subagent 注释；2026-10-21 起
+    # video 卡已在第一维被拒——本维只负责在 audio 内部再分音色/非音色）。
     if allowed_audio and media == "audio" and not ctx.gate_override:
         # 音频种类的缺省取值同样走唯一推导入口（未填 audioType 视为非音色卡，
         # 与 models.infer_media_type 同源：audioType 为空时不会推导出 voice）。

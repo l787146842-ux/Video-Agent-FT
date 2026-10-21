@@ -224,29 +224,28 @@ class PromptBuilder:
                 draft_id=context.selected_draft_id,
                 draft_type=context.selected_type or "未知"))
         # R11 裁剪可见性：轮内被裁工具非空时渲染 UNAVAILABLE 段，模型可见
-        # 哪些工具本轮不可用及替代路由（消除“思考打架”）；
+        # 哪些工具本轮不可用（消除“思考打架”）；
         # K6 批：CHILD_ONLY_TOOLS（子代理专属打卡工具）不渲染——主代理
         # 不感知打卡工具存在（仅执行期裁剪，不进可见性说明）。
         #
-        # 2026-09-21 批A/A2（事故 5555/追加-1）：**子级整段不渲染**。
-        # 本段文案面向主代理单场景写死——替代路由恒为「经委派（run_subagent）
-        # 执行对应阶段」；而子级的 `turn_excluded` 里**正好含 run_subagent**
-        # （SUBAGENT_TOOL_DENY 首条=结构防递归，子级 deny 集整体并入裁剪集，
-        # 见 planner._compute_excluded_tools）。于是子级收到的是循环指令：
-        # 「run_subagent 本轮不可用，替代路由：经委派（run_subagent）执行」。
-        # 且子级工具面**启动时已固定**（DELEGATION_CONTEXT 明说不可扩权），
-        # 逐条列被裁项对子级无行动价值——其唯一正确表述（「不在本次委派
-        # 授权面」）已由 DELEGATION_CONTEXT 承担，再渲染属复述（P1）。
-        # 主代理侧行为**逐字不变**（下方分支只对 depth≥1 生效）。
+        # 2026-10-21（用户裁决）：**只报事实，不再下发替代路由句**。
+        # 原第 3 行「替代路由：经委派（run_subagent）执行对应阶段」是每步
+        # 可见的动作指令，与 Skill 启动协议的「先确认再推进」争抢第一步——
+        # 2222 实证（trace ddf8cbabdf5e）：首步 run_subagent(script_analyze)
+        # 直接开工，拿到回执后才 workflow_pause 问 6 项。不可用清单本身
+        # 保留（客观事实，模型据此不误调），只是不再替它选下一步。
+        # 调用期误调仍由 fc_tool_runner 的拒收信封给路由（动作发生时才提示）。
+        #
+        # 2026-09-21 批A/A2（事故 5555/追加-1）：**子级整段不渲染**——
+        # 子级的 `turn_excluded` 里含 run_subagent（结构防递归），逐条列被裁项
+        # 对它无行动价值（DELEGATION_CONTEXT 已声明授权面），再渲染属复述（P1）。
         _turn_excl = getattr(context, "turn_excluded", None)
         if _turn_excl and not getattr(context, "subagent_depth", 0):
             _render_excl = frozenset(_turn_excl) - subagent_mod.CHILD_ONLY_TOOLS
             if _render_excl:
                 _excl_names = ", ".join(sorted(_render_excl))
-                _excl_route = "经委派（run_subagent）执行对应阶段"
                 parts.append(render_prompt(
-                    "shared/turn_excluded.md",
-                    names=_excl_names, route=_excl_route))
+                    "shared/turn_excluded.md", names=_excl_names))
         # （步数行已随二期 G3 退役删除：每步必变 = 强制每步前缀失效的
         # 元凶之一；STEP_FEEDBACK 已带「第 N 轮」，信息不丢）
         return "\n\n".join(parts)

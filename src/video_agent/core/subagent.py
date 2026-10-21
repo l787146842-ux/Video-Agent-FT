@@ -36,12 +36,13 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 （4444 取证：stage 隔离使 shot 规则不可达）由「按正确 stage 粒度委派 + 精准章节
 注入 + 跨阶段数据经共享状态可见」化解，非靠解禁 read_skill。
 
-2026-10-20 文本分析回主代理（用户裁决，部分翻案 2026-09-19）：
-文本剧本的**素材分析**改由主代理亲做（read_uploaded_doc 读剧本 →
-read_skill(section="script_analyze") 取章节 → 正文写出结论 →
-script_analysis_report 登记），`MAIN_AGENT_DENY` 因此移除该工具；
-PDF/图片/音视频/超长文本仍委派 script_analyze（阶段与 _STAGE_TOOLS 原样保留）。
-其余生产阶段（故事板结构写入/提示词草稿）仍按纯编排委派。
+2026-10-20 晚间翻案（用户裁决，撤销同日「文本分析回主代理」A2）：
+文本剧本的**素材分析**改回委派 `run_subagent(stage="script_analyze")`——
+主代理不再持有 `script_analysis_report`（重新进 `MAIN_AGENT_DENY`），
+分析结论落 `state.analysis`；主代理经新读工具 `read_analysis` 按需读回全文
+（偿还 A2 前的「报告 write-only、主代理无法就剧本细节与用户讨论」）。
+PDF/图片/音视频/超长文本同走委派；其余生产阶段（故事板结构写入/提示词草稿）
+仍按纯编排委派。
 """
 from typing import Dict, FrozenSet
 
@@ -171,18 +172,18 @@ _STAGE_TOOLS: Dict[str, FrozenSet[str]] = {
         {"storyboard_add_draft", "storyboard_patch_draft"}),
 }
 
-# 主代理结构性 deny 集（2026-09-19 主代理纯编排批，翻案 2026-09-18「工具要给全」；
-# 2026-10-20 文本分析例外）：主代理是制片调度，物理上缺少故事板结构写入工具——
-# 这些工具只能经 run_subagent 委派给子代理触达（planner._compute_excluded_tools
-# 在 depth==0 时并入本集；one visibility = one permission：schema 不可见 +
-# 误调拒执行，turn_excluded.md 渲染「经委派执行对应阶段」路由提示）。
-# 范围 = 故事板结构写入 + 提示词草稿写入（提示词撰写与故事板设计共用 add/patch_draft）。
-# 2026-10-20（用户裁决）：`script_analysis_report` 移出本集——文本剧本分析由主代理
-# 亲做（读剧本 + read_skill 章节 + 报告登记），复杂素材仍委派 script_analyze
-# （该阶段与 _STAGE_TOOLS 保留）。媒体生成（image_generate/generate_video）与
-# 读工具/文档/确认/编排工具不在本集（主代理保留：理解需求/读资料/维护文档/
-# 处理确认节点/编排/花钱生成带确认闸）。
+# 主代理结构性 deny 集（2026-09-19 主代理纯编排批，翻案 2026-09-18「工具要给全」）：
+# 主代理是纯编排角色，物理上缺少各执行阶段的专业写入工具——这些工具只能经
+# run_subagent 委派给子代理触达（planner._compute_excluded_tools 在 depth==0 时
+# 并入本集；one visibility = one permission：schema 不可见 + 误调拒执行，
+# turn_excluded.md 渲染「经委派执行对应阶段」路由提示）。范围 = 素材分析产出 +
+# 故事板结构写入 + 提示词草稿写入（提示词撰写与故事板设计共用 add/patch_draft）。
+# 2026-10-20 晚间：同日 A2（文本分析回主代理）已翻案，`script_analysis_report`
+# 回本集；分析全文由主代理经读工具 `read_analysis` 按需读回（读工具不在 deny）。
+# 媒体生成（image_generate/generate_video）与读工具/文档/确认/编排工具不在本集
+# （主代理保留：理解需求/读资料/维护文档/处理确认节点/编排/花钱生成带确认闸）。
 MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
+    "script_analysis_report",
     "storyboard_create_group", "storyboard_delete_group",
     "storyboard_delete_draft",
     # 2026-09-23 批10（事故 4444/P1-1）：改分组同属「故事板结构写入」，
@@ -211,15 +212,17 @@ MAIN_AGENT_DENY: FrozenSet[str] = frozenset({
 # add_draft 内联 prompt」的闸机，造成**假成功空提示词卡**，被用户裁决删除。
 #
 # 2026-09-22 批6（Q5）：键随故事板三阶段合并改为 `storyboard_design`，
-# 允许集 = 三个原子阶段产出的并集 `{audio, video}`：
-#   - audio ← key_elements 的角色音色卡（key_element_audio）；
-#   - video ← shots 的分镜组卡（实跑取证 proj-1790073823 该阶段 26 次
-#     create_group 全为 group_type=shot + mediaType=video）。
-# **image 仍被拒**——用户 2026-09-21 裁决不变：角色/场景/道具的图像卡与提示词
-# 同归媒体生成阶段（图像卡含壳全部归提示词阶段）。合并只拓宽了
-# 「同一件事的三种产物」，没有放开跨阶段产物。
+# 允许集曾拓为 `{audio, video}`（video ← 实跑取证 proj-1790073823 该阶段
+# 26 次 create_group 全为 group_type=shot + mediaType=video，把既有行为合法化）。
+# **2026-10-21 用户裁决翻回 `{audio}`**（1111 复测 proj-1792573140 取证：
+# 故事板设计子代理给 23 个分镜组各内联建了一张 prompt 为空的「分镜视频」壳卡，
+# 全是闸机按旧白名单放行的）：对齐 2026-09-25 裁决④字面「故事板设计阶段，
+# 是不能建卡的，除了关键元素的人物音色卡」——09-25 批只把该裁决落到了音频
+# 维度（STAGE_CARD_AUDIO_TYPES），video 壳卡是漏网项。分镜视频卡与图像卡
+# 同节奏：壳与提示词一并归媒体生成阶段（media_generate）创建，设计期只建
+# shot 分组不建卡。image 仍被拒（2026-09-21 裁决不变）。
 STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
-    "storyboard_design": frozenset({"audio", "video"}),
+    "storyboard_design": frozenset({"audio"}),
 }
 
 # 阶段建卡**音频种类**白名单（2026-09-25 用户裁决，8888 取证，两条）：
@@ -239,7 +242,8 @@ STAGE_CARD_MEDIA: Dict[str, FrozenSet[str]] = {
 # 形态选择（与 `STAGE_CARD_MEDIA` 同为正向允许集，不合并成一张表）：
 # mediaType 与 audioType 是**两个正交维度**（见 2026-09-23 批11），
 # 合并会逼所有消费端改签名且让「只限音频种类」这类声明无处安放。
-# 本表只对 `mediaType=audio` 的卡生效；video 卡不受影响。
+# 本表只对 `mediaType=audio` 的卡生效（2026-10-21 起 video 卡已在
+# `STAGE_CARD_MEDIA` 维被拒；本维只管 audio 内部的音色/非音色之分）。
 #
 # 未登记的阶段/类目 → 该维度不受限（维持现状，与 STAGE_CARD_MEDIA 同款默认）。
 STAGE_CARD_AUDIO_TYPES: Dict[str, FrozenSet[str]] = {

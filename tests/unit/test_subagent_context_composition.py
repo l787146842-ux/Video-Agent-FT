@@ -107,7 +107,7 @@ def test_child_deny_set_contains_run_subagent():
 
 
 def test_parent_unavailable_section_unchanged():
-    """防误伤：主代理（depth 0）照常渲染 UNAVAILABLE + 替代路由文案。"""
+    """防误伤：主代理（depth 0）照常渲染 UNAVAILABLE（仅工具名，无替代路由）。"""
     from src.video_agent.core import prompt_builder as pb_mod2
     ctx = PlannerContext(
         use_studio_context=True, subagent_depth=0,

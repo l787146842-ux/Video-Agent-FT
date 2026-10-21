@@ -33,8 +33,10 @@ def test_11111_stage_hint_declares_card_limits():
     hint = _stage_hint()
     assert "新建草稿卡可用媒体类型" in hint
     assert "故事板设计" in hint
-    # 必须点出 audio/video 允许集（image 不在内 = 父级不该安排建图卡）
-    assert "audio/video" in hint
+    # 必须点出 audio 允许集（2026-10-21 裁决：只剩音色卡；
+    # image/video 不在内 = 父级不该安排建图卡或分镜视频壳卡）
+    assert "可用媒体类型=audio" in hint
+    assert "audio/video" not in hint, "video 已移出允许集（2026-10-21 裁决）"
     assert "voice" in hint
 
 

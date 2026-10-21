@@ -15,6 +15,12 @@
 事件卡/前端数据源；下游阶段经共享项目状态（规格文档/故事板）与读工具
 （剧本/规格原文）按需获取故事内容，主代理委派时明确传递所需依赖。
 
+2026-10-20 晚间（用户裁决，撤销同日 A2「文本分析回主代理」）：素材分析
+重新由子代理执行，主代理结构性不持 `script_analysis_report`；但 A2 要解决的
+「主代理拿不到分析全文、无法就剧本细节与用户讨论」必须偿还——新增只读工具
+`read_analysis`，按需读回 `state.analysis` 的 summary + report 全文（渐进式
+披露：不常驻注入，读完即进历史）。
+
 命名口径：工具名 = ``script_analysis_report``，与能力词
 ``script_analyze``（Skill 章节标签，阶段标记非工具名）刻意区分——
 防幻影能力词回潮进助手白名单（test_skill_assistant_route 钉死）。
@@ -91,6 +97,44 @@ class ScriptAnalyzeTool(BaseTool):
         })
 
 
+class ReadAnalysisInput(BaseModel):
+    """read_analysis 无参数（只读当前项目分析结果）；保留空入参模型保 FC schema 形状一致。"""
+
+
+class ReadAnalysisTool(BaseTool):
+    name = "read_analysis"
+    risk = "low"  # §2.7：只读
+    parallel_safe = True  # 只读，可进有界并行池
+    detail_tier = "output"  # 读取类：仅输出留痕
+    description = (
+        "读取当前项目的素材分析结果（summary 一句话 + report 全文）。"
+        "委派 run_subagent(stage=\"script_analyze\") 完成后用它读回完整分析；"
+        "需要引用剧本细节、向用户解释分析结论或据此提问时先读它。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return ReadAnalysisInput
+
+    async def aexecute(self, params: ReadAnalysisInput) -> ToolResult:
+        svc = StateManager.get_instance()
+        analysis = svc.state_dict.get("analysis") or {}
+        summary = str(analysis.get("summary") or "").strip()
+        report = str(analysis.get("report") or "").strip()
+        if not summary and not report:
+            return ToolResult(
+                success=False,
+                error=("尚无素材分析结果。先委派 run_subagent(stage=\"script_analyze\") "
+                       "完成分析（子代理调 script_analysis_report 落账），再用本工具读回。"),
+            )
+        return ToolResult(success=True, data={
+            "doc_name": str(analysis.get("doc_name") or ""),
+            "summary": summary,
+            "report": report,
+            "report_chars": len(report),
+        })
+
+
 def register_analysis_tools() -> None:
-    """注册分析写入 Tool（与 register_document_tools 同一接线口径）"""
+    """注册分析写入/读回 Tool（与 register_document_tools 同一接线口径）"""
     ToolManager.register(ScriptAnalyzeTool())
+    ToolManager.register(ReadAnalysisTool())

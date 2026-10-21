@@ -48,7 +48,14 @@ READ_RESULT_BODY_OMITTED = _load_feedback_section(
 # 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文。
 # read_skill 不在此列（B1 去重）：无 section = 流程段+目录（与 system 的
 # Skill 轻量块重复）走指针；有 section 首次全文、同会话同章节重复走指针。
-FEEDBACK_FULL_TOOLS = {"read_project_doc", "read_uploaded_doc", "read_draft", "read_state_group"}
+# read_analysis（2026-10-21）：撤销 A2 后主代理唯一的分析读回通道，必须全文
+# 回喂——它既不在本集合、返回里也没有 `detail` 字段，原先落到「执行成功」一行，
+# 报告正文被吞（1111 实跑两轮同一症状：模型自问「read_analysis 返回执行成功但
+# 没有内容？」）。渲染走下方 render_read_result 的专属分支。
+FEEDBACK_FULL_TOOLS = {
+    "read_project_doc", "read_uploaded_doc", "read_draft", "read_state_group",
+    "read_analysis",
+}
 # 按需调图工具：读回的图片以多模态 parts 回喂（模型真正「看到」画面）
 FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
 # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
@@ -241,6 +248,21 @@ def strip_prior_feedback_images(messages: List[Dict[str, Any]]) -> None:
 
 def render_read_result(name: str, data: Dict[str, Any]) -> str:
     """按 read_* 工具类型渲染读回全文"""
+    if name == "read_analysis":
+        # state.analysis 的两个字段（analysis_tools.ScriptAnalyzeTool 写入口）：
+        # 一句话锚点 + 报告全文。两者皆空时回可行动占位（工具本身已在空读时
+        # 返回失败信封，此处只防手改状态留下半空数据）。
+        summary = str(data.get("summary") or "").strip()
+        report = str(data.get("report") or "").strip()
+        parts: List[str] = []
+        if data.get("doc_name"):
+            parts.append(f"【素材分析 · 来源文档 {data.get('doc_name')}】")
+        else:
+            parts.append("【素材分析】")
+        if summary:
+            parts.append(f"一句话总结：{summary}")
+        parts.append(report or "（报告正文为空：分析阶段未提交 report_markdown）")
+        return "\n".join(parts)
     if name == "read_draft":
         parts: List[str] = []
         for d in (data.get("drafts") or []):

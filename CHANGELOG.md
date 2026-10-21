@@ -36,6 +36,84 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-10-21 · 故事板设计阶段建卡收窄为「仅音色卡」：video 壳卡移出允许集（用户裁决，翻回 09-22 批6）
+
+- **立项（用户问「为什么分镜把卡建了？」，1111 复测取证）**：现场 =
+  `proj-1792573140-ef0074bd`（工作台「1111」，2026-10-21 跑《三体简短版》）。
+  故事板设计子代理（`conv-1792573417-439b362c`）落账 23 个分镜组、**每组内联
+  建了一张「分镜视频」壳卡**（`mediaType=video`、prompt 全空）；同轮它试图在
+  关键元素组建 image 设定卡时被阶段闸正确拒收 3 次（seq=30-32）——image 守住了，
+  **唯独 video 壳卡是闸机按白名单亲手放行的**（23/23 次 `create_group` 全带
+  内联 video draft）。
+- **根因（平台放行，非模型越界）**：`STAGE_CARD_MEDIA["storyboard_design"]`
+  = `{audio, video}`——2026-09-22 批O 批6 把**实跑观察到的行为合法化**
+  （旧 1111 项目 26 次 create_group 全 shot+video，允许集由 `{audio}` 拓为
+  `{audio, video}`，当时只强调「image 仍拒」）。且三处契约文本还在引导照做：
+  `_DRAFT_FIELDS_HINT`「分镜视频卡 mediaType=video」/ 类目矩阵「shot 可放：视频」
+  渲染进 `create_group.group_type` 描述 / `draft` 参数「建组同时建一张卡（可选）」。
+  与 2026-09-25 裁决④字面「**故事板设计阶段，是不能建卡的，除了关键元素的人物
+  音色卡**」冲突：09-25 批只把该裁决落到音频维度（`STAGE_CARD_AUDIO_TYPES`，
+  注释明写「video 卡不受影响」），分镜 video 壳卡是**漏网项**——当年取证现场
+  是 3 张 BGM 卡，video 壳卡没进视野。
+- **用户裁决（2026-10-21）**：「禁掉，对齐裁决字面」——video 从允许集移除，
+  分镜视频壳卡与图像卡同节奏归媒体生成阶段（`media_generate`）创建，设计期
+  只建 shot 分组不建卡。
+- **改动（3 处，白名单唯一源不动表结构）**：
+  1. `core/subagent.py`：`STAGE_CARD_MEDIA["storyboard_design"]` 由
+     `{audio, video}` 收窄为 `{audio}`（注释记翻回缘由与 09-22 批6 分界）；
+     `STAGE_CARD_AUDIO_TYPES` 注释同步（第二维只管 audio 内部音色/非音色）。
+  2. `core/fc_gates.py::card_media_gate`：拒收文案的正面指引随允许集更新
+     （「产出关键元素/分镜/音频分组与角色音色卡；分镜视频卡、图像卡与提示词
+     属媒体生成阶段」），判定条件随表值改为 `frozenset({"audio"})`。
+  3. 装载期校验 `_validate_stage_card_media` 零改动（音频种类表仍要求
+     mediaType 白名单含 audio，收窄后仍成立）。
+- **承接面（如实说明）**：`media_generate` 阶段未登记建卡限定（不受限）且
+  工具集含 `storyboard_add_draft`/`patch_draft`，承接分镜视频壳卡与提示词
+  一步落账（与图像卡同节奏），无需新增阶段。
+- **回归钉（既有钉翻案 + 新增，5 文件）**：`test_production_prune`（声明表
+  `{audio}` + video 不在集 / 闸机拒 image 与 video 两卡且文案指向
+  media_generate / 不带卡建 shot 组放行、内联 video 壳卡建组拒收 / 端到端
+  连通性 / bgm 用例的「分镜卡放行」翻为拒收）；`test_subagent_stage`（合并
+  阶段白名单用例改名收窄）；`test_media_type_inference`（闸机同口径钉的
+  允许集同步）；`test_11111_storyboard_contract_fixes`（父级可见契约
+  「可用媒体类型=audio」+ 反向钉「audio/video 不得回归」）；集成
+  `test_subagent_delegation`（拒收文案断言同步）。
+- **验证**：定点 pytest 152 passed（4 单测文件 + 集成委派 + 建组工具）；
+  `acceptance.py --quick` **15/15 PASS（退出码 0）**。
+- **边界（如实留痕）**：`_DRAFT_FIELDS_HINT` 的「分镜视频卡 mediaType=video」
+  句与类目矩阵「shot 可放/可出：视频」**保留不动**——它们描述的是分镜类目
+  **最终**能放/出什么（类目维度，`CATEGORY_MEDIA_MATRIX` 用户 09-23 D-2 裁决
+  的单一事实源），阶段闸（阶段维度）负责「什么时候能建」，两维正交；
+  且媒体生成阶段建分镜视频卡时该句正是正面契约。1111 项目存量 23 张空壳
+  video 卡不代删（用户项目数据不代写；后续由提示词阶段直接填 prompt 即复用）。
+- **环境注记**：本批取证/验证期间清掉工作区残留的 `.pytest_tmp`（pytest
+  basetemp 域）时遇 Windows 权限缺损，经 `diagnose-windows-sandbox-acl`
+  一条命令修复并验证（报告 `.acl-reports/acl-report-38574aa7*.jsonl`，
+  回滚命令见其 ROLLBACK 行）；与本批代码改动无关。
+
+### 2026-10-20 · 撤销 A2：素材分析回子代理 + 主代理经 read_analysis 读回全文（用户裁决）
+
+- **立项（1111 复测 trace `850f130d888a`）**：指令治理清理批 A 删除平台竞争句后，模型仍把 Skill 启动协议的「确认」读成「信息已知」（状态已答 2/3），先读剧本后问。用户裁决：**改回子代理做素材分析，但主代理必须能读取分析结果**（偿还 A2 的原始诉求）。
+- **改动**：
+  1. `core/subagent.py`：`script_analysis_report` 重新进 `MAIN_AGENT_DENY`（主代理结构性不可写），分析只能经 `run_subagent(stage="script_analyze")` 产出；docstring/注释改记本次翻案。
+  2. 提示词回纯编排：`protocol.md` 首句撤「文本分析例外」；`skill_runtime.md` 纪律 #5 撤例外、恢复「纯编排角色（素材分析归可委派阶段）」；`subagent.md::SUBAGENT_POLICY` 两桶映射撤「文本分析」主线程项与例外句。
+  3. 新增只读工具 `read_analysis`（`tools/analysis_tools.py`）：读 `state.analysis` 的 summary + report 全文；无分析时回「先委派 script_analyze」的可行动报错。`gen_api_types` 已重生成（TOOL_DETAIL_TIERS / TOOL_APPROVAL_TIERS 各新增一项）。
+- **为什么这次能回到「先问后做」**：分析产出工具从主代理手上收走后，主代理对素材分析只剩「委派」一条执行路径，读剧本不再产出任何东西；启动协议在 Skill 流程最前，模型没有「先读再说」的本地动作可抢跑（A2 前 09-26 实测即先确认语言再委派）。
+- **测试**：`test_production_prune` 两条断言翻回（`script_analysis_report` ∈ deny）+ 文档口径同步；`test_protocol_role_and_spec_boundary` 首句反向钉「无文本分析例外」；`test_skill_flow_batch1` 新增 `read_analysis` 两例（有报告 / 空报告可行动报错）。定点 pytest **146 passed**（9 文件）；`python scripts/acceptance.py --quick` **15/15 PASS**（GATES + tsc，exit 0）。
+- **未做**：不改 `data/skills`（冻结 #16）；不加启动确认机械闸（本次按用户裁决走「分析回子代理」路线）。
+
+### 2026-10-20 · 指令治理清理批 A：启动协议抢跑的竞争句与重复表述（用户裁决）
+
+- **立项（用户 1111 复盘，trace `25281619671c`）**：Skill「AI-短剧一站式生成」要求触发时先确认启动协议（阶段/素材/语言），实际先做了素材分析、再一次性问 6 项。上一版方案（在纪律 #1 加一句「触发后先确认」）被用户判为「打补丁」并撤回——违反 P1 / 捷径禁令 / G3 / §五「同一规则定义处恒等于 1」。
+- **按 GOVERNANCE §二 修复决策树**：顺序/暂停的唯一定义层 = Skill `<planner>`，平台只做指针；本批只清除平台层的分身与竞争，**0 新增规则**：
+  1. `prompts/planner/skill_runtime.md` 纪律 #1：删「顺序由你按流程散文自主推进」（平台在 Skill 之外再授改序裁量），顺序并入「以当前 Skill 流程基线为准」。
+  2. `prompts/planner/protocol.md` 首句：文本分析例外保留声明，操作配方改为指针「见所选 Skill 的《Skill 流程纪律》第 5 条」（原为第 1 份）。
+  3. `prompts/planner/subagent.md::SUBAGENT_POLICY`：同上收为指针（原为第 3 份）；两桶映射与「PDF/音视频仍委派」边界不变。
+- **净效果**：删 3 处重复 + 1 句竞争；A2 操作口径单家 = 纪律 #5。
+- **测试**：`tests/unit/test_protocol_role_and_spec_boundary.py` 首句断言由 `script_analysis_report` 改为「第 5 条」指针；定点 pytest **193 passed**（prompt/subagent/production-prune/trace 等 12 文件）；`python scripts/acceptance.py --quick` **15/15 PASS**（GATES + tsc，exit 0）。
+- **未做（用户裁决 A 范围外）**：`prompts/shared/storyboard_progress.md` 尾注与 #1 的重复（有测试钉住，另案）；不加机械闸（2026-09-08 裁决维持）；`data/skills` 零改动（冻结 #16）。
+- **残余（如实留痕）**：删竞争句不保证模型一定先问——1111 那轮的直接依据是把 Skill 的「确认」读成「信息已知」（状态已答 2/3），删后行为仍归 Skill 散文裁量；要确定性只能代码闸（推翻 09-08）或改 Skill 一句（冻结），待用户另行裁决。
+
 ### 2026-10-20 · API 配置新增「音频」模型分类（用户裁决）
 
 - **立项（用户原话）**：「再在本项目的api配置里面加个音频分类。」——上游语音/音频模型

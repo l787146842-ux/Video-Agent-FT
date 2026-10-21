@@ -121,17 +121,21 @@ def test_merged_stage_injects_all_three_chapters():
         "storyboard_add_draft", "storyboard_patch_draft"})
 
 
-def test_merged_stage_card_media_covers_audio_and_video():
-    """批6（Q5）：建卡媒体白名单随合并拓宽为 {audio, video}，image 仍拒。
+def test_merged_stage_card_media_only_voice_card():
+    """建卡媒体白名单：合并阶段只留 {audio}（= 角色音色卡），image/video 均拒。
 
     - audio ← 关键元素阶段的角色音色卡（key_element_audio）；
-    - video ← 分镜阶段的 shot 卡（实跑取证：26 次 create_group 全 shot+video）；
+    - video 曾于批6（Q5）随合并拓入（实跑取证 26 次 create_group 全 shot+video），
+      2026-10-21 用户裁决移除：对齐 2026-09-25 裁决④字面「故事板设计阶段，
+      是不能建卡的，除了关键元素的人物音色卡」——分镜视频壳卡归媒体生成阶段；
     - image 仍归 media_generate（用户 2026-09-21 裁决不变；阶段名于 2026-10-01 收敛）。
     """
     from src.video_agent.core.subagent import stage_card_media
-    assert stage_card_media("storyboard_design") == frozenset({"audio", "video"})
+    assert stage_card_media("storyboard_design") == frozenset({"audio"})
     assert "image" not in stage_card_media("storyboard_design"), (
         "image 卡归提示词撰写阶段（2026-09-21 用户裁决），合并不放开跨阶段产物")
+    assert "video" not in stage_card_media("storyboard_design"), (
+        "分镜视频壳卡归媒体生成阶段（2026-10-21 用户裁决）")
     assert stage_card_media("media_generate") == frozenset()  # 未登记=不受限
 
 

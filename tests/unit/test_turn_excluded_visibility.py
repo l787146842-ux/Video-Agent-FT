@@ -1,10 +1,13 @@
-"""R11 裁剪可见性测试：turn_excluded 非空时状态尾消息可见标注不可用工具及替代路由。
+"""R11 裁剪可见性测试：turn_excluded 非空时状态尾消息可见标注不可用工具。
 
 覆盖：
 1. build_state_tail_message 输出含 UNAVAILABLE + 工具名（turn_excluded 非空）
 2. build_state_tail_message 输出不含 UNAVAILABLE（turn_excluded 为空）
 3. fc_tool_runner 拒收信封包含替代路由信息
 4. fc_tool_runner 拒收信封不含 image_generate/generate_video 字面量
+
+2026-10-21（用户裁决）：尾消息的「替代路由」句已删（只报事实、不替模型
+选下一步），路由只在**调用期拒收信封**里给（第 3 条不变）。
 """
 import asyncio
 from unittest.mock import MagicMock, patch
@@ -46,7 +49,13 @@ class TestTurnExcludedVisibility:
     """build_state_tail_message 的 UNAVAILABLE 段渲染。"""
 
     def test_turn_excluded_nonempty_renders_unavailable(self):
-        """turn_excluded 非空时输出包含 UNAVAILABLE 和被裁工具名。"""
+        """turn_excluded 非空时输出包含 UNAVAILABLE 和被裁工具名。
+
+        2026-10-21（用户裁决）：**只报事实，不下发替代路由**——原「替代路由：
+        经委派（run_subagent）执行对应阶段」是每步可见的动作指令，与 Skill
+        启动协议的「先确认再推进」争抢第一步（2222 实证 trace ddf8cbabdf5e）。
+        动作提示改由**调用期拒收信封**承担（见本文件第 3 组用例）。
+        """
         builder = _make_builder()
         ctx = PlannerContext(
             use_studio_context=True,
@@ -57,7 +66,8 @@ class TestTurnExcludedVisibility:
         assert "UNAVAILABLE" in result
         assert "storyboard_create_group" in result
         assert "read_skill" in result
-        assert "委派" in result or "run_subagent" in result
+        assert "替代路由" not in result, "尾消息又在替模型选下一步（抢跑根因复归）"
+        assert "委派" not in result, "尾消息出现了委派动作提示"
 
     def test_turn_excluded_empty_no_unavailable(self):
         """turn_excluded 为空时输出不含 UNAVAILABLE。"""

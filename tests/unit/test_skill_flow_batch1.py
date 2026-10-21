@@ -66,6 +66,25 @@ async def test_analysis_writes_state_and_flips_probe():
     assert stage_done("analysis", state) is True
 
 
+async def test_read_analysis_returns_summary_and_report():
+    """2026-10-20 晚间：分析归子代理后，主代理经 read_analysis 读回全文
+    （偿还 A2 前的「报告 write-only」）。"""
+    await ToolManager.invoke_tool("script_analysis_report", _analysis_payload())
+    result = await ToolManager.invoke_tool("read_analysis", {})
+    assert result.success is True, result.error
+    assert "二向箔" in result.data["summary"]
+    assert "程心" in result.data["report"]
+    assert result.data["report_chars"] > 0
+
+
+async def test_read_analysis_empty_is_actionable_error():
+    """无分析结果时明确报错并指出委派路径（不许假成功空读）。"""
+    result = await ToolManager.invoke_tool("read_analysis", {})
+    assert result.success is False
+    assert "run_subagent" in (result.error or "")
+    assert "script_analyze" in (result.error or "")
+
+
 async def test_analysis_empty_summary_rejected_atomically():
     """summary 为空 = 明确报错（不许假成功），且不写入任何字段。"""
     result = await ToolManager.invoke_tool(

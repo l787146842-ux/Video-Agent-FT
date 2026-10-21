@@ -52,29 +52,31 @@ def _ensure_platform_tools():
 # ---------- ① 顶级生产轮面 = 主代理纯编排（锁执行写入工具） ----------
 
 def test_top_level_production_main_agent_deny(svc):
-    """主代理纯编排（2026-09-19 用户裁决；2026-10-20 文本分析例外）：
-    顶级生产轮主代理结构性缺故事板执行写入工具（只能经委派触达），但保留
-    读工具/媒体生成/文档/确认/编排工具/文本分析登记工具。"""
+    """主代理纯编排（2026-09-19 用户裁决；2026-10-20 晚间撤销 A2 后维持）：
+    顶级生产轮主代理结构性缺素材分析产出与故事板执行写入工具（只能经委派
+    触达），但保留读工具/媒体生成/文档/确认/编排工具。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
 
-    # 故事板结构/提示词草稿写入被锁；素材分析已放回主代理（2026-10-20 用户裁决）
+    # 故事板结构/提示词草稿写入 + 素材分析产出被锁（均经委派触达）
     for t in MAIN_AGENT_DENY:
         assert t in excluded, f"{t} 应被主代理结构性裁剪"
     assert "storyboard_create_group" in excluded
     assert "storyboard_delete_group" in excluded
     assert "storyboard_add_draft" in excluded
     assert "storyboard_patch_draft" in excluded
-    assert "script_analysis_report" not in excluded, \
-        "文本剧本分析已放回主代理（2026-10-20）"
+    assert "script_analysis_report" in excluded, \
+        "素材分析产出归子代理（2026-10-20 晚间撤销 A2）"
     # 读工具不裁（主代理理解需求/读资料）
     assert "read_uploaded_doc" not in excluded
     assert "read_draft" not in excluded
     assert "view_storyboard_media" not in excluded
     assert "read_state_group" not in excluded
     assert "read_skill" not in excluded
+    # 分析全文读工具对主代理可见（撤销 A2 的偿还通道）
+    assert "read_analysis" not in excluded
     # 媒体生成不裁（例外：花钱生成确认闸留主线程）
     assert "image_generate" not in excluded
     assert "generate_video" not in excluded
@@ -160,17 +162,17 @@ def test_stage_tools_mapping():
 
 
 def test_main_agent_orchestrator_surface(svc):
-    """主代理纯编排（2026-09-19；2026-10-20 文本分析例外）：生产轮锁掉
-    6 个故事板执行写入工具，保留读工具/媒体生成/文本分析登记；委派集仍含
-    素材分析（复杂素材）/故事板设计/媒体生成。"""
+    """主代理纯编排（2026-09-19；2026-10-20 晚间撤销 A2）：生产轮锁掉
+    素材分析产出 + 6 个故事板执行写入工具，保留读工具/媒体生成；委派集 =
+    素材分析/故事板设计/媒体生成。"""
     planner = Planner(state_manager=svc, llm_adapter=None)
     ctx = PlannerContext(
         skill_name=SKILL, subagent_depth=0, use_studio_context=True)
     excluded = planner._compute_excluded_tools(ctx)
-    # 执行写入工具被锁（故事板结构/提示词草稿）；文本分析已回主代理
+    # 执行写入工具被锁（故事板结构/提示词草稿 + 素材分析产出）
     assert "storyboard_create_group" in excluded
-    assert "script_analysis_report" not in excluded, \
-        "文本剧本分析已放回主代理（2026-10-20）"
+    assert "script_analysis_report" in excluded, \
+        "素材分析产出归子代理（2026-10-20 晚间撤销 A2）"
     assert "storyboard_add_draft" in excluded
     assert "storyboard_patch_draft" in excluded
     # 读工具保留
@@ -252,19 +254,22 @@ def test_stage_deny_never_starves_declared_tools():
 # ---------- ②c 阶段建卡媒体类型限定（2026-09-21 批4，用户裁决） ----------
 
 def test_stage_card_media_declaration():
-    """声明表单一事实源：故事板设计阶段允许 {audio, video}，image 仍拒。
+    """声明表单一事实源：故事板设计阶段只允许 {audio}，image/video 均拒。
 
     用户裁决（2026-09-21 批4）不变：角色/场景/道具的图像卡（含壳）与提示词
     归 media_generate 阶段。
-    2026-09-22 批6（Q5）：键随故事板三阶段合并改为 storyboard_design，
-    允许集 = 三原子阶段产出并集——audio（关键元素阶段的音色卡）
-    + video（分镜阶段的 shot 卡，实跑取证 26 次 create_group 全 shot+video）。
+    2026-09-22 批6（Q5）：键随故事板三阶段合并改为 storyboard_design。
+    2026-10-21 用户裁决：video 从允许集移除（对齐 2026-09-25 裁决④字面
+    「故事板设计阶段，是不能建卡的，除了关键元素的人物音色卡」）——
+    分镜视频壳卡与图像卡同节奏，归 media_generate 阶段创建。
     """
     from src.video_agent.core.subagent import STAGE_CARD_MEDIA, stage_card_media
 
-    assert stage_card_media("storyboard_design") == frozenset({"audio", "video"})
+    assert stage_card_media("storyboard_design") == frozenset({"audio"})
     assert "image" not in stage_card_media("storyboard_design"), (
         "image 卡归提示词撰写阶段（2026-09-21 用户裁决），合并不放开跨阶段产物")
+    assert "video" not in stage_card_media("storyboard_design"), (
+        "分镜视频壳卡归媒体生成阶段（2026-10-21 用户裁决），设计期只建组不建卡")
     # 未登记阶段不受限（空集 = 维持现状，不额外收紧）
     for stage in ("media_generate", "script_analyze", ""):
         assert stage_card_media(stage) == frozenset(), \
@@ -278,27 +283,31 @@ def test_stage_card_media_declaration():
 
 
 def test_card_media_gate_rejects_image_card_in_storyboard_design():
-    """建卡媒体闸：故事板设计阶段建图像卡 → 明确拒收（含"去哪里做"指引）。
+    """建卡媒体闸：故事板设计阶段建图像卡/视频卡 → 明确拒收（含"去哪里做"指引）。
 
     必须是**拒收**而非静默剥离字段——`fc_tool_runner` 记载 2026-09-12 曾有
     「无阶段感知静默剥离 add_draft 内联 prompt」的闸机，造成假成功空提示词卡
     （3333 项目实证），被用户裁决删除。
+    2026-10-21 用户裁决：video 同拒（分镜视频壳卡归媒体生成阶段）。
     """
     from src.video_agent.core.fc_gates import GateContext, card_media_gate
 
-    allowed = frozenset({"audio", "video"})
+    allowed = frozenset({"audio"})
     ctx = GateContext(stage_card_media=allowed, stage_label="故事板设计")
     # 图像卡拒收，且文案要指向正确阶段
     err = card_media_gate(ctx, "storyboard_add_draft",
                           {"draft": {"mediaType": "image"}})
-    assert err and "只允许 mediaType=audio/video" in err
+    assert err and "只允许 mediaType=audio" in err
     assert "media_generate" in err, "拒收文案须指明该去哪里做"
     assert "未执行" in err and "保持原样" in err, "缺状态保留声明"
-    # 音色卡与分镜卡放行（合并阶段的两类合法产物）
+    # 分镜视频壳卡同拒（2026-10-21 裁决），文案同样指向媒体生成阶段
+    err_v = card_media_gate(ctx, "storyboard_add_draft",
+                            {"draft": {"mediaType": "video"}})
+    assert err_v and "只允许 mediaType=audio" in err_v
+    assert "media_generate" in err_v
+    # 音频卡放行（本阶段唯一合法卡型；音色/非音色之分归第二维）
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"mediaType": "audio"}}) is None
-    assert card_media_gate(ctx, "storyboard_add_draft",
-                           {"draft": {"mediaType": "video"}}) is None
     # mediaType 缺省且**无 audioType** → 构建工厂回落 image，故同样拒收
     # （2026-09-23 批11 订正：原文案写「缺省 → 回落 image」，漏了 audioType
     #  推导这一支；只填 audioType 的音频卡现在推导为 audio，见下方断言）
@@ -317,16 +326,19 @@ def test_card_media_gate_rejects_image_card_in_storyboard_design():
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"audioType": "bgm"}}) is None, \
         "只填 audioType=bgm 的音频卡被误判为 image（4444/P1-5 回归）"
-    # 不带卡建组 = 纯结构动作（元素登记要用），放行
+    # 不带卡建组 = 纯结构动作（元素登记/分镜拆镜都要用它），放行
     assert card_media_gate(ctx, "storyboard_create_group",
                            {"group_type": "keyElement", "title": "程心"}) is None
+    assert card_media_gate(ctx, "storyboard_create_group",
+                           {"group_type": "shot", "title": "开场",
+                            "summary": "含内部剪辑（约10s）"}) is None
     # 带卡建组受同一约束（内联 draft 是同一条写卡通道）
     assert card_media_gate(ctx, "storyboard_create_group",
                            {"group_type": "keyElement",
                             "draft": {"mediaType": "image"}}) is not None
     assert card_media_gate(ctx, "storyboard_create_group",
                            {"group_type": "shot",
-                           "draft": {"mediaType": "video"}}) is None
+                           "draft": {"mediaType": "video"}}) is not None
 
 
 def test_card_media_gate_string_draft_cannot_bypass():
@@ -345,7 +357,7 @@ def test_card_media_gate_string_draft_cannot_bypass():
 
     from src.video_agent.core.fc_gates import GateContext, card_media_gate
 
-    ctx = GateContext(stage_card_media=frozenset({"audio", "video"}),
+    ctx = GateContext(stage_card_media=frozenset({"audio"}),
                       stage_label="故事板设计")
     obj = {"mediaType": "image", "label": "越权图卡"}
     as_str = _json.dumps(obj, ensure_ascii=False)
@@ -417,13 +429,14 @@ def test_stage_card_media_reaches_gate_ctx_end_to_end(svc):
     ctx_ke = PlannerContext(
         skill_name=SKILL, subagent_depth=1, subagent_stage="storyboard_design")
     planner._apply_stage_card_media(ctx_ke)
-    assert runner.stage_card_media == frozenset({"audio", "video"})
+    assert runner.stage_card_media == frozenset({"audio"})
     assert runner.stage_label == "故事板设计"
     g = runner._gate_ctx()
     assert card_media_gate(g, "storyboard_add_draft",
                            {"draft": {"mediaType": "image"}}) is not None
+    # 2026-10-21 用户裁决：分镜视频壳卡归媒体生成阶段，设计期同拒
     assert card_media_gate(g, "storyboard_add_draft",
-                           {"draft": {"mediaType": "video"}}) is None
+                           {"draft": {"mediaType": "video"}}) is not None
 
     # 子代理轮 + 其它阶段 → 不受限
     ctx_prompt = PlannerContext(
@@ -506,9 +519,10 @@ def test_card_media_gate_rejects_bgm_and_narration_in_storyboard_design():
                            {"draft": {"mediaType": "audio"}}) is not None, \
         "未标 audioType 的音频卡无法证明是音色卡，应拒收"
 
-    # 分镜视频卡不受第二维影响（两维正交）
+    # 分镜视频卡在第一维（mediaType）即被拒（2026-10-21 用户裁决；
+    # 两维正交不变——第二维只管 audio 内部的音色/非音色之分）
     assert card_media_gate(ctx, "storyboard_add_draft",
-                           {"draft": {"mediaType": "video"}}) is None
+                           {"draft": {"mediaType": "video"}}) is not None
     # 图像卡仍被 mediaType 维拒（本批不放开跨阶段产物）
     assert card_media_gate(ctx, "storyboard_add_draft",
                            {"draft": {"mediaType": "image"}}) is not None

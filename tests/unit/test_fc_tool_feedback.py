@@ -164,6 +164,32 @@ class TestFormatToolResults:
         }])
         assert "1-2" in msg and "PROMPT_FULL_TEXT" in msg
 
+    def test_read_analysis_returns_report_full_text(self):
+        """2026-10-21：撤销 A2 后主代理唯一的分析读回通道。
+
+        原实现既不在 FEEDBACK_FULL_TOOLS、data 里也没有 `detail`，回喂只剩
+        「read_analysis：执行成功」——报告正文被吞，主代理无法就剧本细节
+        向用户提问（1111 实跑两轮同一症状）。"""
+        msg = format_tool_results([{
+            "name": "read_analysis", "ok": True,
+            "data": {"doc_name": "三体简短版.md",
+                     "summary": "C 类半结构化剧本，约 27-36 镜。",
+                     "report": "REPORT_FULL_TEXT",
+                     "report_chars": 16},
+        }])
+        assert "REPORT_FULL_TEXT" in msg, "分析报告全文必须回喂（否则等同空读）"
+        assert "C 类半结构化剧本，约 27-36 镜。" in msg, "一句话总结必须回喂"
+        assert "三体简短版.md" in msg, "来源文档名供模型引用"
+
+    def test_read_analysis_empty_report_is_actionable_placeholder(self):
+        """报告正文为空时给出可读占位，不静默留白。"""
+        msg = format_tool_results([{
+            "name": "read_analysis", "ok": True,
+            "data": {"doc_name": "", "summary": "有总结", "report": ""},
+        }])
+        assert "有总结" in msg
+        assert "报告正文为空" in msg
+
     def test_empty_results_no_feedback(self):
         assert format_tool_results([]) == ""
 
