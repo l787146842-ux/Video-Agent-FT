@@ -55,6 +55,10 @@ probe_tmp/
 pytest_tmp_old_*/
 .arts/
 
+# Windows 权限诊断/修复产物（diagnose-windows-sandbox-acl：报告与回滚脚本，
+# 含本机 SID，本地保留、不入库）
+.acl-reports/
+
 # AgentTeams 运行时状态（团队会话 inbox/ledger，进程私有；
 # 交付结论请落 reports/，本目录只作运行时承载）
 .agent-teams/
