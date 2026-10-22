@@ -260,8 +260,16 @@ class CreateGroupInput(StrictToolInput):
     summary: str = Field("", description="shot 类型：镜头结构摘要徽标（自由文本短句，须与 desc 镜头结构一致），如'含3个内切镜头（约18s）'/'带内部剪辑（约10s）'/'缓慢推近（约5s）'")
     shot_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌与裸名提及解析合并")
     draft: Optional[Union[Dict[str, Any], str]] = Field(None, description=(
-        "建组同时在该组内建一张卡（可选；只建组不带卡就省略本参数；"
-        "传 JSON 对象，字符串会自动解析一次）。" + _DRAFT_FIELDS_HINT))
+        # 2026-10-22（用户裁决，1111 复测取证，两轮收紧）：描述只说本参数
+        # 自己的事（在该组建一张草稿卡），不提建组、不放「建组与建卡是两个
+        # 独立动作」之类关系句。旧句「建组同时在该组内建一张卡（可选）」是
+        # 邀请式表述：1111 实跑中 Skill 故事板章节对「要不要建卡」零要求，
+        # 模型正是抓住那句 + 「分镜视频卡 mediaType=video」hint 自行推断
+        # 「生成需要卡 ⇒ 设计期就该建」，给 23 个分镜组各建了一张空壳视频卡。
+        # 阶段归属（哪个阶段建什么卡）由阶段建卡闸机（card_media_gate）与其
+        # 拒收文案承担，参数描述不复述（P1）。
+        "在该组内建一张草稿卡（可选；传 JSON 对象，字符串会自动解析一次）。"
+        + _DRAFT_FIELDS_HINT))
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
@@ -349,7 +357,10 @@ class StoryboardCreateGroupTool(BaseTool):
     risk = "medium"  # §2.7：写内部状态（可删除撤销）
     detail_tier = "expand"  # 产出类：建组展开可见输入
     description = (
-        "创建新的故事板分组（关键元素/分镜/音频），可附带草稿。"
+        # 2026-10-22（用户裁决）：「建组是建组，建卡是建卡」——本描述只说
+        # 建组的事，完全不提卡（附带建卡是 draft 参数自己的事，见其描述；
+        # 也不放「两个独立动作」之类关系句）。
+        "创建新的故事板分组（关键元素/分镜/音频）。"
         # 2026-09-23 批2（Q1-B/Q2-A，用户裁决）：恢复建组正面契约。
         # 该引导句 2026-09-16 d75a374 被删且无闸机接管，直接导致：
         #   ①关键元素未一组一卡（2222 三个粗组）→ 前端候选源全是组标题；
