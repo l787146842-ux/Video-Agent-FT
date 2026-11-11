@@ -558,10 +558,16 @@ export interface SkillDocVersion {
 
 export interface SkillDocsResponse {
   docs?: SkillDoc[];
+  failed?: SkillLoadFailure[];
 }
 
 export interface SkillFormatRequest {
   content: string;
+}
+
+export interface SkillLoadFailure {
+  slug: string;
+  error: string;
 }
 
 export interface SnapshotActionRequest {

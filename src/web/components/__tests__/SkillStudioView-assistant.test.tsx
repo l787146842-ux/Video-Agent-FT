@@ -2,8 +2,8 @@
  * Skill 工作台右栏显隐（2026-10-20 用户裁决）：
  * 只有「新建」与「编辑」两种状态才挂出 Skill 优化助手；
  * 纯查看保持两栏（左列表 + 中结构化视图），取消编辑后右栏收回。
- * 同时锁定新建草稿的六章节骨架（流程规划/素材分析/故事板设计/
- * 媒体生成/提示词写法/组装导出）。
+ * 同时锁定新建草稿的通用标题式骨架（frontmatter + H1 + 六个二级标题，
+ * 含制作流程与参考资料）。
  */
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -36,7 +36,8 @@ const docsMock = vi.hoisted(() => ({
   getSkillDocs: vi.fn(async () => ([
     { slug: 'skill-a', name: '技能甲', description: '描述甲', content: '' },
   ])),
-  saveSkillDoc: vi.fn(async () => ({ ok: true, doc: {} })),
+  // 记录落盘入参：新建模板的最终形态（通用标题式）在此断言
+  saveSkillDoc: vi.fn(async (slug: string, content: string) => ({ ok: true, doc: {}, slug, content })),
   deleteSkillDoc: vi.fn(async () => ({ ok: true })),
   assistantSkillChat: vi.fn(async () => ({ reply: '', content: null })),
 }));
@@ -92,20 +93,26 @@ describe('SkillStudioView 助手右栏只在编辑/新建时出现', () => {
     expect(container.querySelector('.splitter-v')).toBeNull();
   });
 
-  it('新建草稿带助手 + 六章节齐全；保存后回到两栏', async () => {
+  it('新建草稿带助手 + 通用骨架齐全；保存后回到两栏', async () => {
     const { container } = render(() => <SkillStudioView />);
     fireEvent.click(buttonByText(container, '新建'));
     await waitFor(() => expect(assistantCol(container)).not.toBeNull());
 
+    // 通用骨架：模板标题原文即章节名
     const titles = [...container.querySelectorAll('.sks-h2')].map((el) => el.textContent);
-    for (const title of ['流程规划', '素材分析', '故事板设计', '媒体生成', '提示词写法', '组装导出']) {
-      expect(titles).toContain(title);
+    for (const title of ['三、制作流程', '四、结构与素材', '六、参考资料']) {
+      expect(titles.some((t) => (t || '').includes(title))).toBe(true);
     }
 
     // 保存落盘后「新建」态结束：不再是未落盘草稿，右栏收回（仍是两栏）
     await fireEvent.click(buttonByText(container, '保存'));
     await waitFor(() => expect(assistantCol(container)).toBeNull());
     expect(docsMock.saveSkillDoc).toHaveBeenCalledTimes(1);
+    // 落盘内容：Markdown 标题式主文档 + frontmatter
+    const saved = String(docsMock.saveSkillDoc.mock.calls[0]?.[1] ?? '');
+    expect(saved).toContain('## 三、制作流程');
+    expect(saved).toMatch(/^# 新 Skill/m);
+    expect(saved).not.toContain('<planner>');
   });
 
   it('编辑中切换到另一个 Skill：自动退出编辑态并收回右栏', async () => {

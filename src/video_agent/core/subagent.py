@@ -16,12 +16,12 @@ media_prompt_write）退役 → **单一通用子代理**。dsh 只有一个通�
 场景无需再加类型。子级仍保留两条与类型无关的硬约束：不含花钱生成、不含
 run_subagent（结构防递归）。
 
-2026-09-15 阶段执行器试点批（用户裁决，部分翻案批③A）：对齐 Flova「章节分别
-注入对应阶段子执行器」——run_subagent 加可选 `stage`（试点 script_analyze /
-storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全文（替代全文
-截断）并收紧工具面（去 read_skill，结构上关闭跨阶段预读污染）；不带 stage
-的通用委派全现状不动。仍是模型经 FC 自主发起、同一循环同一闸机链，
-非机械执行器（FORBIDDEN 符号零触碰）。
+2026-09-15 阶段执行器试点批（用户裁决，部分翻案批③A）：run_subagent 加可选
+`stage`（试点 script_analyze / storyboard_shots）。2026-11-11 通用 skill 迁移
+（用户裁决）：Skill 改为通用 Markdown 标题式，**不再按 stage 切章节注入**；
+stage 只保留 actor 标签/遥测语义，子代理一律获得 Skill 主文档全文，并可自行
+调 read_skill 读取分册（read_skill 已从 stage deny 集移出）。仍是模型经 FC
+自主发起、同一循环同一闸机链，非机械执行器（FORBIDDEN 符号零触碰）。
 
 2026-09-16 R4 批（已翻案，见下）：故事板三阶段曾翻回主代理直做。
 
@@ -30,11 +30,10 @@ storyboard_shots）：带 stage 时系统精准注入该阶段 Skill 章节全�
 只能经 run_subagent 委派触达；除媒体生成（image_generate/generate_video，花钱生成
 确认闸只能主线程发行）外，全部生产阶段委派子代理。委派集恢复故事板三阶段
 （key_elements/shots/audio）+ 素材分析 + 提示词撰写（提示词撰写与媒体生成是两个
-独立顺序阶段，非包含关系，故提示词撰写属委派集）。子代理 read_skill 保持 deny
-（STAGE_TOOL_DENY_EXTRA）：子代理只能用注入的对应 Skill 分区 + 共享项目状态 +
-明确传递的资源，不能自由读其他章节（规则按职责隔离、项目状态按需共享）。RC1
-（4444 取证：stage 隔离使 shot 规则不可达）由「按正确 stage 粒度委派 + 精准章节
-注入 + 跨阶段数据经共享状态可见」化解，非靠解禁 read_skill。
+独立顺序阶段，非包含关系，故提示词撰写属委派集）。2026-11-11 通用 skill 迁移后，
+子代理获得 Skill 主文档全文 + 共享项目状态，并允许 read_skill 读取分册（不再按
+stage 切章节、不再 deny read_skill）；职责隔离改由“任务书只给必要信息 + 工具面
+白名单”承载。
 
 2026-10-20 晚间翻案（用户裁决，撤销同日「文本分析回主代理」A2）：
 文本剧本的**素材分析**改回委派 `run_subagent(stage="script_analyze")`——
@@ -74,11 +73,10 @@ SUBAGENT_MAX_DEPTH = 1
 #     state, **not a second model message**」），模型只见自己那条工具调用；
 #   ・dsh 的 Skill **无步骤流**（`dsh-skill` 只给 `<skill_content>` 方法参考），
 #     故 todo 在那边是**流程的唯一来源**——填空缺；
-#   ・本平台 16/16 个 Skill 都有 `<planner>` 段（步骤 + 依赖关系全文注入），
+#   ・本平台 16/16 个 Skill 主文档都有「制作流程」段（步骤 + 依赖关系全文注入），
 #     主代理的 todo 只是把同一份步骤**誊第二遍** ⇒ 同一事实源两份（P1 违规）。
-# 子代理**保留**：它拿到的是**单个阶段章节**而非全流程，todo 在那边是填空缺
-# （实跑 4444 取证：子代理条目含项目实例信息如「批次1：程心/AA/曹彬…」，
-# 不是章节誊本）。
+# 子代理**保留**：todo 在子代理侧是分步执行清单（实跑 4444 取证：子代理条目
+# 含项目实例信息如「批次1：程心/AA/曹彬…」，不是主文档流程誊本）。
 CHILD_ONLY_TOOLS: FrozenSet[str] = frozenset({"structured_output", "todo_write"})
 
 # 缺省类型名（历史兼容占位；通用形态下只有一个类型）。
@@ -88,30 +86,32 @@ SUBAGENT_KIND_GENERAL = "general"
 # preset 再 `tools.restrict({allow,deny})`，缺省即继承父面）：子代理**继承主代理
 # 整面工具**，仅以 deny 集收口（inherit ∩ ¬deny），不再维护硬编码 allowlist。
 # 硬编码 allowlist 会漏授阶段落点工具——1111 实证：script_analyze 子代理拿不到
-# script_analysis_report（分析结论无法提交）。deny 四条与类型无关的硬约束：
+# script_analysis_report（分析结论无法提交）。deny 五条与类型无关的硬约束：
 #   run_subagent —— 结构防递归（子级看不到也无法调用）；
 #   image_generate / generate_video —— 花钱生成留主线程受确认闸管；
-#   workflow_pause —— 子级不向用户发起确认（审批=never）。
+#   workflow_pause —— 子级不向用户发起确认（审批=never）；
+#   video_assembler —— 成片交付归主线程（ffmpeg 长任务 + 画布落节点，子级无章节可依）。
 SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
     "run_subagent", "image_generate", "generate_video", "workflow_pause",
+    "video_assembler",
 })
 
 # stage 模式额外 deny（2026-09-21 批0 扩充，事故 2222/Q5）：
-#   read_skill —— 该阶段章节已由系统全文注入，结构上关闭跨阶段预读通道
-#     （分镜子代理物理看不到其它章节，等效 Flova 隔离）；
+#   2026-11-11 通用 skill 迁移：read_skill 已移出 deny 集——子代理拿主文档全文，
+#   分册按需自读；不再按 stage 切章节，跨阶段预读的隔离面随之取消。
 #   storyboard_confirm_draft / storyboard_media_to_chat —— 两者都是**面向用户的
 #     交互动作**（把草稿标记「已确认」= 用户裁决；把媒体插入用户输入框 = 给用户
 #     过目），没有任何可委派阶段声明它，故带 stage 的子代理一律不持有。
 #     装载期校验（见下）保证它们永不被任何 _STAGE_TOOLS 阶段认领——若将来某阶段
 #     真要它，fail-loud 会要求先从本集移出，不会静默失效。
 STAGE_TOOL_DENY_EXTRA: FrozenSet[str] = frozenset({
-    "read_skill", "storyboard_confirm_draft", "storyboard_media_to_chat",
+    "storyboard_confirm_draft", "storyboard_media_to_chat",
 })
 
 # 阶段执行器：委派可选的生产阶段枚举（与 registry.CAPABILITY_TOOL_STAGES 键
 # 同名）。媒体生成（image_generate/generate_video）花钱确认闸只能主线程发行，
-# 留主代理不进本枚举；时间线组装（video_assembler）本项目暂无对应工具，待工具
-# 落地再登记（fail-loud 校验要求 _STAGE_TOOLS 非空）。
+# 留主代理不进本枚举；时间线组装（video_assembler）平台工具已落地，但组装面向
+# 成片交付、由主代理直接执行，仍不进本枚举（fail-loud 校验要求 _STAGE_TOOLS 非空）。
 # 2026-09-19 主代理纯编排批：恢复故事板三阶段（key_elements/shots/audio），
 # 委派集 = 素材分析 + 故事板设计三阶段 + 提示词撰写。
 # 2026-09-22 批6（Q5，用户裁决「关键元素+分镜+音频派给同一个子代理，不要分开派」）：
@@ -134,9 +134,8 @@ PIPELINE_STAGE_KINDS: FrozenSet[str] = frozenset({
     # 阶段」）。合并后该阶段**同时注入 generation + prompt_draft 两章**，使
     # 「分镜表格图需包含四大要素（含景别与时长标注）」与「提示词怎么写」同时到手。
     # 2026-10-05 二次取证更正：两章并注**必要但不充分**——9999 在同注入面下仍
-    # 11/11 漏「时长」（同夜两跑相反）。真根因另有一层：注入时章界被剥掉，
-    # 子代理误判「写法那章没注入」而退化为「只填模板槽位」。已由注入面改用
-    # `labeled_tool_sections` 保住章界（见 planner._launch_subagent）。
+    # 11/11 漏「时长」（同夜两跑相反）。2026-11-11 通用化后子代理直接拿主文档
+    # 全文，不再切章节，章界误判问题随注入方式一并消失。
     # 三次委派（步骤 4 设定图 / 5 表格图 / 6 视频）注入内容相同，由主代理
     # `current_step` 划界；它们之间有用户确认与产物依赖（表格图卡要引用已生成的
     # 设定图 URL），物理上无法并成一次委派。
@@ -527,14 +526,14 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL,
 
     2026-09-15 1111 批（对齐 flova 精简）：任务书**只承载目标**。范围/源文档/
     产出规范一律不复述——工作台状态经读工具按需获取，源文档/Skill 自己用
-    读工具取，系统注入的阶段章节是方法参考（措辞唯一源 = subagent.md
-    DELEGATION_CONTEXT；2026-09-17 裁决：产出形态归 Skill 章节唯一表述源，
+    读工具取，系统注入的主文档全文是方法参考（措辞唯一源 = subagent.md
+    DELEGATION_CONTEXT；2026-09-17 裁决：产出形态归 Skill 主文档唯一表述源，
     平台引导子句「消化进产出/不照抄小标题」退役）；父复述只会污染
     子任务 + 双份事实源 + 烧 token。
     通用形态：不再前置分类型职责块；阶段形态：只加一行事实性阶段标注
     （取 registry.STAGE_LABELS，不带解释性括号——2026-09-16 P1-D/R3：括号内
-    「章节即产出规范的全部依据」曾诱导子代理照抄章节骨架），章节正文由
-    planner 装配层精准注入。
+    「章节即产出规范的全部依据」曾诱导子代理照抄章节骨架），主文档全文由
+    planner 装配层注入，分册由子代理按需 read_skill。
 
     2026-09-22 批5（事故 4444/Q3，用户裁决）：带 stage 且 task 为空时，
     **目标行由平台按阶段生成**（`{执行该章节} = 目标`）——调用方没有槽位可填，

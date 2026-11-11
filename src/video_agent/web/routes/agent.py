@@ -91,8 +91,8 @@ class ChatRequest(BaseModel):
     # 本次消息携带的 Skill slug（前端仅当消息中含 Skill 引用块时才传）：
     # 后端据此把该 Skill 记入当前项目的 usedSkills，文档面板只展示已发送过的 Skill 文档。
     skill_slug: str = ""
-    # 前端当前选中的 Skill 名称（渐进式披露：system prompt 只注入 Skill 目录，
-    # 选中项仅作相关性标注，不注入全文）
+    # 前端当前选中的 Skill 名称（渐进式披露：catalog 只常驻名称+摘要；
+    # 选中项由 prompt_builder 注入主文档全文，超预算时注开头+标题目录）
     skill_name: str = ""
     # 用户消息携带的引用块（展示用，随消息持久化，刷新后可重建）：
     # doc_blocks = 随消息发送的文档附件名称；skill_blocks = 随消息发送的 Skill 名称

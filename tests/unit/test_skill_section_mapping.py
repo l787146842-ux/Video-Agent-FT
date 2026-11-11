@@ -1,10 +1,13 @@
-"""Skill 章节映射回归测试（阶段一 1.6：消灭三拆重构遗留的注册断层）。
+"""Skill 标题映射回归测试（2026-11-11 通用 skill 口径）。
 
 覆盖：
-- 旧 tag <storyboard_designer> 一对多映射到三个拆解 stage
-- 标题式「故事板设计」一对多 + 关键元素/分镜/音频层精确子标题映射
-- 未知 tag/标题不报错不注册
-- lint_skill_content 警告项（空章节/三拆部分缺失/坏 gate_rules）
+- 标题式「故事板设计」一对多 + 关键元素/分镜/音频层精确子标题映射；
+- 未知标题不报错、不注册能力；
+- lint_skill_content 警告项（三拆部分缺失 / 体量 / 模型参数）；
+- A1/M4 两级制分节（## 优先，无 ## 回落 ###）。
+
+标签章节（<planner>/<storyboard_designer> 等）已随 2026-11-11 全量迁移删除，
+本文件不再测试标签解析。
 """
 import pytest
 
@@ -18,12 +21,12 @@ from src.video_agent.web.skill_docs import (
 
 _SPLIT_TOOLS = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
 
-# 新建 Skill 模板六段（2026-10-20 用户裁决：新建时每个章节要齐全）
+# 通用模板骨架（Markdown 标题式）
 _NEW_TEMPLATE_CONTENT = (
-    "# 新 Skill\n"
-    "> 调用规则：一句话说明何时使用本 Skill\n\n"
-    "## 流程规划\n流程正文\n\n"
-    "## 素材分析\n素材正文\n\n"
+    "# 新 Skill\n\n"
+    "## 这个 Skill 做什么\n目标与交付\n\n"
+    "## 制作流程\n流程正文\n\n"
+    "## 剧本分析\n素材正文\n\n"
     "## 故事板设计\n故事板正文\n\n"
     "## 媒体生成\n媒体生成正文\n\n"
     "## 提示词写法\n写法正文\n\n"
@@ -40,77 +43,10 @@ def isolate(tmp_path, monkeypatch):
     registry.reset_registry()
 
 
-# ---------- 1. 旧 tag 一对多映射 ----------
-
-def test_legacy_storyboard_designer_tag_maps_to_all_split_stages():
-    content = (
-        "skill_name: \"demo\"\n"
-        "<storyboard_designer>\n故事板整节规范\n</storyboard_designer>\n"
-    )
-    secs = split_skill_sections(content)
-    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
-        assert "故事板整节规范" in secs.get(stage, "")
-
-
-def test_new_split_tags_map_independently():
-    content = (
-        "<storyboard_key_elements>\n元素节\n</storyboard_key_elements>\n"
-        "<storyboard_shots>\n分镜节\n</storyboard_shots>\n"
-        "<storyboard_audio>\n音频节\n</storyboard_audio>\n"
-    )
-    secs = split_skill_sections(content)
-    assert "元素节" in secs["storyboard_ke"] and "分镜节" not in secs["storyboard_ke"]
-    assert "分镜节" in secs["storyboard_shot"] and "元素节" not in secs["storyboard_shot"]
-    assert "音频节" in secs["storyboard_audio"]
-
-
-# ---------- 1b. labeled 解析（注入面保留章界；2026-10-04 事故 9999） ----------
-
-def test_labeled_split_preserves_tag_and_heading_marks():
-    """labeled 版保留原始标记；纯正文版与 labeled 版**同源同内容**（P1）。
-
-    2026-10-04 事故 9999：注入面原先只给纯正文，多章拼接后章界不可见，
-    子代理误判「写法那章没注入」而漏执行散文要求。labeled 版专供注入面。
-    """
-    tag_content = (
-        "<media_generator>\n生成要求：四大要素\n</media_generator>\n"
-        "<write_media_prompt>\n写法模板\n</write_media_prompt>\n"
-    )
-    blocks = split_skill_sections_labeled(tag_content)
-    gen = blocks["generation"][0]
-    assert gen["head"] == "<media_generator>"
-    assert gen["tail"] == "</media_generator>"
-    assert gen["body"].strip() == "生成要求：四大要素"
-    assert blocks["prompt_draft"][0]["head"] == "<write_media_prompt>"
-
-    # 同源等价：纯正文 = labeled 的 body 拼接（逐字）
-    plain = split_skill_sections(tag_content)
-    assert plain["generation"].strip() == gen["body"].strip()
-    assert plain["prompt_draft"].strip() == "写法模板"
-
-    # 标题式：head = 原始标题行（含 #），tail 为空
-    heading_content = "# 标题式\n> 调用规则：测试\n\n## 提示词写法\n写法正文\n"
-    hblocks = split_skill_sections_labeled(heading_content)
-    assert hblocks["prompt_draft"][0]["head"] == "## 提示词写法"
-    assert hblocks["prompt_draft"][0]["tail"] == ""
-    assert hblocks["prompt_draft"][0]["body"].strip() == "写法正文"
-
-    # 一对多：同一节复制到三个 stage 键（检索面语义不变）
-    one2many = split_skill_sections_labeled(
-        "<storyboard_designer>\n故事板整节\n</storyboard_designer>\n")
-    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
-        assert one2many[stage][0]["body"].strip() == "故事板整节"
-
-    # 空 / 未知标签不报错
-    assert split_skill_sections_labeled("") == {}
-    assert split_skill_sections_labeled("<unknown_tool>\n正文\n</unknown_tool>\n") == {}
-
-
-# ---------- 2. 标题式映射 ----------
 def test_heading_storyboard_design_maps_to_all_split_stages():
     content = (
-        "# 标题式\n> 调用规则：测试\n\n"
-        "## 流程规划\n流程正文\n\n"
+        "# 标题式\n\n"
+        "## 制作流程\n流程正文\n\n"
         "## 故事板设计\n故事板正文\n\n"
         "## 提示词写法\n写法正文\n"
     )
@@ -135,17 +71,28 @@ def test_heading_exact_subheadings_map_precisely():
 
 
 def test_prompt_heading_wins_over_storyboard_keyword():
-    """「分镜提示词写法」应归 prompt_draft 而非 storyboard_shot（提示词关键字优先）"""
+    """「分镜提示词写法」应归 prompt_draft 而非 storyboard_shot。"""
     content = "# x\n\n## 分镜提示词写法\n提示词正文\n"
     secs = split_skill_sections(content)
     assert "提示词正文" in secs.get("prompt_draft", "")
     assert "提示词正文" not in secs.get("storyboard_shot", "")
 
 
-# ---------- 2b. 新建模板六段标题映射（2026-10-20 用户裁决） ----------
+def test_labeled_split_preserves_heading_marks():
+    """labeled 版保留原始标题行；纯正文版与 labeled 版同源同内容。"""
+    content = "## 媒体生成\n生成要求：四大要素\n\n## 提示词写法\n写法模板\n"
+    blocks = split_skill_sections_labeled(content)
+    assert blocks["generation"][0]["head"] == "## 媒体生成"
+    assert blocks["generation"][0]["tail"] == ""
+    assert blocks["generation"][0]["body"].strip() == "生成要求：四大要素"
+    plain = split_skill_sections(content)
+    assert plain["generation"].strip() == "生成要求：四大要素"
+    assert plain["prompt_draft"].strip() == "写法模板"
+    # 空内容不报错
+    assert split_skill_sections_labeled("") == {}
+
 
 def test_new_template_headings_map_to_pipeline_stages():
-    """六段标题逐段落位；「媒体生成」不得沿用故事板阶段（模板能力探针要全）。"""
     secs = split_skill_sections(_NEW_TEMPLATE_CONTENT)
     assert "流程正文" in secs["planning"] and "素材正文" in secs["planning"]
     for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
@@ -157,7 +104,6 @@ def test_new_template_headings_map_to_pipeline_stages():
 
 
 def test_new_template_registers_all_capabilities_and_lints_clean():
-    """模板保存后六段能力全部可识别，且无结构缺失警告。"""
     lint = lint_skill_content(_NEW_TEMPLATE_CONTENT)
     assert set(lint["available_tools"]) == {
         "script_analyze", "storyboard_key_elements", "storyboard_shots",
@@ -166,31 +112,11 @@ def test_new_template_registers_all_capabilities_and_lints_clean():
     assert lint["warnings"] == []
 
 
-# ---------- 3. 注册结果（available_tools 完整性） ----------
-
-def test_legacy_tag_skill_registers_all_split_executors():
-    sd.save_skill_doc(
-        "legacy-demo",
-        "---\nname: legacy-demo\ndescription: 测试桩\n---\n"
-        "skill_name: \"旧标签演示\"\n"
-        "<planner>\n流程\n</planner>\n"
-        "<storyboard_designer>\n故事板整节\n</storyboard_designer>\n"
-        "<write_the_prompt>\n写法\n</write_the_prompt>\n",
-    )
-    entry = registry.get_entry("legacy-demo")
-    assert entry is not None
-    for tool in _SPLIT_TOOLS:
-        assert tool in entry.available_tools
-    # 整节对三个执行器同等注入
-    for tool in _SPLIT_TOOLS:
-        assert "故事板整节" in registry.tool_sections("legacy-demo", tool)
-
-
 def test_heading_skill_registers_all_split_executors():
     sd.save_skill_doc(
         "heading-demo",
         "---\nname: heading-demo\ndescription: 测试桩\n---\n"
-        "# 标题式演示\n> 调用规则：测试\n\n## 故事板设计\n故事板正文\n",
+        "# 标题式演示\n\n## 故事板设计\n故事板正文\n",
     )
     entry = registry.get_entry("heading-demo")
     assert entry is not None
@@ -198,27 +124,25 @@ def test_heading_skill_registers_all_split_executors():
         assert tool in entry.available_tools
 
 
-def test_unknown_tag_or_heading_registers_nothing_without_error():
-    content = "<unknown_tool>\n正文\n</unknown_tool>\n"
+def test_unknown_heading_registers_nothing_without_error():
+    content = "# 未知\n\n## 与管线无关\n正文\n"
     assert split_skill_sections(content) == {}
-    sd.save_skill_doc("unknown-demo", "---\nname: unknown-demo\ndescription: 测试桩\n---\n# 未知\n> 调用规则：测试\n<unknown_tool>\n正文\n</unknown_tool>\n")
+    sd.save_skill_doc(
+        "unknown-demo",
+        "---\nname: unknown-demo\ndescription: 测试桩\n---\n" + content,
+    )
     entry = registry.get_entry("unknown-demo")
     assert entry is not None and entry.available_tools == []
 
 
-# ---------- 4. lint_skill_content ----------
-
-def test_lint_empty_sections_warns():
-    lint = lint_skill_content("# 空\n> 调用规则：无章节\n纯正文\n")
+def test_lint_empty_sections_has_no_capabilities():
+    lint = lint_skill_content("# 空\n\n纯正文\n")
     assert lint["available_tools"] == []
-    # 任务#36 B5 后新措辞：无管线能力章节 = 自由型（全文直注，无阶段裁剪）
-    assert any("未识别到任何管线能力章节" in w for w in lint["warnings"])
+    assert not any("未识别到任何管线能力章节" in w for w in lint["warnings"])
 
 
 def test_lint_partial_split_warns_missing_executors():
-    content = (
-        "<storyboard_key_elements>\n元素节\n</storyboard_key_elements>\n"
-    )
+    content = "## 关键元素\n元素节\n"
     lint = lint_skill_content(content)
     assert "storyboard_key_elements" in lint["available_tools"]
     assert any(
@@ -227,20 +151,19 @@ def test_lint_partial_split_warns_missing_executors():
     )
 
 
-def test_lint_full_外部标杆_skill_has_no_structural_warnings():
+def test_lint_full_generic_skill_has_no_structural_warnings():
     content = (
-        "<planner>\n流程\n**何时暂停**：每阶段后\n</planner>\n"
-        "<storyboard_designer>\n故事板\n</storyboard_designer>\n"
-        "<media_generator>\n生成设定图与分镜视频\n</media_generator>\n"
-        "<write_the_prompt>\n提示词写法规范\n</write_the_prompt>\n"
+        "## 制作流程\n流程\n**何时暂停**：每阶段后\n\n"
+        "## 故事板设计\n故事板\n\n"
+        "## 媒体生成\n生成设定图与分镜视频\n\n"
+        "## 提示词写法\n提示词写法规范\n\n"
+        "## 组装导出\n组装\n"
     )
     lint = lint_skill_content(content)
     for tool in _SPLIT_TOOLS:
         assert tool in lint["available_tools"]
     assert lint["warnings"] == []
 
-
-# ---------- 5. A1/M4 两级制分节（## 优先，无 ## 回落 ###） ----------
 
 def test_two_level_split_keeps_subheadings_inside_section():
     """全文有 ## 时：###/#### 不再单独切分，归入前一 ## 节正文。"""
@@ -251,18 +174,16 @@ def test_two_level_split_keeps_subheadings_inside_section():
     got = split_skill_sections(content)
     assert sorted(got.keys()) == ["prompt_draft", "storyboard_shot"]
     assert "正文乙" in got["storyboard_shot"] and "正文丙" in got["storyboard_shot"]
-    assert "子标题" not in got.get("storyboard_shot", "").split("\n")[0]
 
 
 def test_two_level_split_falls_back_to_triple_hash():
-    """全文无 ## 时：回落 ### 切点（宽容兼容旧式纯 ### 文档）。"""
+    """全文无 ## 时：回落 ### 切点。"""
     content = "### 分镜设计\n正文甲\n### 提示词写法\n正文乙\n"
     got = split_skill_sections(content)
     assert "storyboard_shot" in got and "prompt_draft" in got
 
 
 def test_list_skill_sections_matches_split_two_level():
-    """前后端等价性：list_skill_sections 与 split_skill_sections 同口径。"""
     from src.video_agent.web.skill_docs import list_skill_sections
 
     content = (
@@ -271,7 +192,5 @@ def test_list_skill_sections_matches_split_two_level():
     )
     titles = [s["title"] for s in list_skill_sections(content)]
     assert titles == ["分镜设计", "提示词写法"]
-    # 区间拼接还原正文（与 split 同口径）
     for sec in list_skill_sections(content):
         assert sec["end"] >= sec["start"]
-

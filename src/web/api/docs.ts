@@ -2,14 +2,14 @@
  * 文档 API（Skill 文档；项目文档复用 api/project.ts 的 saveProjectDocument）
  * 对齐后端 routes/plugins.py 契约
  */
-import { apiFetch, apiPut, apiPost, apiDelete } from './client';
+import { apiFetch, apiPut, apiPost, apiDelete, apiPostStream } from './client';
 import type {
   SkillDoc, SkillDocHistoryResponse, SkillDocsResponse, SkillDocSave, SkillDocVersion,
-  SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest,
+  SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest, SkillLoadFailure,
 } from '@/types/api.generated';
 
 /** Skill 文档/历史版本：以后端生成物为唯一来源（豁免清单已清偿） */
-export type { SkillDoc, SkillDocVersion };
+export type { SkillDoc, SkillDocVersion, SkillLoadFailure };
 
 /** Skill 文档历史版本列表（新→旧，含全文） */
 export async function getSkillDocHistory(slug: string): Promise<SkillDocVersion[]> {
@@ -23,6 +23,14 @@ export async function getSkillDocHistory(slug: string): Promise<SkillDocVersion[
 export async function getSkillDocs(): Promise<SkillDoc[]> {
   const data = await apiFetch<SkillDocsResponse>('/api/skills/docs');
   return Array.isArray(data.docs) ? data.docs : [];
+}
+
+/** 坏包失败清单（只读旁路；不影响好包注册与加载） */
+export async function getSkillLoadFailures(): Promise<SkillLoadFailure[]> {
+  const data = await apiFetch<SkillDocsResponse & { failed?: SkillLoadFailure[] }>(
+    '/api/skills/docs',
+  );
+  return Array.isArray(data.failed) ? data.failed : [];
 }
 
 /** 保存 Skill 文档（新建或覆盖） */
@@ -62,9 +70,8 @@ export interface SkillAssistantChecks {
   issues: string[];
 }
 
-/** Skill 优化/创作助手（非流式）：返回 reply + 解析出的更新后全文
- * （content 为 null 时前端只展示回复、不覆盖预览；checks 为自检结果）。
- * mode=create：新建 Skill 的创作模式（六章节契约 + 一键自检/自修复）。 */
+/** Skill 优化/创作助手（非流式）——保留兼容终点；工作台走
+ * openSkillAssistantStream（思考/正文实时下发）。 */
 export function assistantSkillChat(body: {
   content: string;
   messages: { role: string; content: string }[];
@@ -81,4 +88,15 @@ export function assistantSkillChat(body: {
     content: string | null;
     checks?: SkillAssistantChecks | null;
   }>('/api/skills/assistant', body as SkillAssistantRequest);
+}
+
+/** Skill 优化/创作助手（SSE 流式）：返回响应体流。
+ * 帧契约与解析见 lib/skill-assistant-stream.ts（思考/正文实时 + done 终态收口）。 */
+export async function openSkillAssistantStream(
+  body: SkillAssistantRequest,
+  signal?: AbortSignal,
+): Promise<ReadableStream<Uint8Array>> {
+  const res = await apiPostStream('/api/skills/assistant/stream', body, signal);
+  if (!res.body) throw new Error('流式响应不可用');
+  return res.body;
 }

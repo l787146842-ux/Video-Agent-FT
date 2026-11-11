@@ -105,9 +105,9 @@ class TestToolShapeMatchesDsh:
 
         批8 原为「主代理与子代理都持有」；批13 收窄为子代理专属，依据是
         dsh 原版对照取证：dsh 的 Skill **无步骤流**（todo 是流程唯一来源），
-        而本平台 16/16 Skill 都有 `<planner>` 段（步骤 + 依赖全文注入）——
+        而本平台 16/16 Skill 主文档都有「制作流程」段（步骤 + 依赖全文注入）——
         主代理的 todo 只是把同一份步骤誊第二遍（同一事实源两份，P1 违规）。
-        子代理拿到的是**单个阶段章节**而非全流程，todo 在那边仍是填空缺。
+        子代理侧的 todo 是分步执行清单（2026-11-11 通用化后子代理拿主文档全文）。
         """
         from src.video_agent.core.subagent import (
             CHILD_ONLY_TOOLS, MAIN_AGENT_DENY, SUBAGENT_TOOL_DENY,

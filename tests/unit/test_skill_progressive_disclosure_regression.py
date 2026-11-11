@@ -50,32 +50,28 @@ def _base_state(**extra):
 
 
 def test_probe_phrase_exists_in_source_skill():
-    """前置钉死：头/尾探针确在超 2 万字源文件中，且尾部探针不在头部区间（防探针失效假绿）。"""
+    """前置钉死：头/尾探针确在超预算源文件中，且尾部探针远离头部（防探针失效假绿）。"""
     _, content = sd.resolve_skill_content(LONG_SKILL_NAME)
-    assert len(content) > 20000
+    assert len(content) > 12000
     assert BODY_PROBE in content
     assert TAIL_PROBE in content
-    # 尾部探针远离头部预算区间且全文唯一（反向探针有效性）
-    assert content.find(TAIL_PROBE) > 9000 and content.count(TAIL_PROBE) == 1
+    assert content.find(TAIL_PROBE) > 6000 and content.count(TAIL_PROBE) == 1
 
 
-def test_system_prompt_long_skill_planner_only_injection():
-    """选中真实超长 Skill（B1 裁决 2026-08-31）：默认只注入 <planner> 段全文
-    + 章节目录，其余章节正文经 read_skill 按需取读。"""
+def test_system_prompt_long_skill_truncates_with_outline():
+    """通用口径：超预算主文档注入开头 + 标题目录，尾部正文靠 read_skill 续读。"""
     text = _pb(_base_state()).build_system_prompt(_ctx(LONG_SKILL_NAME))
-    # planner 段探针在场；非 planner 章节探针零注入（只进目录）
     assert BODY_PROBE in text
     assert TAIL_PROBE not in text
-    # 目录行在场（L1 元数据：名称 + 摘要）
     assert "Skill 目录" in text and LONG_SKILL_NAME in text
-    # 选中提示 + 取读指引在场（按需加载口径）
     assert f"当前选中 Skill「{LONG_SKILL_NAME}」" in text
-    assert "read_skill" in text and "正文头部到此为止" not in text
+    assert "read_skill" in text
+    assert "标题目录" in text
+    assert "<planner>" not in text
     # 历史注入形态措辞全部退役（压制性包壳同批退役）
     assert "【执行基准声明】" not in text
     assert "== 平台边界声明" not in text
     assert "以后者为准" not in text
-    assert "章节目录" in text  # B1：章节目录在场（按需取读入口）
 
 
 def _style_body_probe(style_content: str) -> str:

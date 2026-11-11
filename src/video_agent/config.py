@@ -231,6 +231,15 @@ class Settings:
     skills_disabled: List[str] = field(default_factory=list)
     skill_catalog_max_entries: int = field(
         default_factory=lambda: _env_int("SKILL_CATALOG_MAX_ENTRIES", 30))
+    # 选中 Skill 主文档注入预算（通用 skill 口径：主文档整篇注入；
+    # 超预算时注入开头 + 标题目录，其余经 read_skill 续读）
+    skill_selected_inject_max_chars: int = field(
+        default_factory=lambda: _env_int("SKILL_SELECTED_INJECT_MAX_CHARS", 12000))
+    skill_selected_inject_head_chars: int = field(
+        default_factory=lambda: _env_int("SKILL_SELECTED_INJECT_HEAD_CHARS", 6000))
+    # 子代理注入主文档预算（超预算截断并提示子代理自读 read_skill）
+    skill_subagent_inject_max_chars: int = field(
+        default_factory=lambda: _env_int("SKILL_SUBAGENT_INJECT_MAX_CHARS", 20000))
     # 执行偏好三档（2026-08-30 用户裁决，Skill 系统修复批 B）：管花钱生成动作
     # （生成图片/生成视频）要不要先弹确认卡——
     # auto_decide = 有活跃 Skill 指导的常规生成流免逐次确认（系统代发同意并留痕）；
@@ -467,7 +476,9 @@ SETTINGS_GROUPS: dict = {
               "max_chat_inserts", "default_image_provider_id", "default_image_model",
               "default_video_provider_id", "default_video_model", "chat_image_enabled",
               "default_image_resolution", "default_video_resolution", "max_shot_duration"),
-    "skills": ("skills_disabled", "skill_catalog_max_entries"),
+    "skills": ("skills_disabled", "skill_catalog_max_entries",
+               "skill_selected_inject_max_chars", "skill_selected_inject_head_chars",
+               "skill_subagent_inject_max_chars"),
     "tasks": ("task_ttl_seconds", "task_max", "snapshot_max_per_project",
               "trace_file_max_bytes", "trace_rotation_keep", "trace_total_max_bytes",
               "trace_hot_window_s", "trace_warm_window_s", "trace_warm_reasoning_max",

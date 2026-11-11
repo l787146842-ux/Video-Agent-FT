@@ -2,21 +2,27 @@
 Skill 文档化存储层。
 
 对标 FTDYB：Skill 不是代码里的一段提示词，而是用户可见、可编辑的 Markdown 文档，
-存放在 data/skills/。渐进式披露：上下文只注入 Skill 目录（名称+摘要），
-全文由模型调 read_skill 按需加载——"流程即数据"。
+存放在 data/skills/。渐进式披露：目录只常驻名称+摘要；选中 Skill 注入主文档
+全文（超预算注开头+标题目录），其余分册经 read_skill 按需加载——"流程即数据"。
 
 单一包形态（Agent Skills 开放标准）：每个 Skill = <slug>/SKILL.md
 目录包（包内其余文件为资源）；平台声明与正文合一，写在文档头部
 YAML frontmatter（`---` 包裹块，name/description 注册期必填）。
 
-文档格式约定：
+文档格式约定（通用 Agent Skills 口径）：
     ---
-    （可选）YAML frontmatter 平台声明
+    name: 名称
+    description: 什么时候使用
     ---
-    # Skill 名称
-    > 调用规则：一句话说明何时使用本 Skill
-    ## 流程规划
-    ……正文……
+    # 标题
+    ## 一、目标 / 输入 / 交付
+    ## 二、制作流程（步骤 / 依赖 / 何时暂停）
+    ## 三、……
+    ## 参考资料（指向 references/…）
+
+名称与描述的唯一权威 = frontmatter 的 name/description；正文只认 Markdown
+标题，不认任何平台私有标签。标题 → 阶段的映射（`_HEADING_STAGE_HINTS`）
+仅供阶段探针过渡使用，不参与正文注入。
 """
 import json
 import re
@@ -29,11 +35,11 @@ from loguru import logger
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
 from src.video_agent.config import settings
-# 标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
-from src.video_agent.utils import live_metrics
 from src.video_agent.skill_runtime import registry as _skill_registry
 # frontmatter 声明解析/体检（frontmatter 顶层不依赖本模块，无环）
 from src.video_agent.skill_runtime import frontmatter
+# 通用 Markdown 标题解析（唯一事实源；不认平台私有标签）
+from src.video_agent.skill_runtime import headings as _headings
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
@@ -41,53 +47,24 @@ _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划�
 _HISTORY_DIR_NAME = ".history"
 _HISTORY_MAX = 10
 
-# ---------- Skill 章节分阶段解析（分段聚焦注入用） ----------
-# 外来 Skill（如 外部标杆 导出）原生就是「每个工具一节」的结构（<planner>/<write_the_prompt>…），
-# 它们的运行时把各节分别注入对应阶段的子工具；本系统把全文一次性注入单一编排模型，
-# 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
-# 值支持一对多：`storyboard_designer` 是本项目 Skill 故事板章节的**现行形态**
-# （2026-09-25 用户裁决：三拆章节合并回单章），同时映射到全部三个故事板 stage，
-# 使整节内容对三个拆解能力同等注入 ⇒ 能力面（available_tools）与音频闸口径零改动。
-# 章节 tag 一律指向该 Skill 文档内真实存在的章节；源平台其余遗留名
-# （media_generator / text_editor / write_the_prompt / resource_prepare_and_analyze）
-# 仅作外来 Skill 兼容别名保留。
-SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
-    "planner": "planning",
-    # 兼容别名（源平台名，外来 Skill 用）→ 本项目执行器 script_analyze
-    "resource_prepare_and_analyze": "planning",
-    "multimodal_analyze_tool": "planning",
-    "script_analyze": "planning",
-    "text_editor": "planning",
-    # 现行故事板章节形态（存量 16/16）→ 三个故事板 stage（一对多）
-    "storyboard_designer": ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
-    # 三拆 tag：2026-09-25 起存量 Skill 均已合并为 storyboard_designer，此三行只为
-    # 外来 Skill 兼容保留（同名仍是能力面用词，见 registry.PIPELINE_CAPABILITY_TOOLS）
-    "storyboard_key_elements": "storyboard_ke",
-    "storyboard_shots": "storyboard_shot",
-    "storyboard_audio": "storyboard_audio",
-    "write_media_prompt": "prompt_draft",
-    # 兼容别名（源平台名）→ 本项目执行器 write_media_prompt
-    "write_the_prompt": "prompt_draft",
-    # 兼容别名（源平台名）→ generation 阶段；本项目用真实工具名分节
-    "media_generator": "generation",
-    "generation": "generation",
-    "image_generate": "generation",
-    "generate_video": "generation",
-    "audio_generate": "generation",
-    "video_assembler": "assembly",
-}
+# ---------- Skill 标题分阶段解析（阶段探针过渡用） ----------
+# 通用 skill 只认 Markdown 标题；旧的标签章节（<planner>/<media_generator> 等）
+# 已于 2026-11-11 全量迁移中删除，平台不再识别任何私有标签。
+# 标题关键字 → 阶段仅用于 available_tools / 音频闸 / lint 的过渡探针；
+# 值支持一对多（「故事板设计」同时覆盖 ke/shot/audio 三个 stage 键）。
 
-# 本地改写版 Skill（标题式）的标题关键字 → 阶段兜底映射（按顺序首个命中生效：
-# 精确子标题优先于笼统的「故事板设计」；值支持一对多，同 tag 映射语义）
+# 标题关键字 → 阶段兜底映射（按顺序首个命中生效：
+# 精确子标题优先于笼统的「故事板设计」；值支持一对多，同一对多语义）
 _HEADING_STAGE_HINTS: List[Tuple[Tuple[str, ...], Union[str, Tuple[str, ...]]]] = [
-    (("提示词写法", "提示词规范", "prompt 编写", "prompt编写"), "prompt_draft"),
-    (("关键元素",), "storyboard_ke"),
+    (("提示词写法", "提示词规范", "提示词", "prompt 编写", "prompt编写"), "prompt_draft"),
+    (("关键元素", "角色设定", "场景设定"), "storyboard_ke"),
     (("分镜设计", "镜头列表", "镜头设计", "分镜"), "storyboard_shot"),
-    (("音频层", "音频设计"), "storyboard_audio"),
+    (("音频层", "音频设计", "音频", "声音"), "storyboard_audio"),
     (("故事板设计", "故事板规范"), ("storyboard_ke", "storyboard_shot", "storyboard_audio")),
     (("生成规范", "元素生成", "视频生成", "媒体生成"), "generation"),
-    (("组装", "导出"), "assembly"),
-    (("流程规划", "阶段逻辑", "依赖关系", "素材分析"), "planning"),
+    (("组装", "剪辑", "导出"), "assembly"),
+    (("流程规划", "阶段逻辑", "依赖关系", "素材分析", "剧本分析",
+      "制作流程", "创作流程", "工作流程", "流程"), "planning"),
 ]
 
 
@@ -100,89 +77,56 @@ def _stage_from_heading(heading: str) -> Union[str, Tuple[str, ...]]:
     return ""
 
 
+def _cut_headings(content: str) -> List[Any]:
+    """分节标题：优先二级；无二级时取最浅一层（>=2）；仅一级返回空。
+
+    与 read_skill 的章节读取不同——目录/阶段探针只需要“主要章节”，
+    不把每个 ### 子标题都摊平。
+    """
+    heads = _headings.list_headings(content)
+    if not heads:
+        return []
+    level2 = [h for h in heads if h.level == 2]
+    if level2:
+        return level2
+    shallowest = min(h.level for h in heads)
+    if shallowest >= 2:
+        return [h for h in heads if h.level == shallowest]
+    return []
+
+
 def split_skill_sections_labeled(content: str) -> Dict[str, List[Dict[str, str]]]:
-    """把 Skill 全文拆成 阶段 → [章节条目]（同阶段多节按原文顺序保留）。
+    """把主文档按 Markdown 标题切成 阶段 → [章节条目]（同阶段多节保留原序）。
 
-    与 `split_skill_sections` **同一份解析实现**（P1 单一事实源），唯一区别是
-    **保留每节的来源标记**，条目形如：
-
-        {"head": "<media_generator>", "body": "……正文……", "tail": "</media_generator>"}
-
-    - `<tag>` 格式：head/tail = 原始标签行；
-    - Markdown 标题格式：head = 原始标题行（含 `#`），tail = ""。
-
-    **为什么需要它**（2026-10-04 事故 9999）：子代理阶段章节注入原先只给
-    `split_skill_sections` 的纯正文（标签被剥掉），多章拼接后**看不出章界**；
-    而 `<media_generator>` 章内写着「具体提示词写法见下方「媒体提示词」章节」——
-    子代理据此误判「写法那章没注入」，退化为「只填模板槽位」，11/11 张
-    分镜表格图全漏「景别与时长标注」（散文要求不落地）。保留原始标记后
-    两章边界可见，误判面消失。
+    通用口径：只认标题，不认任何平台私有标签。标题 → 阶段的映射仅供
+    阶段探针过渡使用（`_HEADING_STAGE_HINTS`），不参与正文注入，
+    也不再有任何“标签章节”分支。
     """
     content = content or ""
     collected: Dict[str, List[Dict[str, str]]] = {}
-
-    def _add(stage: Union[str, Tuple[str, ...]], head: str, body: str,
-             tail: str) -> None:
-        body = (body or "").strip()
+    stage_now: Union[str, Tuple[str, ...]] = ""
+    for h in _cut_headings(content):
+        mapped = _stage_from_heading(h.title)
+        if mapped:
+            stage_now = mapped
+        if not stage_now:
+            continue
+        body = content[h.body_start:h.end].strip()
         if not body:
-            return
-        stages = stage if isinstance(stage, tuple) else (stage,)
+            continue
+        stages = stage_now if isinstance(stage_now, tuple) else (stage_now,)
         for s in stages:
             if s:
                 collected.setdefault(s, []).append(
-                    {"head": head, "body": body, "tail": tail})
-
-    # 1) <tag> 章节（外部导出原生格式）
-    tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
-    tag_re = re.compile(rf"<(?P<tag>{tag_alt})>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
-    found_tag = False
-    for m in tag_re.finditer(content):
-        found_tag = True
-        tag = m.group("tag").lower()
-        _add(SECTION_TAG_STAGES.get(tag, ""), f"<{tag}>", m.group("body"),
-             f"</{tag}>")
-    if found_tag:
-        return collected
-
-    # 2) Markdown 标题兜底（A1/M4 两级制：## 优先切点，全文无 ## 时回落 ###；
-    ### 及以下不再单独切分，与前端 skill-structure.ts 同构）
-    _cut_re = (r"(?m)^(#{2}(?!#)[^\n]*)$" if re.search(r"(?m)^##\s", content)
-               else r"(?m)^(#{2,3}(?!#)[^\n]*)$")
-    parts = re.split(_cut_re, content)
-    stage_now = ""
-    # 静默沿用告警——连续 ≥3 节未命中关键字而沿用上一阶段时，
-    # 说明该 Skill 的标题体系可能整体未映射（章节会被静默归错阶段），
-    # 记 warning + 降级遥测供排查（不阻断解析）
-    _inherit_run = 0
-    _inherit_warned = False
-    for i in range(1, len(parts), 2):
-        head = parts[i]
-        body = parts[i + 1] if i + 1 < len(parts) else ""
-        mapped = _stage_from_heading(head.lstrip("#").strip())
-        if mapped:
-            stage_now = mapped
-            _inherit_run = 0
-        elif stage_now:
-            _inherit_run += 1
-            if _inherit_run >= 3 and not _inherit_warned:
-                _inherit_warned = True
-                logger.warning(
-                    f"[SkillDocs] 标题式章节解析连续 {_inherit_run} 节未命中阶段关键字"
-                    f"（沿用「{stage_now}」），章节可能归错阶段：请核查该 Skill 的标题体系"
-                )
-                live_metrics.record_degradation("skill_docs.heading_fallback")
-        _add(stage_now, head, body, "")
+                    {"head": h.head_line.rstrip("\r\n"), "body": body, "tail": ""})
     return collected
 
 
 def split_skill_sections(content: str) -> Dict[str, str]:
-    """把 Skill 全文拆成 阶段 → 章节文本（同阶段多节合并）。
+    """把主文档拆成 阶段 → 章节文本（同阶段多节合并）。
 
-    支持两种格式：
-    1. 外部导出原生 <tag>…</tag> 章节（tag 按 SECTION_TAG_STAGES 映射到阶段）；
-    2. 本地改写的 Markdown 标题式（按 _HEADING_STAGE_HINTS 关键字兜底，
-       未映射标题下的正文沿用上一个已识别阶段）。
-    未识别章节不返回（全文本就整体注入，本函数只服务于分阶段聚焦再强调）。
+    只认 Markdown 标题；标题 → 阶段按 `_HEADING_STAGE_HINTS` 关键字兜底，
+    未映射标题下的正文沿用上一个已识别阶段。未识别章节不返回。
 
     本函数是**检索/探针面**（available_tools 真值判定、能力闸、lint），
     故只回正文；需要保留章界标记的注入面走 `split_skill_sections_labeled`。
@@ -197,35 +141,15 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
     """章节目录：[{title, start, end}]，按出现顺序，字符区间基于全文原文
     （content[start:end] 即该章节文本）。
 
-    与 split_skill_sections 同口径双格式：
-    1. 外部导出原生 <tag>…</tag> 章节：title = tag 名，区间覆盖整个标签块；
-    2. Markdown 标题式：title = 标题文本（去 # 前缀），区间从标题行到下一标题前。
-    read_skill（section/start）续读的章节目录与探针/序列化消费共用。
+    通用口径：只认 Markdown 标题，优先二级；无二级时取最浅一层（>=2）；
+    仅一级标题不产生目录。read_skill（section/start）续读、注入目录与
+    探针/序列化共用本实现。
     """
     content = content or ""
-    out: List[Dict[str, Any]] = []
-    tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
-    tag_re = re.compile(rf"<(?P<tag>{tag_alt})>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
-    found_tag = False
-    for m in tag_re.finditer(content):
-        found_tag = True
-        out.append({"title": m.group("tag").lower(),
-                    "start": m.start(), "end": m.end()})
-    if found_tag:
-        return out
-    # Markdown 标题兜底：逐标题定位起点，end 回填到下一节起点（A1/M4 两级制：
-    # ## 优先、无 ## 回落 ###，与 split_skill_sections 同口径）
-    _head_re = (r"(?m)^#{2}(?!#)[^\n]*" if re.search(r"(?m)^##\s", content)
-                else r"(?m)^#{2,3}(?!#)[^\n]*")
-    for m in re.finditer(_head_re, content):
-        heading = m.group(0).lstrip("#").strip()
-        if not heading:
-            continue
-        out.append({"title": heading, "start": m.start(), "end": m.end()})
-    # 回填 end：每节到下一节起点（最后一节到全文末尾）
-    for i, sec in enumerate(out):
-        sec["end"] = out[i + 1]["start"] if i + 1 < len(out) else len(content)
-    return out
+    return [
+        {"title": h.title, "start": h.start, "end": h.end}
+        for h in _cut_headings(content)
+    ]
 
 
 DEFAULT_SKILL_SLUG = "script-to-video"
@@ -236,36 +160,67 @@ description: 用户上传剧本/故事文档以生成视频；关键阶段暂停
 
 # 剧本生视频（需上传剧本）
 
-> 调用规则：用户上传剧本/故事文档以生成视频时使用。在关键阶段暂停以供用户确认；
-> 所有图片/视频/音频生成必须经用户明确指令才能执行，Agent 不自动触发（系统生成确认闸会拦截未确认的生成）。
+## 一、这个 Skill 做什么
 
-## 流程规划（三段式：规划 → 提示词草案 → 生成）
+- 目标：把用户上传的剧本或故事文档做成视频。
+- 输入：剧本/故事文档（上传或粘贴）。
+- 交付：分镜、图片、视频、成片。
 
-### 第一段：规划结构
-1. 剧本正文不会自动注入上下文：先用 read_uploaded_doc 读取剧本全文；
-   若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守；
-   然后分析素材 → document_write(制片规格.md) → workflow_pause
-2. 规划故事板：storyboard_create_group keyElement(只写 title+desc) + storyboard_create_group shot(title+desc+summary+duration；引用用 [元素名] 令牌内联 desc，完整镜头格式写在 desc，尾部不写引用/时长/出场人物汇总行)
-   此阶段不写详细提示词 → workflow_pause "故事板已建立，请审阅"
+## 二、开工前先确认
 
-### 第二段：提示词草案
-3. 用户确认后：为关键元素写入详细生图提示词(storyboard_patch_draft) → workflow_pause "尚未生成任何画面"
-4. 用户确认后：为分镜写入详细视频提示词(storyboard_patch_draft) → workflow_pause
+- 剧本正文不会自动注入上下文，先用 read_uploaded_doc 读取剧本全文。
+- 若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守。
 
-### 第三段：生成（用户明确发起）
-5. 用户说"生成概念图" → image_generate(target="all_keyElements")
-6. 用户说"生成关键帧" → image_generate(target="all_shots")，自动注入 shotRefs 参考图
+## 三、制作流程
 
-### 【铁律】
-- 规划阶段不写详细提示词，只建结构
-- 提示词草案阶段不触发任何生成
-- "确认" ≠ "生成"，生成需要用户额外指令
+1. 读剧本 → 分析素材 → 写《制片规格》→ workflow_pause。
+2. 规划故事板：建关键元素分组、分镜分组（引用用 [元素名] 令牌内联在描述里）→ workflow_pause。
+3. 用户确认后写元素生图提示词 → workflow_pause。
+4. 用户确认后写分镜视频提示词 → workflow_pause。
+5. 用户说“生成概念图” → 生成全部关键元素图。
+6. 用户说“生成关键帧” → 生成全部分镜关键帧。
 
-## 提示词写法
-- 中文分层描述 + 英文风格标签收尾
-- 只写客观可见画面，禁止解释角色内心
-- 关键元素 prompt ≥ 100 字，分镜关键帧 ≥ 60 字
-- 视频提示词必含镜头运动指令 + 时间节奏
+**依赖关系：** 2→1；3→2；4→3；5→4；6→5。
+
+**何时暂停：** 每个阶段结束后停下来等用户确认，不要一口气跑完。
+
+**【铁律】**
+- 规划阶段不写详细提示词，只建结构。
+- 提示词草案阶段不触发任何生成。
+- “确认” ≠ “生成”，生成需要用户额外指令。
+
+## 四、剧本分析
+
+- 读剧本全文，判断是成熟分镜剧本、半结构化剧本还是散文体小说。
+- 散文体小说先告知用户、建议先完成短剧化改编再继续，不擅自补全未描述的角色外貌或场景细节。
+- 提取角色清单、场景清单、关键道具与幕次结构，供故事板阶段使用。
+
+## 五、故事板设计
+
+- 关键元素：角色/场景/道具各建一组，描述写清年龄性别外貌服装、空间结构与固定参照物。
+- 分镜：按场景顺序拆镜头，每个镜头写清场景引用、人物动作与台词、景别 + 机位 + 运镜三件套。
+- 音频层：至少一条 BGM 轨；有旁白时按 narration 类型登记音色、语气与覆盖镜头范围。
+- 此阶段只建结构、不写详细提示词。
+
+## 六、媒体生成
+
+- 先出关键元素设定图，用户确认后写入详细提示词，再逐镜头出关键帧/视频。
+- 每个镜头出视频时引用该镜涉及的关键元素图像，保持角色与场景跨镜一致。
+- 参数（模型、分辨率、时长）以全局设置为唯一权威来源，本文档不写死。
+- 所有生成必须经用户明确指令才能执行（系统生成确认闸会拦截未确认的生成）。
+
+## 七、提示词写法
+
+- 中文分层描述 + 英文风格标签收尾。
+- 只写客观可见画面，禁止解释角色内心。
+- 关键元素 prompt ≥ 100 字，分镜关键帧 ≥ 60 字。
+- 视频提示词必含镜头运动指令 + 时间节奏。
+
+## 八、组装导出
+
+- 按故事板镜头顺序组装时间线，音画对齐后导出。
+- 导出前核对每个镜头的视频与音频层均已就绪，缺失资产先回补。
+- 组装与导出由用户在工作台操作，Agent 逐步引导核对。
 """
 
 
@@ -374,20 +329,6 @@ def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
     # 单一包形态：主文档 = <slug>/SKILL.md（新建/写回同口径）
     target = skill_doc_path(slug) or (
         SKILL_DOCS_DIR / slug / frontmatter.SKILL_DOC_NAME)
-    # 导入来源标记（插件包约定）：新建文档且含外来平台分析类章节 tag、
-    # frontmatter 又未声明 source 时补 source="用户导入"（元数据头随注入
-    # 下发信任提示）；本地词汇表文档与已有文档编辑不动，保证保存逐字节忠实
-    if not target.exists():
-        declaration, _body, _err = frontmatter.split_frontmatter(content)
-        # 外来章节判定与 lint 口径一致（f"<{t}>" 章节 tag 存在）：
-        # 裸子串匹配会把正文散文里提及的工具名误标为外来
-        _has_foreign = any(f"<{t}>" in content for t in _FOREIGN_SECTION_TAGS)
-        # 头部未闭合（_err 非空）时不前置新 frontmatter 块：保存原文，
-        # 让 lint 警告暴露问题，避免新块掩盖未闭合头
-        if not _err and _has_foreign and not (declaration or {}).get("source"):
-            data = dict(declaration or {})
-            data["source"] = "用户导入"
-            content = frontmatter.render_frontmatter(data) + _body
     # 覆盖前备份旧版（版本历史，供文档面板查看/回滚）
     if target.exists():
         _backup_skill_doc(slug, target)
@@ -526,15 +467,13 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
         for issue in frontmatter.validate_manifest(declaration):
             warnings.append(f"frontmatter 声明问题：{issue}")
     sections = split_skill_sections(body)
+    # 阶段探针（过渡）：标题能映射到平台阶段才计入；通用 skill 的任意标题
+    # 不属于错误，未命中即为空，不告警。
     available = [
         t for t in PIPELINE_CAPABILITY_TOOLS
         if any((sections.get(s) or "").strip()
                for s in CAPABILITY_TOOL_STAGES.get(t, ()))
     ]
-    if not available:
-        warnings.append(
-            "未识别到任何管线能力章节：选中该 Skill 时按自由型处理（无阶段裁剪）"
-        )
     # 三拆部分缺失：故事板章节只覆盖了部分拆解能力
     split_tools = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
     present = [t for t in split_tools if t in available]
@@ -545,13 +484,6 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     if _SKILL_MANIFEST_BLOCK_RE.search(content):
         warnings.append(
             "skill_manifest 块不再消费：平台声明已迁文档头部 frontmatter，请从正文移除该块"
-        )
-    # 外来平台章节 tag 信任提示（导入 Skill 的来源标记通道；只告警不阻断）
-    _foreign = sorted({t for t in _FOREIGN_SECTION_TAGS if f"<{t}>" in content})
-    if _foreign:
-        warnings.append(
-            "检测到外来平台章节 tag（" + "、".join(_foreign)
-            + "）：本平台按兼容别名映射，请核对工具名与导入来源"
         )
     # 导入来源信任提示：声明了 source（外部导入标记）即提示核对
     if (declaration or {}).get("source"):
@@ -608,13 +540,6 @@ def _lint_composition(
     return ["对照视频 Skill 标准组成，未识别到：" + "、".join(missing)
             + "（若本 Skill 确不涉及可忽略；涉及建议补对应章节，避免运行时靠启发式归段）"]
 
-
-# 外来平台章节 tag（lint 信任提示用）：仅取不在「视频 Skill 标准组成」
-# 词汇表内的分析类源平台遗留名；storyboard_designer/write_the_prompt/
-# media_generator 是组成词汇表兼容名，本地文档合法使用不告警（防误报）
-_FOREIGN_SECTION_TAGS = (
-    "resource_prepare_and_analyze", "multimodal_analyze_tool",
-)
 
 def _norm_skill_name(s: str) -> str:
     """Skill 名称归一化：去空格/后缀/大小写"""

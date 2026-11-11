@@ -25,14 +25,14 @@ dsh 的对照做法（`packages/todo/tool-todo/src/index.ts:45-78`）：**不靠
 
 | 事实 | dsh 原版 | 本平台（批13 前） |
 |---|---|---|
-| Skill 有无步骤流 | **无**（`dsh-skill` 只给 `<skill_content>` 方法参考） | **16/16 个 Skill 都有 `<planner>` 段**（步骤 + 依赖关系，全文注入） |
+| Skill 有无步骤流 | **无**（`dsh-skill` 只给 `<skill_content>` 方法参考） | **16/16 个 Skill 主文档都有「制作流程」段**（步骤 + 依赖关系，全文注入） |
 | 清单是否回注模型 | **否**：投影 README「模型体验：无」；原版注释「the complete `todo/write` session event is UI and replay state, **not a second model message**」 | **是**（尾部每轮注入，批8 自加） |
 
 ⇒ dsh 的 todo 是**流程的唯一来源**（填空缺）；本平台主代理的 todo 是把
-同一份步骤**誊第二遍**，与 `<planner>` 构成同一事实源两份（P1 违规）。
-故主代理摘除（并入 `CHILD_ONLY_TOOLS`），**子代理保留**——它拿到的是
-**单个阶段章节**而非全流程，todo 在那边仍是填空缺（4444 实证：子代理条目
-含项目实例信息，如「批次1：程心/AA/曹彬/白Ice/瓦西里A」，不是章节誊本）。
+同一份步骤**誊第二遍**，与主文档「制作流程」构成同一事实源两份（P1 违规）。
+故主代理摘除（并入 `CHILD_ONLY_TOOLS`），**子代理保留**——todo 在子代理侧
+是分步执行清单（4444 实证：子代理条目含项目实例信息，如「批次1：程心/AA/
+曹彬/白Ice/瓦西里A」，不是主文档流程誊本）。
 尾部注入随之整段删除（回到 dsh 原版口径）。
 
 **同批补齐 dsh 漏抄项**：原版 `toTodoList` 对空/重复 content 一律 `throw`，
@@ -120,7 +120,7 @@ class TodoItem(BaseModel):
 
     content: str = Field(
         ..., description="这一步做什么（一句话；只放步骤索引，"
-        "步骤内容本身以当前阶段 Skill 章节为准）")
+        "步骤内容本身以当前 Skill 主文档为准）")
     status: Literal["pending", "in_progress", "completed"] = Field(
         ..., description="pending (not started) | in_progress (now) | completed (done).")
 
@@ -306,8 +306,8 @@ def register_todo_tools():
     """注册进度清单工具。
 
     批13 起本工具**仅子代理可见**（并入 `subagent.CHILD_ONLY_TOOLS`）：
-    主代理的流程事实源是 Skill `<planner>` 段，todo 在那里只是誊第二遍；
-    子代理拿到的是单个阶段章节，todo 仍是填空缺。注册本身不分主/子
+    主代理的流程事实源是 Skill 主文档的「制作流程」段，todo 在那里只是誊第二遍；
+    子代理拿到主文档全文，todo 作为分步执行清单保留。注册本身不分主/子
     （可见性由 `planner._compute_excluded_tools` 按 depth 裁剪）。
     """
     ToolManager.register(TodoWriteTool())

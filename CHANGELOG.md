@@ -30,6 +30,16 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 
 ## 二、宪法正文迁出的批次 / 裁决 / 事故注记
 
+### 2026-11-11 · Skill 系统通用化：16 份全量迁移 + 去标签章节（用户裁决）
+
+- **立项**：用户三问（改成通用 skill / Flova 新 skill 与通用差异 / 框架影响），确认「格式与写法通用、执行面保持平台专属」；要求全部 skill 一起改、原 skill 备份、不加「什么时候不该用我」。B（read_skill 三段式）与 C（坏包界面可见）采纳；A（官方/用户 bundled 分层）不做。
+- **格式**：16 份 `SKILL.md` 全量迁移为 frontmatter + Markdown 标题式主文档；3 个大包（3D国漫/李安/水墨）拆 `references/媒体生成.md`、`references/提示词写作.md`，主文档留 `read_skill(resource=…)` 指针；不再识别 `<planner>` 等标签。
+- **备份**：`data/skills_backup_20261111`（20 文件 + `SHA256SUMS.txt` + `RESTORE.md`，sha256 全对）+ git tag `skill-backup-20261111`。
+- **运行时**：选中注入主文档全文（超 12000 字注开头 6000 + 标题目录）；子代理注入主文档全文（超 20000 截断并提示续读）且解禁 `read_skill`；删除 `SECTION_TAG_STAGES` / `section_blocks` / `labeled_*` 死链；`read_skill` 三段式返回（content/resources/instructions）；坏包仍 fail-closed，但 `/api/skills/docs` 下发 `failed[]`、Skill Studio 顶部提示。
+- **创作/前端**：`skill_authoring` 改通用契约（frontmatter + 至少两个二级标题 + 制作流程 + references 路由）；前端删 `SECTION_TAGS`/`SECTION_META` 标签映射，新建模板改通用骨架；`skill_doc_stream` 改标题口径。
+- **验证**：`acceptance.py --quick` 全 PASS；`acceptance.py` 全量 PASS（pytest 全量、vitest **143 files / 1189 passed**、tsc、eslint、RATCHETS 全绿）；前端构建 387.12 kB < 400 kB。
+- **报告**：`reports/skill-generic-migration-20261111.md`；冻结项 16 本次全量放行（见 `docs/冻结与暂缓清单.md`）。
+
 以下条目原内嵌于 `ARCHITECTURE_RULES.md` 规则正文（地质层）。每条保留原编号、裁决日期与结论；
 规则的**现行语义**仍在宪法正文，本处只留历史细节。
 

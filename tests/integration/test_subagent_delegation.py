@@ -181,18 +181,11 @@ async def test_zero_action_stop_ends_in_one_round(svc, fakestop_off):
     assert not (svc.state_dict.get("keyElements") or [])
 
 
-async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
-    """阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离；2026-09-19 主代理
-    纯编排批：委派集 = 素材分析 + 故事板三阶段 + 媒体生成）端到端：
-    委派带 stage=media_generate
-    → 子级任务文本精准携带该阶段章节全文（generation + prompt_draft **两章**），
-    storyboard_shots 章节探针零在场（跨阶段污染根除）；子级真建组落账、只回摘要；
-    子线程 meta 记阶段名。用真实 Skill（data/skills）验证章节切割。
-
-    2026-10-01 媒体生成支（步骤3）：本用例同时钉死**根因闭合**——
-    旧阶段 write_media_prompt 只注入 prompt_draft 一章，而「分镜表格图需包含
-    四大要素（含景别与时长标注）」写在 generation 章 ⇒ 写表格图提示词的手
-    读不到「要包含什么」，9999 实测 11/11 张卡全漏「时长」。新阶段两章并注。"""
+async def test_stage_delegation_injects_full_main_doc(svc, fakestop_off):
+    """通用 skill 口径（2026-11-11）：委派带 stage=media_generate 时，
+    子级任务文本携带 Skill 主文档全文（含媒体生成与提示词写法两节），
+    不再按阶段切章节；子级真建组落账、只回摘要；子线程 meta 记阶段名。
+    用真实 Skill（data/skills）验证全文注入。"""
     # 客观前置：分镜结构已由 storyboard_design 阶段建好（结构属上一阶段），
     # media_generate 只往既有草稿卡里写提示词——与 2222 实跑同序。
     svc.state_dict["shots"] = [{
@@ -243,34 +236,22 @@ async def test_stage_delegation_injects_only_stage_section(svc, fakestop_off):
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
     assert "本次委派阶段：媒体生成" in task_text
-    assert "内切镜时长估算" in task_text, "prompt_draft 章节未注入"
-    # ③ **根因闭合钉**（2026-10-01 媒体生成支步骤3）：generation 章同批注入——
-    #    「四大要素/景别与时长标注」必须在场，否则表格图漏「时长」复发（9999 现场）。
-    assert "四大要素" in task_text, (
-        "generation 章节未随 media_generate 注入——分镜表格图「四大要素」"
-        "（含景别与时长标注）再次读不到，9999 漏时长根因复发")
+    # 通用口径：主文档全文注入，媒体生成/提示词写法两章都在场
+    assert "内切镜时长估算" in task_text, "提示词写法章节未注入"
+    assert "四大要素" in task_text
     assert "景别与时长标注" in task_text
-    # ③b **章界可见钉**（2026-10-04 事故 9999）：两章并注时必须**保留原始章节
-    #     标记**，否则子代理看不出手里有两章——而 generation 章内写着「具体提示词
-    #     写法见下方「媒体提示词」章节」，它据此误判该章未注入，退化为「只填模板
-    #     槽位」，11/11 张表格图全漏「景别与时长标注」。
-    assert "<media_generator>" in task_text and "</media_generator>" in task_text, (
-        "generation 章标记被剥掉——子代理无法看出章界，误判注入面而漏执行散文要求"
-        "（2026-10-04 事故 9999）")
-    assert "<write_media_prompt>" in task_text and "</write_media_prompt>" in task_text, (
-        "prompt_draft 章标记被剥掉——章界不可见，9999 误判面复发")
-    assert "分镜语法三件套" not in task_text, "storyboard_shots 章节泄漏进子代理"
-    assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
+    assert "## 五、媒体生成" in task_text and "## 六、提示词写法" in task_text
+    assert "<media_generator>" not in task_text
+    assert "章节内容截断" not in task_text
 
 
 async def test_stage_delegation_storyboard_design(svc, fakestop_off):
     """主代理纯编排批（2026-09-19）/ 批6 三合一（2026-09-22 Q5）端到端——
     ① 主代理面结构性缺 storyboard_create_group/patch_draft（只能委派）；
-    ② 委派带 stage=storyboard_design → 子级任务注入**三章并集**
-      （storyboard_ke + storyboard_shot + storyboard_audio；「分镜语法三件套」
-      探针在场），write_media_prompt 章节探针零在场；
+    ② 委派带 stage=storyboard_design → 子级任务注入 Skill 主文档全文
+      （故事板设计节在场；「分镜语法三件套」探针在场）；
     ③ 子级真建 shot 组落账、只回摘要；子线程 meta 记 stage:storyboard_design。
-    用真实 Skill（data/skills）验证章节切割与结构锁。"""
+    用真实 Skill（data/skills）验证全文注入与结构锁。"""
     # ① 主代理（顶级生产轮）结构性缺故事板执行写入工具（纯编排）
     planner = Planner(state_manager=svc, llm_adapter=None, tool_manager=ToolManager)
     main_excluded = planner._compute_excluded_tools(
@@ -314,18 +295,10 @@ async def test_stage_delegation_storyboard_design(svc, fakestop_off):
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
     assert "本次委派阶段：故事板设计" in task_text
-    # ② 章节隔离：三章并集在场（storyboard_shot 真身 + ke/audio 两章），
-    #    write_media_prompt 章节零在场
-    assert "分镜语法三件套" in task_text, "storyboard_shot 章节未注入"
-    assert "内切镜时长估算" not in task_text, "write_media_prompt 章节泄漏进子代理"
-    assert "章节内容截断" not in task_text, "精准注入不应走全文截断路径"
-    # 批6：合并阶段确实注入了另外两章（三合一不是只注分镜）
-    ke_sec = registry.tool_sections(SKILL, "storyboard_key_elements")
-    au_sec = registry.tool_sections(SKILL, "storyboard_audio")
-    if ke_sec.strip():
-        assert ke_sec.strip()[:40] in task_text, "storyboard_ke 章节未注入（三合一缺章）"
-    if au_sec.strip():
-        assert au_sec.strip()[:40] in task_text, "storyboard_audio 章节未注入（三合一缺章）"
+    # 通用口径：主文档全文注入，故事板设计章节在场
+    assert "分镜语法三件套" in task_text, "故事板设计章节未注入"
+    assert "## 四、故事板设计" in task_text
+    assert "章节内容截断" not in task_text
 
 
 async def test_key_elements_child_can_build_voice_card_but_not_image_card(
@@ -394,4 +367,4 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
     #    2026-10-21 裁决后允许集收窄为 audio，文案随之变化
     blob = json.dumps(adapter.calls, ensure_ascii=False)
     assert "只允许 mediaType=audio" in blob, "建卡媒体闸未生效（图像卡未拒收）"
-    assert "write_media_prompt" in blob, "拒收文案须告诉模型去哪里建图像卡"
+    assert "media_generate" in blob, "拒收文案须告诉模型去哪里建图像卡"

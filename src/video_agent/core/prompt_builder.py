@@ -56,10 +56,6 @@ _DEGRADATION_FLAG_SECTIONS = (
     ("compacted", "STATE_COMPACTED"),
 )
 
-# B1：Skill 正文 <planner> 段提取（默认注入唯一正文段）
-_PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
-
-
 # 2026-09-23 批13（用户裁决）：`_read_todos_from_raw` 与 `build_todo_note`
 # 已**整段删除**（清单尾部注入退役）。原「读会话 todo 清单并回注」链路
 # 与 dsh 原版相反——原版注释明写清单事件是 UI/replay 状态而非第二条模型
@@ -426,13 +422,14 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 按需加载注入块（指令性注入合法化后的现行口径）。
+        """选中 Skill 注入块（通用 skill 口径：主文档整篇给足）。
 
-        默认注入收窄：<planner> 流程段全文 + 章节目录；其余章节正文经
-        read_skill(name, section="章节名") 按需取读（纪律提醒见《Skill 流程纪律》
-        第 11 条）。预算式正文头部注入已退役（零判断方案不回退）。
+        默认注入主文档全文（frontmatter 已剥离）；超过
+        `skill_selected_inject_max_chars` 时注入开头 `skill_selected_inject_head_chars`
+        字 + 标题目录，并提示用 read_skill 续读。其余分册（references/…）
+        一律不进上下文，等模型按正文路径自取。
         块内组成：选中提示行 + 元数据头 + 《Skill 流程纪律》全文 +
-        <planner> 段全文 + 章节目录。
+        主文档正文（或预算内开头 + 标题目录）。
         段序不变（段注册表 order 100 最末，保前缀缓存约束）。
         解析失败/内容为空返回空串（降级为仅目录）。
         """
@@ -458,31 +455,24 @@ class PromptBuilder:
             discipline = ""
         if discipline and discipline.strip():
             parts.append(discipline.strip())
-        planner_text = self._planner_section_text(content, sd)
-        if planner_text:
-            parts.append(f"<planner>\n{planner_text}\n</planner>")
-        toc = self._toc_lines(content, sd)
-        if toc:
+        max_chars = int(getattr(settings, "skill_selected_inject_max_chars", 0) or 0)
+        if max_chars > 0 and len(content) > max_chars:
+            head_chars = int(
+                getattr(settings, "skill_selected_inject_head_chars", 0) or 0)
+            if head_chars <= 0 or head_chars > max_chars:
+                head_chars = max(1, max_chars // 2)
             parts.append(render_prompt_section(
-                "shared/skill_inject.md", "TOC_NOTE", name=name) + "\n" + "\n".join(toc))
+                "shared/skill_inject.md", "TRUNC_NOTE",
+                name=name, total=len(content), head=head_chars))
+            parts.append(content[:head_chars].rstrip())
+            toc = self._toc_lines(content, sd)
+            if toc:
+                parts.append(render_prompt_section(
+                    "shared/skill_inject.md", "TOC_NOTE", name=name)
+                    + "\n" + "\n".join(toc))
+        else:
+            parts.append(content)
         return "\n\n".join(parts)
-
-    def _planner_section_text(self, content: str, sd: Any) -> str:
-        """<planner> 流程段全文（B1 默认注入唯一正文段）。
-
-        tag 形态优先；标题式回落「流程规划」章节切片；均无命中返空串。"""
-        m = _PLANNER_TAG_RE.search(content)
-        if m:
-            return m.group(1).strip()
-        try:
-            toc = sd.list_skill_sections(content) or []
-        except Exception:
-            toc = []
-        for s in toc:
-            title = str(s.get("title") or "")
-            if title in ("流程规划", "planner"):
-                return content[int(s.get("start") or 0):int(s.get("end") or 0)].strip()
-        return ""
 
     def _toc_lines(self, content: str, sd: Any) -> List[str]:
         """章节目录行（- 章节名 (字数)）；解析失败返空表。"""

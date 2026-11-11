@@ -330,8 +330,8 @@ def test_task_brief_points_at_section_as_the_basis():
     from src.video_agent.core.subagent import build_subagent_task
 
     policy = _policy()
-    assert "Skill 章节内容子代理自己都拿得到" in policy, \
-        "缺「章节已随委派注入」事实"
+    assert "Skill 主文档子代理自己都拿得到" in policy, \
+        "缺「主文档已随委派注入」事实"
     # 结构侧兑现：目标行由平台生成且逐字指向该章节
     generated = build_subagent_task("", stage="script_analyze")
     assert "执行所选 Skill 的「素材分析」章节" in generated
@@ -454,7 +454,8 @@ def test_stage_description_is_dynamic_not_hardcoded():
 
     hint = _stage_hint()
     assert "留空 = 通用委派" in hint, "缺「留空 = 通用委派」语义"
-    assert "章节即产出规范" in hint, "缺章节注入事实说明"
+    assert "主文档全文" in hint, "缺主文档全文注入事实说明"
+    assert "read_skill" in hint, "缺分册自读说明"
 
 
 def test_stage_fail_loud_validation_still_present():

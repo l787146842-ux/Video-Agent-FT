@@ -9,15 +9,15 @@ from src.video_agent.web import skill_docs
 
 # ---------- 章节解析 ----------
 
-def test_split_sections_tag_format():
-    """外部导出原生 <tag> 章节按工具名映射到制作阶段"""
+def test_split_sections_heading_only():
+    """通用口径：只认 Markdown 标题，标签文本按普通正文处理。"""
     content = (
-        "skill_name: demo\n"
-        "<planner>\n阶段逻辑与依赖关系\n</planner>\n"
-        "<storyboard_shots>\n故事板结构规范\n</storyboard_shots>\n"
-        "<write_the_prompt>\n摄像机 → 主体 → 空间 → 音频\n</write_the_prompt>\n"
-        "<media_generator>\n元素生成规范\n</media_generator>\n"
-        "<video_assembler>\n组装导出\n</video_assembler>\n"
+        "# demo\n\n"
+        "## 制作流程\n阶段逻辑与依赖关系\n\n"
+        "## 分镜\n故事板结构规范\n\n"
+        "## 提示词写法\n摄像机 → 主体 → 空间 → 音频\n\n"
+        "## 媒体生成\n元素生成规范\n\n"
+        "## 组装导出\n组装导出\n"
     )
     sections = skill_docs.split_skill_sections(content)
     assert "阶段逻辑" in sections["planning"]
@@ -25,6 +25,9 @@ def test_split_sections_tag_format():
     assert "摄像机" in sections["prompt_draft"]
     assert "元素生成规范" in sections["generation"]
     assert "组装导出" in sections["assembly"]
+    # 旧标签不再触发任何映射
+    assert skill_docs.split_skill_sections(
+        "<planner>\n流程\n</planner>\n") == {}
 
 
 def test_split_sections_heading_fallback():
@@ -59,24 +62,20 @@ def _pb(raw_state):
     )
 
 
-def test_selected_block_planner_only_for_real_skill():
-    """B1 裁决：真实存量 Skill 选中后默认只注入 <planner> 段全文 + 章节目录，
-    其余章节正文经 read_skill 按需取读；执行器清单形态与全文硬直注形态措辞保持退役。"""
+def test_selected_block_injects_full_generic_doc():
+    """通用口径：选中 Skill 后注入主文档全文（含流程与各节正文），
+    不再只给 <planner> 段；分册仍走 read_skill。"""
     from src.video_agent.skill_runtime import registry
 
     registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
-    # 选中提示 + 取读指引在场（按需加载口径）
     assert "当前选中 Skill" in block and "read_skill" in block
-    assert "正文头部到此为止" not in block  # 预算续读指引退役
-    # planner 段探针在场；其余章节正文探针零注入（只进目录）
     assert "全流程阶段与依赖关系" in block
-    assert "**导出基准**" not in block
-    # 历史注入形态措辞保持退役（压制性包壳同批退役）
+    assert "导出基准" in block  # 组装章节正文也在，不再只给目录
+    assert "<planner>" not in block
     assert "已注册独立执行器" not in block
-    assert "== 当前 Skill 的流程基线" not in block
 
 
 def test_unsectioned_skill_block_is_empty():

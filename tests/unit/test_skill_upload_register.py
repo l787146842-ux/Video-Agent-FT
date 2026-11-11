@@ -19,9 +19,9 @@ def test_save_registers_executors():
     sd.save_skill_doc(
         "上传技能",
         "---\nname: 上传技能\ndescription: 测试桩\n---\n"
-        "# 上传技能\n> 调用规则：测试\n"
-        "<script_analyze>\n分析\n</script_analyze>\n"
-        "<storyboard_key_elements>\n关键元素\n</storyboard_key_elements>\n",
+        "# 上传技能\n\n"
+        "## 剧本分析\n分析\n\n"
+        "## 关键元素\n关键元素\n",
     )
     entry = registry.resolve_entry("上传技能")
     assert entry is not None
@@ -36,13 +36,13 @@ def test_edit_refreshes_registry():
     sd.save_skill_doc(
         "编辑技能",
         "---\nname: 编辑技能\ndescription: 测试桩\n---\n"
-        "# 编辑技能\n> 调用规则：测试\n<script_analyze>\n分析\n</script_analyze>\n",
+        "# 编辑技能\n\n## 剧本分析\n分析\n",
     )
     assert "script_analyze" in registry.resolve_entry("编辑技能").available_tools
     sd.save_skill_doc(
         "编辑技能",
         "---\nname: 编辑技能\ndescription: 测试桩\n---\n"
-        "# 编辑技能\n> 调用规则：测试\n<storyboard_shots>\n分镜\n</storyboard_shots>\n",
+        "# 编辑技能\n\n## 分镜\n分镜\n",
     )
     entry = registry.resolve_entry("编辑技能")
     assert "script_analyze" not in entry.available_tools
@@ -53,7 +53,7 @@ def test_delete_unregisters():
     sd.save_skill_doc(
         "删除技能",
         "---\nname: 删除技能\ndescription: 测试桩\n---\n"
-        "# 删除技能\n> 调用规则：测试\n<script_analyze>\n分析\n</script_analyze>\n",
+        "# 删除技能\n\n## 剧本分析\n分析\n",
     )
     assert registry.resolve_entry("删除技能") is not None
     sd.delete_skill_doc("删除技能")

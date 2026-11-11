@@ -38,9 +38,9 @@ def _write(slug: str, content: str):
 def test_save_registers_and_delete_unregisters():
     _write(
         "demo",
-        "# 演示\n> 调用规则：测试\n"
-        "<storyboard_key_elements>\n关键元素规范\n</storyboard_key_elements>\n"
-        "<generation>\n生成规范\n</generation>\n",
+        "# 演示\n\n"
+        "## 关键元素\n关键元素规范\n\n"
+        "## 媒体生成\n生成规范\n",
     )
     entry = registry.get_entry("demo")
     assert entry is not None
@@ -48,8 +48,8 @@ def test_save_registers_and_delete_unregisters():
     # 2026-10-01 媒体生成支（步骤3）：原 audio_generate 在此位；能力词收敛为
     # media_generate（其章节 = generation + prompt_draft），旧名降为兼容别名。
     # 顺序 = PIPELINE_CAPABILITY_TOOLS 声明序（media_generate 在 audio_generate 前）。
-    # 两者都能由 `<generation>` 章支撑：media_generate 取二章（本桩只有其一），
-    # audio_generate 仍作能力词映射 generation（喂 lint/音频闸/stage_probes）。
+    # 两者都能由「媒体生成」标题（→ generation）支撑：media_generate 取二章
+    # （本桩只有其一），audio_generate 仍作能力词映射 generation（喂 lint/音频闸/stage_probes）。
     assert entry.available_tools == [
         "storyboard_key_elements", "media_generate", "audio_generate"]
     assert "关键元素规范" in registry.tool_sections("demo", "storyboard_key_elements")
@@ -61,23 +61,20 @@ def test_save_registers_and_delete_unregisters():
 
 
 def test_edit_re_registers():
-    _write("demo2", "# 演示2\n> 调用规则：测试\n<script_analyze>\n分析\n</script_analyze>\n")
+    _write("demo2", "# 演示2\n\n## 剧本分析\n分析\n")
     assert "分析" in registry.tool_sections("demo2", "script_analyze")
     # 编辑后章节变化 → 重新注册
-    _write("demo2", "# 演示2\n> 调用规则：测试\n<storyboard_shots>\n分镜\n</storyboard_shots>\n")
+    _write("demo2", "# 演示2\n\n## 分镜\n分镜\n")
     assert registry.tool_sections("demo2", "script_analyze") == ""
     assert "分镜" in registry.tool_sections("demo2", "storyboard_shots")
 
 
-def test_prompt_draft_section_merges_write_media_prompt_and_write_the_prompt():
+def test_prompt_draft_section_reads_heading():
     _write(
         "demo3",
-        "# 演示3\n> 调用规则：测试\n"
-        "<write_media_prompt>\n草案说明\n</write_media_prompt>\n"
-        "<write_the_prompt>\n写法规范\n</write_the_prompt>\n",
+        "# 演示3\n\n## 提示词写法\n写法规范\n",
     )
     sec = registry.tool_sections("demo3", "write_media_prompt")
-    assert "草案说明" in sec
     assert "写法规范" in sec
 
 
@@ -122,10 +119,10 @@ def test_selected_block_flow_body_budget_injection():
     执行器「流程基线」专属段与全文硬注入形态仍保持退役。"""
     _write(
         "flow-skill",
-        "# 流程\n> 调用规则：测试\n"
-        "<planner>\n阶段逻辑：先 script_analyze → document_write → storyboard_key_elements\n</planner>\n"
-        "<script_analyze>\n分析\n</script_analyze>\n"
-        "<storyboard_key_elements>\n关键元素\n</storyboard_key_elements>\n",
+        "# 流程\n\n"
+        "## 制作流程\n阶段逻辑：先 script_analyze → document_write → storyboard_key_elements\n\n"
+        "## 剧本分析\n分析\n\n"
+        "## 关键元素\n关键元素\n",
     )
     pb = PromptBuilder(
         lambda: sd,

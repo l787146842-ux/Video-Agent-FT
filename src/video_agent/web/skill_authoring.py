@@ -1,13 +1,11 @@
-"""Skill 创作助手的「项目规范」层：真实工具目录、创作契约、草稿自检与修复消息。
+"""Skill 创作助手的「项目规范」层：创作契约、草稿自检与修复消息。
 
-背景（2026-10-20 用户裁决）：Skill 创作门槛高，希望用户在新建 Skill 时直接让
-优化助手生成一版满足本项目要求的草稿。模型只靠「保留结构 + 用真实工具名」的
-软约束不够——本模块把要求变成**可机械校验的契约**：
-
-1. `build_create_system`：六章节创作提示词 + 平台真实工具目录（带一句话说明）；
-2. `validate_skill_draft`：frontmatter / 标题 / 调用规则 / 六章节齐全非空 /
-   模板占位符残留 / 描述长度 / lint（硬编码参数、能力章节、外来标签等）；
-3. `repair_messages`：把自检问题回喂模型，路由在创作模式下最多自修复一次。
+通用 Agent Skills 口径（2026-11-11 用户裁决）：
+- 文档 = frontmatter（name/description）+ Markdown 标题式正文；
+- 主文档写目标、流程、结构与方法；细节可拆 `references/` 分册，正文给路径；
+- 不要求、不识别任何平台私有标签（`<planner>` 等只作普通文本）；
+- 自检只查通用契约：frontmatter、标题与实质内容、模板占位、字段表/字段名、
+  体量与 lint；不因“章节名不叫某个固定值”打回。
 
 只做「提示 + 校验 + 回喂」，不替模型写正文，也不绕过保存前的人工确认。
 """
@@ -17,63 +15,50 @@ from typing import Dict, List, Sequence
 from loguru import logger
 
 from src.video_agent.skill_runtime import frontmatter
-from src.video_agent.tools import ToolManager
-from src.video_agent.tools.canvas_tools import register_canvas_tools
 from src.video_agent.utils.prompts import render_prompt_section
 from src.video_agent.web.skill_docs import lint_skill_content, list_skill_sections
-
-# 新建 Skill 的六章节（顺序即模板顺序；与前端 skill-template.ts 同口径）
-REQUIRED_SECTIONS: Sequence[str] = (
-    "流程规划", "素材分析", "故事板设计", "媒体生成", "提示词写法", "组装导出",
-)
 
 _PROMPT_FILE = "shared/skill_authoring.md"
 _DESC_LIMIT = 200
 _MAX_ISSUES = 12
 
-
-def _one_line(text: str, limit: int = 150) -> str:
-    """压成单行并截断（工具目录用；不改变工具名）。"""
-    flat = " ".join(str(text or "").split())
-    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
-
-
-def build_tool_catalog() -> str:
-    """平台真实注册工具目录（名称 + 一句话说明）。
-
-    名单唯一源 = ToolManager（画布工具补注册后取全集，register 幂等），
-    与助手白名单同源，防编造工具名。
-    """
-    register_canvas_tools()
-    lines = []
-    for name in sorted(ToolManager._tools):
-        tool = ToolManager._tools[name]
-        lines.append(f"- {name}：{_one_line(getattr(tool, 'description', ''))}")
-    return "\n".join(lines)
+# 平台内部 schema 字段/ID（AI 创作稿禁用；2026-10-26 用户裁决：写成中文散文）
+_INTERNAL_ID_KEYS = (
+    "shot_id", "character_id", "scene_id", "prop_id", "music_id",
+    "sfx_id", "vocal_id", "subject_action", "shot_size",
+    "on_screen_text", "audio_cue",
+)
+_FIELD_TABLE_KEYS = _INTERNAL_ID_KEYS + (
+    "beat", "duration", "camera", "expression", "props", "background",
+    "gag", "transition",
+)
+_INTERNAL_ID_RE = re.compile(r"\b(?:" + "|".join(_INTERNAL_ID_KEYS) + r")\b", re.I)
+_FIELD_TABLE_RE = re.compile(
+    r"(?m)^\|\s*(?:" + "|".join(_FIELD_TABLE_KEYS) + r")\s*\|", re.I,
+)
 
 
 def build_create_system() -> str:
-    """创作模式 system prompt（prompts/ 外部化；工具目录活读，不硬编码名单）。"""
-    text = render_prompt_section(_PROMPT_FILE, "CREATE_SYSTEM", tool_catalog=build_tool_catalog())
+    """创作模式 system prompt（prompts/ 外部化；不注入工具目录）。"""
+    text = render_prompt_section(_PROMPT_FILE, "CREATE_SYSTEM")
     if not text:
         # 外置文件缺失属部署错误：fail-loud 记录，路由层会以空 system 继续（模型可降级）
         logger.error(f"[SkillAuthoring] 创作提示词分节缺失: {_PROMPT_FILE} :: CREATE_SYSTEM")
     return text
 
 
-def _normalize_title(title: str) -> str:
-    """标题归一：去掉「一、」「1.」「1、」等序号前缀，便于匹配模板章节。"""
-    return re.sub(r"^\s*(?:[\d一二三四五六七八九十]+[.、)）．]\s*)", "", title or "").strip()
-
-
 def _section_bodies(
     content: str, sections: Sequence[Dict[str, object]] | None = None,
 ) -> Dict[str, str]:
-    """标题式章节 → 正文（标题行之后到下一章节前）；同名取首个。"""
+    """章节 → 正文（标题行之后到下一章节前）；同名取首个。
+
+    章节标题的解析归 `list_skill_sections`（只认 Markdown 标题），
+    本函数只负责从字符区间里切出正文。
+    """
     secs = sections if sections is not None else list_skill_sections(content)
     bodies: Dict[str, str] = {}
     for sec in secs:
-        title = _normalize_title(str(sec.get("title") or ""))
+        title = str(sec.get("title") or "").strip()
         start = int(sec.get("start") or 0)
         end = int(sec.get("end") or 0)
         line_end = content.find("\n", start)
@@ -82,11 +67,45 @@ def _section_bodies(
     return bodies
 
 
+def _style_issues(
+    content: str, bodies: Dict[str, str], create_mode: bool,
+) -> List[str]:
+    """文风/可读性机械检查：禁平台字段名/字段表，禁提示词代码块。
+
+    2026-10-26 用户裁决：AI 产出要像库里已有 Skill 的散文，不要 API 字段说明，
+    提示词示例用正文/引用块，不要整段包 ```。只告警并触发一次自修复。
+    """
+    issues: List[str] = []
+    ids = sorted({m.group(0).lower() for m in _INTERNAL_ID_RE.finditer(content)})
+    if ids:
+        issues.append(
+            "文档出现平台内部字段名（" + "、".join(ids[:6])
+            + "）：请改用中文业务词写成散文"
+        )
+    table = sorted({
+        m.group(0).split("|")[1].strip() for m in _FIELD_TABLE_RE.finditer(content)
+    })
+    if table:
+        issues.append(
+            "文档出现平台内部字段表（" + "、".join(table[:6])
+            + "）：请把分镜/资产改写成「第 1 镜：……」段落"
+        )
+    prompt_body = next(
+        (v for k, v in bodies.items() if "提示词" in k), "")
+    if create_mode and "```" in prompt_body:
+        issues.append(
+            "提示词章节出现代码块：请改为正文段落或 > 引用块，"
+            "不要用 ``` 包住提示词"
+        )
+    return issues
+
+
 def validate_skill_draft(content: str, *, create_mode: bool) -> List[str]:
     """机械自检 Skill 草稿，返回人话问题清单（空 = 通过）。
 
-    create_mode：新建 Skill 的六章节契约；优化既有 Skill 时只查通用项，
-    避免把 tag 式存量文档误判成缺章节。
+    create_mode：新建 Skill 的**通用骨架**检查（frontmatter + 至少两个
+    二级标题 + 实质内容 + 含流程章节）；优化既有 Skill 时只查通用项
+    （frontmatter / 描述长度 / lint），不因章节写法差异误判。
     """
     content = content or ""
     if not content.strip():
@@ -96,10 +115,11 @@ def validate_skill_draft(content: str, *, create_mode: bool) -> List[str]:
         "第一步做什么",
         "一句话说明何时使用本 Skill",
         "看完素材要产出什么（例如",
-        "关键元素、分镜、音频层怎么建",
+        "关键元素、分镜、音频怎么建",
         "出图/出视频/出音频时参考哪些素材",
         "提示词语言与内容规范（景别",
         "时间线怎么组装、导出前要确认哪些内容",
+        "需要时读 references/",
     )
     issues: List[str] = []
 
@@ -120,32 +140,23 @@ def validate_skill_draft(content: str, *, create_mode: bool) -> List[str]:
     if not content.lstrip("\ufeff").startswith("---"):
         issues.append("必须使用 `---` frontmatter 声明块（裸键 skill_name: 形态不算）")
 
-    if not re.search(r"(?m)^#\s+\S", body):
-        issues.append("缺少 `# 名称` 一级标题")
-    if not re.search(r"(?m)^>\s*调用规则\s*[:：]", body):
-        issues.append("缺少 `> 调用规则：…` 行")
+    sections = list_skill_sections(content)
+    bodies = _section_bodies(content, sections)
+    issues.extend(_style_issues(content, bodies, create_mode))
 
     if create_mode:
-        sections = list_skill_sections(content)
-        bodies = _section_bodies(content, sections)
-        found: List[int] = []
-        for title in REQUIRED_SECTIONS:
-            hits = [i for i, sec in enumerate(sections)
-                    if title in _normalize_title(str(sec.get("title") or ""))]
-            if not hits:
-                issues.append(f"缺少章节「{title}」（六个二级标题必须齐全）")
-                continue
-            found.append(hits[0])
-            section_title = _normalize_title(str(sections[hits[0]].get("title") or ""))
-            section_body = bodies.get(section_title, "")
-            if len(section_body) < 8:
-                issues.append(f"章节「{title}」没有实质内容")
-            elif any(marker in section_body for marker in placeholder_markers):
+        if len(sections) < 2:
+            issues.append(
+                "正文至少需要两个二级标题（例如「## 二、制作流程」「## 六、参考资料」）")
+        if len(body.strip()) < 200:
+            issues.append("正文过短（不足 200 字）：请写清流程、结构与可执行方法")
+        if not any(("流程" in t or "步骤" in t) for t in bodies):
+            issues.append("缺少「制作流程」类章节：请写清步骤、依赖与何时暂停")
+        for title, section_body in bodies.items():
+            if any(marker in section_body for marker in placeholder_markers):
                 issues.append(f"章节「{title}」仍保留模板占位句，请改写成真实内容")
-        if len(found) == len(REQUIRED_SECTIONS) and found != sorted(found):
-            issues.append("六章节顺序不符：请按 " + " → ".join(REQUIRED_SECTIONS) + " 排列")
 
-    # lint 复用保存前的同一套机械检查（硬编码参数/能力章节/外来标签/体量等）
+    # lint 复用保存前的同一套机械检查（硬编码参数/能力章节/体量等）
     issues.extend(lint_skill_content(content).get("warnings") or [])
 
     # 去重保序并限量（避免把整屏警告塞回模型/界面）

@@ -110,6 +110,33 @@ DECLARED_DATA: List[Tuple[str, str]] = [
     # --- target validation hint (document_tools.py, structured error data) ---
     ("target \u5408\u6cd5\u53d6\u503c: all_keyElements | all_shots | \u5177\u4f53 draft_id\uff08\u6216\u300c\u7ec4\u53f7-\u5361\u5e8f\u53f7\u300d\u7f16\u53f7\uff0c\u5982 '1-2'\uff09",
      "target validation hint (exact literal = tools/document_tools._TARGET_VALID_HINT; enumeration of valid values for structured error message, non-prose)"),
+    # --- audio param schema UI placeholders (core/audio_channels.py) ---
+    ("15-300 字",
+     "audio voice-design preview placeholder (UI data constant, non-prose)"),
+    ("音色位 ID（火山专用）",
+     "audio voice-design speaker slot label (UI data constant, non-prose)"),
+    ("火山豆包语音需填音色位",
+     "audio voice-design speaker slot placeholder (UI data constant, non-prose)"),
+    # --- audio provider error hints (adapters/audio_error_hints.py) ---
+    ("该模型未开通，或免费额度已用完且「免费额度用完即停」仍开着。"
+     "请在百炼控制台模型详情页关掉该开关，或点「立即申请」开通",
+     "dashscope AccessDenied.Unpurchased actionable hint (error code -> next step, non-prose)"),
+    ("该模型未开通。请在百炼控制台「模型广场」找到该模型并开通；"
+     "邀测模型需在模型详情页点「立即申请」（约半个工作日审批）",
+     "dashscope AccessDenied actionable hint (error code -> next step, non-prose)"),
+    ("当前工作空间域名与这个 API Key 不匹配。"
+     "请把请求地址改成通用域名 https://dashscope.aliyuncs.com/compatible-mode/v1",
+     "dashscope Endpoint.AccessDenied actionable hint (error code -> next step, non-prose)"),
+    ("音色 ID 与当前模型版本不匹配：请填音色设计返回的 voice_id，"
+     "或该模型对应版本的平台音色（如 longanhuan_v3.1）",
+     "dashscope TTS engine 418 actionable hint (voice/model mismatch -> next step, non-prose)"),
+    ("音色设计产出的 ID，或平台系统音色名",
+     "audio tts voice_id placeholder (UI data constant, non-prose)"),
+    ("百炼：音色设计返回的 voice_id（推荐），或对应版本的平台音色（如 longanhuan_v3.1）；"
+     "硅基流动：model:voice；ElevenLabs：平台 Voice ID",
+     "audio tts voice_id note (per-provider fill guide, UI data constant, non-prose)"),
+    ("可选；与描述二选一",
+     "audio music lyrics placeholder (UI data constant, non-prose)"),
 ]
 
 # ---------- DECLARED_PREFIXES: explicit prefix registrations ----------
@@ -125,7 +152,7 @@ DECLARED_PREFIXES: List[Tuple[str, str]] = [
      "externalize to prompts/ = follow-up debt)"),
     ("\u4f60\u662f Skill \u4f18\u5316\u52a9\u624b",
      "skill optimizer sub-feature system prompt (web/routes/plugins."
-     "_ASSISTANT_SYSTEM_TMPL; long multi-line template + runtime {tool_names} param, "
+     "_ASSISTANT_SYSTEM_TMPL; long multi-line template, "
      "cannot pin exact literal; externalize to prompts/ = follow-up debt)"),
     # --- default skill document template (project seed data) ---
     ("---\nname: \u5267\u672c\u751f\u89c6\u9891",

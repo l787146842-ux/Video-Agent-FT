@@ -12,7 +12,7 @@
 > 2026-09-23 批13：`LIST_HEADER`/`LIST_FOOTER`（尾部注入文案）已随
 > 尾注注入整段退役删除——dsh 原版不回注模型（原版注释：「the complete
 > `todo/write` session event is UI and replay state, **not a second model
-> message**」），本平台批8 自加的注入与 Skill `<planner>` 段构成双事实源
+> message**」），本平台批8 自加的注入与 Skill 主文档「制作流程」段构成双事实源
 > （P1）。本文件自此只承载**工具描述**两个分节。
 
 ## DESCRIPTION_PARALLEL

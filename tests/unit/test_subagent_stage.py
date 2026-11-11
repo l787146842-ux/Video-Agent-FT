@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""阶段子代理执行器试点批（2026-09-15，对齐 Flova 章节隔离）契约单测。
+"""阶段子代理契约单测（2026-11-11 通用 skill 口径）。
 
 钉死：①stage 归一化（试点枚举内原样、未知/空回落通用）；②stage 模式工具面
-= 通用白名单去 read_skill（断跨阶段预读通道）；③任务文本带阶段标注行、
-通用形态零变化；④_launch_subagent 带 stage 时精准注入该阶段章节全文
-（不走 8000 截断）、章节缺失回落截断路径；⑤不带 stage 注入行为与现状
+= 通用白名单（read_skill 已解禁，分册由子代理自读）；③任务文本带阶段标注行、
+通用形态零变化；④_launch_subagent 带 stage 时注入 Skill 主文档全文
+（不走 8000 截断），stage 不再切章节；⑤不带 stage 注入行为与现状
 逐字一致（防回归钉）；⑥子会话 meta 记 stage 名（左栏子线程可辨阶段）。
 
 不驱动真实模型循环（monkeypatch handle_message 断言装配契约，
@@ -45,7 +45,7 @@ def _ensure_platform_tools():
 
 
 class _FakeSkillDocs:
-    """记录 get_skill_doc 是否被调（精准注入时不应触发全文截断路径）。"""
+    """记录 get_skill_doc 是否被调（主文档全文注入路径）。"""
 
     def __init__(self, content: str = ""):
         self.content = content
@@ -97,11 +97,11 @@ def test_resolve_stage_enum_and_fallback():
     assert resolve_stage("") == ""
 
 
-def test_merged_stage_injects_all_three_chapters():
-    """批6（Q5）：合并阶段的章节注入 = 三章并集（section_for 多章节拼接）。
+def test_merged_stage_keeps_three_chapter_mapping():
+    """批6（Q5）：合并阶段保留三章映射（section_for 多章节拼接）。
 
-    这是「一次派活干完三件事」的物理前提：子代理拿到方法规范的全套。
-    同时钉死**能力面**（registry）未动——三个旧能力名仍解析得到章节
+    2026-11-11 通用化后子代理拿主文档全文，不再按 stage 切章节；
+    本用例只钉死**能力面**（registry）映射未漂移——三个旧能力名仍解析得到章节
     （它们还喂着 lint/音频闸/stage_probes）。
     """
     from src.video_agent.skill_runtime.registry import CAPABILITY_TOOL_STAGES
@@ -168,47 +168,16 @@ def test_merged_stage_injection_deduplicates_one_to_many_chapters():
         "合并形态下三个能力名与合并名应取到同一段正文（存量委派名的兼容面）")
 
 
-def test_labeled_injection_keeps_chapter_boundaries():
-    """**2026-10-04 事故 9999 回归钉**：注入面必须保留原始章节标记（章界可见）。
-
-    病灶：`_launch_subagent` 原先注入 `tool_sections` 的**纯正文**——多章拼接后
-    章界被剥掉；而 `<media_generator>` 章内写着「具体提示词写法见下方「媒体提示词」
-    章节」，子代理据此误判「写法那章没注入」（实为两章已并注），退化为「只填模板
-    槽位」，11/11 张分镜表格图全漏「景别与时长标注」。**同夜 20:11 那次先读了
-    已确认范本故带时长；21:29 那次没读，就漏了**——要求在场而未被执行的实证。
-
-    本钉锁两件事：①标记在场（章界可见）；②**除标记外与纯正文逐字等价**
-    （不得借机改章节正文、不得新增要求——非 prose 方案）。
-    """
-    import re
-
+def test_registry_full_content_contains_all_generic_sections():
+    """通用口径：注册内容是完整主文档，各章标题齐全，且无旧标签。"""
     from src.video_agent.skill_runtime import registry as reg
 
-    slug = "AI-短剧一站式生成"
-    labeled = reg.labeled_tool_sections(slug, "media_generate")
-    plain = reg.tool_sections(slug, "media_generate")
-
-    # ① 两章标记齐备（章界对模型可见）
-    for mark in ("<media_generator>", "</media_generator>",
-                 "<write_media_prompt>", "</write_media_prompt>"):
-        assert mark in labeled, f"注入面缺章节标记 {mark}——章界不可见，9999 误判面复发"
-    # 关键要求仍在场（防「换了函数、要求丢了」）
-    assert "四大要素" in labeled and "景别与时长标注" in labeled
-
-    # ② 去标记后与纯正文**逐字等价**：修复只还原标记，不改正文、不加要求
-    stripped = re.sub(r"(?m)^</?[a-z_]+>\s*$", "", labeled)
-    stripped = re.sub(r"\n{3,}", "\n\n", stripped).strip()
-    assert stripped == plain, (
-        "labeled 注入与纯正文不等价——本修复只应还原章节标记，"
-        "不得改动章节正文或新增要求（非 prose 方案）")
-
-    # ③ 去重口径与 section_for 一致（一对多映射仍只注入一次）
-    probe = "单 shot 内切镜数量建议"
-    merged = reg.labeled_tool_sections(slug, "storyboard_design")
-    assert merged.count(probe) == 1, "labeled 注入把一对多章节复制了多次"
-
-    # ④ 端口无 labeled 实现时回落纯正文（委派永不阻断）
-    assert reg.labeled_tool_sections("不存在的技能", "media_generate") == ""
+    entry = reg.resolve_entry("AI-短剧一站式生成")
+    assert entry is not None
+    for mark in ("## 二、制作流程", "## 三、剧本分析", "## 四、故事板设计",
+                 "## 五、媒体生成", "## 六、提示词写法", "## 七、组装导出"):
+        assert mark in entry.content
+    assert "<planner>" not in entry.content
 
 
 def test_stage_deny_drops_read_skill_only():
@@ -332,71 +301,57 @@ def test_generic_delegation_without_task_still_builds():
 
 # ---------- _launch_subagent 装配 ----------
 
-async def test_launch_stage_injects_section_precisely(svc, monkeypatch):
-    """带 stage：精准注入该阶段章节全文（不截断、不走 get_skill_doc 全文路径）。
-
-    2026-10-04 事故 9999：注入面改用 `labeled_tool_sections`（保留章界标记），
-    本用例的 patch 点同批对齐——防「注入面换函数但测试仍钉旧函数」的假绿。
-    """
+async def test_launch_stage_injects_full_main_doc(svc, monkeypatch):
+    """带 stage：注入 Skill 主文档全文（不再按阶段切章节）。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
-    seen = {}
-    monkeypatch.setattr(
-        pmod, "labeled_tool_sections",
-        lambda skill, tool: seen.update(skill=skill, tool=tool) or SHOTS_SECTION)
-    sd = _FakeSkillDocs(content="X" * 9000)  # 若走截断路径必出现 9000 字全文
+    sd = _FakeSkillDocs(content="# 主文档\n\n## 制作流程\n" + "X" * 9000)
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "拆解剧本为分镜", PlannerContext(subagent_depth=0, skill_name=SKILL),
         stage="media_generate")
 
-    assert seen == {"skill": SKILL, "tool": "media_generate"}
     msg = captured["msg"]
-    assert SHOTS_SECTION in msg                       # 章节全文在场
-    assert f"注入 Skill 章节（{SKILL} · media_generate）" in msg
-    assert "本次委派阶段：媒体生成" in msg               # 阶段标注行（批I 直译口径）
-    assert sd.calls == 0                              # 未走全文截断回落
+    assert sd.calls == 1
+    assert f"Skill 主文档（{SKILL}）" in msg
+    assert "## 制作流程" in msg
     assert "章节内容截断" not in msg
-    # 工具面 deny + 子会话 meta 记 stage
+    assert "本次委派阶段：媒体生成" in msg
+    # 工具面 deny + 子会话 meta 记 stage（read_skill 已解禁）
     assert captured["ctx"].subagent_deny == child_deny_set("media_generate")
+    assert "read_skill" not in captured["ctx"].subagent_deny
     child_cid = captured["ctx"].session_conversation_id
     assert svc.get_conversation_scope(child_cid).get("subagent_kind") \
         == "stage:media_generate"
 
 
-async def test_launch_stage_missing_section_falls_back(svc, monkeypatch):
-    """Skill 无该阶段章节：回落现行全文 8000 截断路径（委派不阻断）。"""
+async def test_launch_oversized_doc_truncates_with_read_hint(svc, monkeypatch):
+    """主文档超预算：截断并提示子代理 read_skill 续读（委派不阻断）。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
-    monkeypatch.setattr(pmod, "labeled_tool_sections", lambda skill, tool: "")
-    sd = _FakeSkillDocs(content="Y" * 9000)
+    sd = _FakeSkillDocs(content="Y" * 25000)
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "拆解", PlannerContext(subagent_depth=0, skill_name=SKILL),
         stage="media_generate")
+    msg = captured["msg"]
     assert sd.calls == 1
-    assert "章节内容截断" in captured["msg"]
+    assert "已截断" in msg and "read_skill" in msg
+    assert len(msg) < 25000
 
 
-async def test_launch_without_stage_keeps_current_behavior(svc, monkeypatch):
-    """防回归钉：不带 stage（含未知 stage）注入行为与现状逐字一致——
-    全文前 8000 截断、通用白名单、无阶段标注、meta 记 general。"""
+async def test_launch_without_stage_injects_same_full_doc(svc, monkeypatch):
+    """不带 stage（含未知 stage）：注入行为与带 stage 一致，都拿主文档全文。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
-
-    def _boom(skill, tool):
-        raise AssertionError("通用委派不应触发阶段章节取读")
-
-    monkeypatch.setattr(pmod, "labeled_tool_sections", _boom)
-    sd = _FakeSkillDocs(content="Z" * 9000)
+    sd = _FakeSkillDocs(content="# 主文档\n\n## 制作流程\n" + "Z" * 9000)
     parent = Planner(state_manager=svc, llm_adapter=None, skill_docs=sd)
     await parent._launch_subagent(
         "自由任务", PlannerContext(subagent_depth=0, skill_name=SKILL),
         stage="不存在的阶段")
     msg = captured["msg"]
     assert sd.calls == 1
-    assert f"注入 Skill 章节（{SKILL}）" in msg       # 现状标注（无 · stage 后缀）
-    assert "章节内容截断" in msg
+    assert f"Skill 主文档（{SKILL}）" in msg
     assert "本次委派阶段" not in msg
     assert captured["ctx"].subagent_deny == SUBAGENT_TOOL_DENY
     child_cid = captured["ctx"].session_conversation_id

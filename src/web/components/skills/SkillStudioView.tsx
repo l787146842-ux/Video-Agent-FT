@@ -6,11 +6,13 @@ import {
   allDocs, selectedSlug, draftRaw, dirty, commitDraft, saveDraft,
   undoDraft, redoDraft, canUndo, canRedo, loadAllDocs, newDraft, resetAssistant,
   selectSkill, studioLoading, studioEditing, setStudioEditing, assistantVisible,
+  assistantBusy, assistantLiveDoc,
 } from '@/stores/skill-studio';
 import { parseSkillStructure, frontmatterMeta } from '@/lib/skill-structure';
 import { useSplitter } from '@/hooks/use-splitter';
 import { Splitter } from '@/components/layout/Splitter';
 import { SkillStructuredView } from './SkillStructuredView';
+import { SkillLivePreview } from './SkillLivePreview';
 import { SkillStudioList } from './SkillStudioList';
 import { SkillAssistantPanel } from './SkillAssistantPanel';
 
@@ -65,6 +67,9 @@ export default function SkillStudioView() {
     }
     return draftNameOf(draftRaw()) || '新建草稿';
   });
+  // 生成中：中间栏改渲染实时预览，保存暂时禁用（防把旧草稿落盘）
+  const liveDoc = () => assistantLiveDoc();
+  const generationBusy = () => assistantBusy() || !!liveDoc();
 
   return (
     <div class="skill-studio">
@@ -99,7 +104,8 @@ export default function SkillStudioView() {
           <button
             type="button"
             class="sks-btn primary"
-            disabled={!dirty() && !!selectedSlug()}
+            disabled={(!dirty() && !!selectedSlug()) || generationBusy()}
+            title={generationBusy() ? '生成中，完成后可保存' : '保存'}
             onClick={() => void saveDraft()}
           >
             <FiSave size={12} /> 保存
@@ -133,6 +139,12 @@ export default function SkillStudioView() {
             </div>
           }
         />
+        {/* 生成中：实时预览覆盖在上层，不卸载下方编辑器（保留未提交编辑） */}
+        <Show when={liveDoc()}>
+          <div class="skst-live-overlay">
+            <SkillLivePreview raw={liveDoc()} />
+          </div>
+        </Show>
       </div>
 
       {/* 优化助手右栏：仅编辑/新建态挂出（纯查看两栏，见 assistantVisible） */}

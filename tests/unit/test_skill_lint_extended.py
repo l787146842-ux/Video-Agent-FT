@@ -29,8 +29,8 @@ def test_bulk_budget_silent_under_budget():
 
 
 def test_composition_warns_missing_core_parts():
-    """流程型 Skill（有 planner）缺故事板/生成/提示词段 → 单条组成告警"""
-    content = "<planner>\n步骤 1：分析剧本\n步骤 2：写规格\n</planner>"
+    """流程型 Skill（有制作流程标题）缺故事板/生成/提示词段 → 单条组成告警"""
+    content = "## 制作流程\n步骤 1：分析剧本\n步骤 2：写规格\n"
     result = sd.lint_skill_content(content)
     comp = [w for w in result["warnings"] if "标准组成" in w]
     assert len(comp) == 1
@@ -39,10 +39,10 @@ def test_composition_warns_missing_core_parts():
 
 def test_composition_silent_when_complete():
     content = (
-        "<planner>\n流程：故事板拆解→生成→提示词写法\n</planner>\n"
-        "<storyboard_designer>\n分镜与关键元素设计\n</storyboard_designer>\n"
-        "<media_generator>\n生成设定图\n</media_generator>\n"
-        "<write_the_prompt>\n提示词写法规范\n</write_the_prompt>\n"
+        "## 制作流程\n流程：故事板拆解→生成→提示词写法\n\n"
+        "## 故事板设计\n分镜与关键元素设计\n\n"
+        "## 媒体生成\n生成设定图\n\n"
+        "## 提示词写法\n提示词写法规范\n"
     )
     result = sd.lint_skill_content(content)
     assert not any("标准组成" in w for w in result["warnings"])

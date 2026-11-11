@@ -5,7 +5,7 @@
 - 报表入口（默认）：输出每个 Skill 的结构摘要（章节/frontmatter
   一致性/资源探针），报告性质。
 - --gate 入口：仅客观结构问题决定 FAIL 退出码（frontmatter 解析失败 /
-  schema 一致性 / 声明执行器无文档章节支撑）；name/description 存在性与
+  schema 校验失败）；name/description 存在性与
   目录包资源探针（指针悬空/scripts 路径/references 孤儿/assets 版本锁
   孤儿/悬空）恒为 WARN 清单，不阻断退出码。
 
@@ -23,58 +23,20 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 from src.video_agent.web.skill_docs import split_skill_sections  # noqa: E402
 from src.video_agent.skill_runtime import frontmatter  # noqa: E402
-from src.video_agent.skill_runtime.registry import (  # noqa: E402
-    CAPABILITY_TOOL_STAGES,
-    PIPELINE_CAPABILITY_TOOLS,
-    SkillEntry,
-)
-
-# 平台既有工具（非管线能力词汇，不要求文档章节支撑）
-REUSED_TOOL_NAMES = (
-    "document_write", "read_uploaded_doc", "image_generate",
-    "generate_video", "workflow_pause", "read_skill",
-)
 
 # （正文句式扫描——内容卫生/优先级宣称/语言宣称探针——已按用户裁决 R-3
 # 退役删除：Skill 正文句式不检查、不消音；本脚本只做客观结构/资源诊断。）
 
 
 def manifest_consistency_issues(slug: str, content: str, manifest) -> list:
-    """frontmatter 声明 vs 文档实际章节一致性探针；返回不一致清单（空 = 一致）。
+    """frontmatter 声明体检；返回不一致清单（空 = 一致）。
 
-    未声明 manifest = 零声明回落合法（与 schema「未声明键合法」同构）。
-    检测口径（报告性质，不做门禁）：
-    ① schema 校验问题（与注册期 fail-closed 告警同源）；
-    ③ flow 声明的执行器（stage_executors / stages.*.executors）无文档章节支撑
-       ——只查已知 Skill 执行器；复用工具豁免。
-    （C1b 裁决 2026-08-31：② custom_sections 探针随通道退役删除。）
+    通用 skill 口径：只查 frontmatter 解析/schema（与注册期同源）；
+    流程 / 执行器 / 章节 tag 不再是平台声明，不做一致性比对。
     """
     issues = list(frontmatter.validate_manifest(manifest) or [])
     if not isinstance(manifest, dict):
         return issues
-    sections = split_skill_sections(content or "")
-    entry = SkillEntry(
-        slug=slug, name=slug, content=content or "", sections=sections)
-    # ③ 声明执行器 × 文档章节支撑
-    doc_tools = {
-        t for t in PIPELINE_CAPABILITY_TOOLS
-        if any((sections.get(s) or "").strip()
-               for s in CAPABILITY_TOOL_STAGES.get(t, ()))
-    }
-    flow = manifest.get("flow") or {}
-    declared = []
-    for v in (flow.get("stage_executors") or {}).values():
-        if isinstance(v, list):
-            declared += [t for t in v if isinstance(t, str)]
-    # （C1b 裁决 2026-08-31：flow.stages.*.executors 覆盖声明退役，消费删除）
-    for t in sorted(set(declared)):
-        if t in REUSED_TOOL_NAMES:
-            continue
-        if t not in PIPELINE_CAPABILITY_TOOLS:
-            issues.append(f"声明执行器 {t} 不是已知管线能力词汇")
-        elif t not in doc_tools:
-            issues.append(
-                f"声明执行器 {t} 无文档章节支撑（CAPABILITY_TOOL_STAGES 对应章节落空）")
     return issues
 
 

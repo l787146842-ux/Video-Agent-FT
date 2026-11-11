@@ -10,11 +10,15 @@ import { SkillStudioList } from '../skills/SkillStudioList';
 import { loadAllDocs } from '@/stores/skill-studio';
 import { ensureGlobalSettings } from '@/stores/global-settings';
 
+const failureState = vi.hoisted(() => ({
+  items: [] as Array<{ slug: string; error: string }>,
+}));
 const docsMock = vi.hoisted(() => ({
   getSkillDocs: vi.fn(async () => ([
     { slug: 'skill-a', name: '技能甲', description: '描述甲', content: '' },
     { slug: 'skill-b', name: '技能乙', description: '', content: '' },
   ])),
+  getSkillLoadFailures: vi.fn(async () => failureState.items),
 }));
 vi.mock('@/api/docs', () => docsMock);
 
@@ -39,6 +43,7 @@ vi.mock('@/stores/toast', () => ({
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  failureState.items = [];
   await loadAllDocs();
   await ensureGlobalSettings();
 });
@@ -63,5 +68,16 @@ describe('SkillStudioList 启停开关（批7）', () => {
     });
     expect(switchA.getAttribute('aria-checked')).toBe('false');
     expect(container.querySelectorAll('.skst-item.off')).toHaveLength(2);
+  });
+
+  it('坏包提示可展开：summary 显示数量，展开后可见 slug 与原因', async () => {
+    failureState.items = [{ slug: 'bad-pack', error: 'frontmatter 缺 name' }];
+    await loadAllDocs();
+    const { container } = render(() => <SkillStudioList onCollapse={() => {}} />);
+    const details = container.querySelector('details.skst-load-fail');
+    expect(details).not.toBeNull();
+    expect(details!.querySelector('summary')!.textContent)
+      .toContain('1 个 Skill 加载失败');
+    expect(details!.textContent).toContain('bad-pack：frontmatter 缺 name');
   });
 });

@@ -1,22 +1,24 @@
 import { createEffect, createSignal, For, Show } from 'solid-js';
 import {
-  FiArrowUp, FiCpu, FiGlobe, FiMessageSquare, FiPaperclip,
+  FiArrowUp, FiGlobe, FiMessageSquare, FiPaperclip,
 } from 'solid-icons/fi';
 import {
-  assistantMessages, assistantBusy, sendAssistant, selectedSlug,
+  assistantMessages, assistantBusy, assistantStream, sendAssistant, selectedSlug,
 } from '@/stores/skill-studio';
 import { renderMarkdown } from '@/lib/markdown';
 import { useSplitter } from '@/hooks/use-splitter';
 import { PillDropdown } from '@/components/right-panel/PillDropdown';
+import { ModelThinkingPill } from '@/components/right-panel/ModelThinkingPill';
 import {
-  agentProvider, setAgentProvider, agentModel, setAgentModel,
+  agentProvider, setAgentProvider, agentModel,
 } from '@/stores/agent-prefs';
-import { apiProvidersFor, providerModels } from '@/lib/providers';
+import { apiProvidersFor } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
+import { SkillReasoningDone, SkillReasoningLive } from './SkillReasoning';
 
 /**
  * Skill 工作台右栏：优化助手对话（会话级，不持久化）。
- * 新建草稿 = 创作模式（后端按项目规范生成六章节草稿并自检）；
+ * 新建草稿 = 创作模式（后端按通用契约生成标题式草稿并自检）；
  * 编辑既有 Skill = 优化模式。输入区对齐影视工作台聊天输入：
  * 上传 / 厂商-模型级联 / 发送 / 上下文用量；
  * 消息区与输入区分界线可上下拖拽调输入区高度（100-400px，持久化）。
@@ -26,17 +28,19 @@ export function SkillAssistantPanel() {
   const [usage, setUsage] = createSignal<ContextUsage | null>(null);
   let scrollEl: HTMLDivElement | undefined;
   let fileRef: HTMLInputElement | undefined;
-  // 未落盘草稿 = 新建态 = 创作模式（后端六章节契约 + 自检/自修复）
+  // 未落盘草稿 = 新建态 = 创作模式（后端通用标题式契约 + 自检/自修复）
   const createMode = () => !selectedSlug();
 
   const inputSplit = useSplitter(150, {
     axis: 'y', min: 100, max: 400, invert: true, storageKey: 'splitSkillAssistantInput',
   });
 
-  // 新消息/思考态自动滚底
+  // 新消息/思考态/流式增量自动滚底
   createEffect(() => {
     void assistantMessages().length;
     void assistantBusy();
+    void assistantStream()?.reasoning;
+    void assistantStream()?.text;
     scrollEl?.scrollTo({ top: scrollEl.scrollHeight });
   });
 
@@ -49,9 +53,6 @@ export function SkillAssistantPanel() {
 
   const providerOptions = () => apiProvidersFor('chat').map((p) => ({
     value: p.id, label: p.name || p.id, hint: p.protocol,
-  }));
-  const modelOptions = () => providerModels(agentProvider(), 'chat').map((m) => ({
-    value: m, label: m,
   }));
 
   const usageLabel = () => {
@@ -107,8 +108,8 @@ export function SkillAssistantPanel() {
             )}
           >
             <div class="skst-assistant-empty">
-              描述你想做的片子或制作流程，我按项目规范生成一版六章节草稿：
-              流程规划 / 素材分析 / 故事板设计 / 媒体生成 / 提示词写法 / 组装导出。
+              描述你想做的片子或制作流程，我按通用规范生成一版标题式草稿
+              （目标 / 开工前确认 / 制作流程 / 结构与素材 / 专业方法 / 参考资料）。
               生成后左侧预览自动更新，确认无误再点「保存」落盘。
             </div>
           </Show>
@@ -120,6 +121,9 @@ export function SkillAssistantPanel() {
                 when={m.role === 'assistant'}
                 fallback={<div class="skst-msg-text">{m.text}</div>}
               >
+                <Show when={m.reasoning}>
+                  {(r) => <SkillReasoningDone reasoning={r()} />}
+                </Show>
                 <div class="chat-markdown" innerHTML={renderMarkdown(m.text)} />
                 <Show when={m.checks}>
                   <div class={`skst-checks ${m.checks!.passed ? 'ok' : 'warn'}`}>
@@ -143,7 +147,7 @@ export function SkillAssistantPanel() {
                     >
                       <div class="skst-checks-title">
                         ✓ 已通过项目规范自检
-                        {m.mode === 'create' ? '（六章节 / 工具名 / 参数纪律）' : '（工具名 / 参数纪律）'}
+                        {m.mode === 'create' ? '（通用骨架 / 工具名 / 参数纪律）' : '（工具名 / 参数纪律）'}
                       </div>
                     </Show>
                   </div>
@@ -152,10 +156,22 @@ export function SkillAssistantPanel() {
             </div>
           )}
         </For>
-        <Show when={assistantBusy()}>
-          <div class="skst-msg assistant">
-            <div class="skst-msg-text dim">思考中…</div>
-          </div>
+        <Show when={assistantStream()}>
+          {(st) => (
+            <div class="skst-msg assistant">
+              {/* 思考流：标题行兼作阶段状态（思考中 / 自检修复中） */}
+              <SkillReasoningLive reasoning={st().reasoning} status={st().status} />
+              <Show when={st().text}>
+                <pre class="skst-stream-text">{st().text}</pre>
+              </Show>
+              {/* 文档正文不进聊天：只报进度，正文实时进中间预览 */}
+              <Show when={st().doc}>
+                <div class="skst-stream-progress">
+                  正在生成 Skill 文档… 已 {st().doc.length.toLocaleString()} 字（见中间预览）
+                </div>
+              </Show>
+            </div>
+          )}
         </Show>
       </div>
 
@@ -171,7 +187,7 @@ export function SkillAssistantPanel() {
             <textarea
               value={input()}
               placeholder={createMode()
-                ? '描述你想做的片子/流程，我生成一版六章节草稿…'
+                ? '描述你想做的片子/流程，我生成一版标题式草稿…'
                 : '请输入你想创建的Skill想法…'}
               onInput={(e) => setInput(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -208,13 +224,8 @@ export function SkillAssistantPanel() {
                   title="API 厂商"
                   onSelect={setAgentProvider}
                 />
-                <PillDropdown
-                  icon={FiCpu}
-                  value={agentModel()}
-                  options={modelOptions()}
-                  title="模型"
-                  onSelect={setAgentModel}
-                />
+                {/* 模型 + 思考开关/推理档位：与主对话同一胶囊（chat_models_meta 一处管） */}
+                <ModelThinkingPill />
               </div>
               <div class="toolbar-right">
                 <div class="context-usage-wrap">

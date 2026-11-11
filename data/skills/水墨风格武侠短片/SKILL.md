@@ -2,11 +2,18 @@
 name: 水墨风格武侠短片
 description: 制作水墨风格武侠短片，先确立全局规格，锁定水墨武侠风格定位、画幅与语言参数。
 ---
-<planner>
+# 水墨风格武侠短片
+
+## 一、这个 Skill 做什么
+
+制作水墨风格武侠短片，先确立全局规格，锁定水墨武侠风格定位、画幅与语言参数。
+
+## 二、制作流程
+
 **全流程阶段逻辑与协同编排：**
 
 1. **确立全局规格**：在生成任务启动前，必须通过 **document_write** 初始化 制片规格.md，基于用户提供的剧情或构思，显式设定全局参数（画幅与分辨率遵循全局设置中的画幅/分辨率参数，水墨武侠风格定位，配音及字幕语言）。
-2. **规划故事板**：调用 **storyboard_designer**，结合用户提供的剧情/构思撰写结构化的故事板（包括核心角色及场景的 key_element、镜头列表（包含经典的书法大字定格卡）、以及独立音频轨道）。
+2. **规划故事板**：调用 故事板设计，结合用户提供的剧情/构思撰写结构化的故事板（包括核心角色及场景的 key_element、镜头列表（包含经典的书法大字定格卡）、以及独立音频轨道）。
 3. **绑定及分析参考素材**：优先识别并读取用户主动提供的人设或场景参考图、动作视频，对其进行多模态特征分析。重点评估人设图是否为标准的正面、侧面、背面**角色三视图（character sheet）**，场景参考图是否属于标准的**多角度无人物四宫格场景参考图**，以及其画风是否与本片《雾山五行》水墨武侠风格相符。
 4. **图像元素风格化重塑与系统补全**：
    - **风格不符或格式不规范时**：若用户提供了角色图但**不是正面、侧面、背面三视图（character sheet）**，或画风与水墨武侠不符，**或者提供的场景图不属于多角度无人物四宫格场景参考图（或包含人物）**，**先统一重构后再绑定为最终视频生成参考**；必须调用 **image_generate** 的 **ImageToImage** 通道（提示词先写入草稿；具体渠道与模型由全局设置决定，本文档不指定），以用户提供的素材图为空间布局与色彩参考，重新重构制作符合水墨武侠风格且格式规范固定（Grid 1: 全景定场 / Grid 2: 陈设特写 / Grid 3: 纵深透视 / Grid 4: 气氛光效）的 **无人物场景四宫格参考图**（element scene）或符合规范的 **角色三视图**（element character，分辨率均遵循全局设置），提高场景参考图的信息密度。
@@ -32,9 +39,9 @@ description: 制作水墨风格武侠短片，先确立全局规格，锁定水�
 - **资产生成前置确认（核心铁律）**：在生成任何新资产（包括元素图像、逐镜视频、音频等）之前，**必须**暂停并使用 workflow_pause 告知用户接下来的生成计划（包含计划使用的提示词或参考关系），得到用户确认许可后，方可调用工具进行下一步生成。
 - **节点 A（脚本与故事板锁定时）**：故事板结构输出后暂停，引导用户确认情节和分镜，通过后方可进行后续阶段。
 - **节点 B（资产产出与核对确认）**：每批次或每个重要资产（如角色人设、场景、关键视频镜）生成或重塑完成后，需向用户展示。在所有图像元素资产生成完毕后，系统必须进行绑定状态的全局自检核对，向用户展示完整的角色与场景绑定关系，得到确认满意后，方可推进至下一阶段。
-</planner>
 
-<script_analyze>
+## 三、剧本分析
+
 **输入素材分析规范：**
 - 当用户上传图片、视频、手稿，或主动提供**角色图/人设素材**、**场景参考图**作为基准时，对其进行深度解析：
   - **画风与格式一致性评估**：判定用户提供的角色人设图在笔触线条、色彩分布、写意水墨感上，是否与本片《雾山五行》的水墨武侠风格相符，并**严格核对角色人设图是否为正面、侧面、背面标准的“角色三视图”（character sheet）**，同时核对场景参考图是否符合“多角度无人物四宫格”设计。若画风不相符、非标准三视图或非四宫格场景图，记录其角色身体结构、服饰款式、发型、场景构图等“内容特征”，并输出明确结论：“角色图非三视图、风格不符或非四宫格场景图，需进行水墨画风及规范格式（三视图/四宫格）重塑”。
@@ -44,9 +51,9 @@ description: 制作水墨风格武侠短片，先确立全局规格，锁定水�
   - **线条风格**：分析笔触的粗细顿挫、飞白与泼墨的比例。
   - **动作节奏**：在视频参考中提取攻击前摇、出招、碰撞打击点和收招的帧级时间跨度，为后续镜头编排提供具体参数。
 - 提取完成后，将上述解析结果直接沉淀为文本描述，写入 制片规格.md，指导后续故事板设计与媒体提示词写作遵循相同的风格规范。
-</script_analyze>
 
-<storyboard_designer>
+## 四、故事板设计
+
 **设计 key_element（核心元素）：**
 - **element character（角色元素）**：
   - **设定原则**：严格基于“五行”色彩体系进行编码。例如，火行使者（红色系、火焰缠绕）、水行使者（蓝色系、冰霜/波涛）。
@@ -165,145 +172,26 @@ description: 制作水墨风格武侠短片，先确立全局规格，锁定水�
 - **打击与相克音效层（sfx）**：
   - 常规武招：必须规划高频利落的刀剑击鸣、肉体受力闷击声、轻功风掠声。
   - 五行克制大冲撞：根据碰撞类型，显式规划双层特征的写意打击音效（如 \[金克木\] 的利刃切碎繁茂藤蔓的金属割裂与草木断裂复音、 \[水克火\] 的怒涛拍击与烈焰瞬间碳化产生的刺耳高压蒸汽嘶鸣声）。
-</storyboard_designer>
 
-<media_generator>
-**视觉元素生成策略（具体渠道与模型由全局设置决定，本文档不指定）：**
-- **核心指令**：
-  - **风格与格式完全相符时**：若用户主动提供了符合要求的角色人设正面、侧面、背面**标准人物三视图（character sheet）或符合多角度无人物四宫格场景参考图**格式的素材，且多模态分析判定其风格与《雾山五行》的水墨武侠风一致，则直接以此资产为准，**跳过**对应元素的生成。
-  - **风格或格式不符时**：若用户提供了角色人设图但**不属于标准的正面、侧面、背面三视图（character sheet）或其画风不符，或者提供的场景参考图不属于多角度无人物四宫格场景参考图规范时（或包含人物），系统必须**调用 **ImageToImage**（渠道与模型由全局设置决定，本文档不指定），将用户图作为场景地貌、空间构图与色彩基调参考，重新重构制作符合《雾山五行》水墨武侠风格、高信息密度且满足固定四网格内容标准分配（Grid 1: 全景定场 / Grid 2: 陈设特写 / Grid 3: 纵深透视 / Grid 4: 气氛光效）的 **无人物场景四宫格参考图**（分辨率遵循全局设置）。
-  - **未提供素材时**：若用户未提供，则系统必须调用 **TextToImage**（渠道与模型由全局设置决定，本文档不指定）进行原创补全生成（包含角色三视图与四宫格场景图）。
-- **分辨率控制**：图像输出分辨率遵循全局设置中的分辨率参数，确保纹理与线条的细节留存。
-- **角色一致性与三视图生成（系统补全与重塑时）**：
-  - 针对系统原创补全，**或根据用户提供的非三视图人设图进行重塑的角色**，首张图像生成时，**必须优先重塑/生成一张包含正面、侧面、背面完整视图的人物三视图（character sheet / three-views）** 概念图，作为整体人设的终极规范。
-  - 角色在后续多姿态、多神态生成时，必须将该三视图（无论是用户重塑的、系统生成的还是用户直接提供的高质量标准三视图）作为核心 reference_image 引入，确保面部五官及笔触质感保持高度一致。
-- **场景四宫格生成与信息密度规范（系统补全或重塑时）**：
-  - 生成场景图时，提示词必须严格限定为“4-grid layout, no characters (四宫格布局，无人物)”，且强制将四格内容固定分配为：全景定场、陈设特写、纵深透视、气氛光效，产出带有白色分割线条的设计图，确保场景多角度信息的绝对高密度沉淀。输出分辨率遵循全局设置。
+## 五、媒体生成
 
-**声音特征生成策略（具体渠道与模型由全局设置决定，本文档不指定）：**
-- **核心指令（声音凭证 key_element_audio 的生成与提取）**：
-   - **无用户声音输入时**：使用声音生成工具（系统音频生成通道的语音模式，具体渠道与模型由全局设置决定，本文档不指定），读取故事板中 element character 定义的“配音音色设定”文本。指定音色特征、发音语气与侠义风骨参数，生成一段短时长、底噪干净、发音饱满的单声道高保真角色音色采样（采样时长遵循全局设置）。
-   - **有用户声音输入时**：若用户提供了角色配音音频样例，对该音频进行高保真音色特征提取（Voice Cloning/Timbre Extraction），获取其声学指纹与特定声线频率特征。
-- **资产注册与声音凭证绑定**：将上述生成的原创采样或克隆提取的音色音频，注册为稳定的 Logical Asset，并作为该角色的声音凭证 **key_element_audio** 绑定至 element character 的 voice 属性。该凭证是跨镜头维持音色绝对一致的唯一声学句柄。
-- **全局旁白（VO Narration）音频生成规范**：若故事板中规划了跨镜头的旁白（narration），系统在生成旁白音频时，必须通过语音生成通道生成（具体渠道与模型由全局设置决定，本文档不指定）。
-  - **宿命感声音参数**：强制将旁白音色描述设定为 \[沉稳浑厚、带有极强宿命感与沧桑感的古典说书人老者男声，吐字清晰，语气徐疾有致，空灵带有一丝暗哑\]，以建立大气古朴的故事背景基调。
-  - **多音轨注册**：将生成的长段旁白音频注册为独立的 narration 逻辑资产，并直接绑定至对应的 audio_layer（独立音频轨道），供后期剪辑进行多声道音量与频带的主次避让。
+需要选模型、绑参考图、生成音频时，读 `references/媒体生成.md`（read_skill(resource="references/媒体生成.md")）。
 
-**视频生成策略：**
-- **核心指令**：所有镜头（shot）的视频生成，一律走全局设置的默认出视频渠道（擅自切换其他模型排除在外）。
-- **一致性前置自检**：在执行每个镜头的 MultiModalToVideo 生成前，**必须自检核对该镜头的提示词与对应的分镜脚本**，确保无一遗漏地包含：人物参考图像（element character）、场景背景图像（element scene）、角色的台词/对白语法块（{dialogue}）以及与其音色对应的声音凭证（key_element_audio）。确保提示词中的动作、特效和运镜完全对齐，确认完整无误后，方可发出生成任务。
-- **制式规范**：输出视频分辨率与画幅遵循全局设置中的分辨率/画幅参数。
-- **参考绑定与唇形同步（Lip-Sync Binding Mechanism）**：
-  - 生成单镜视频时，必须输入并绑定相应的参考源：
-    1. **角色一致性（核心）**：对应的角色元素（element character）概念图，作为角色外形与服装的视觉基准。
-    2. **场景一致性（核心，绝对防跳画与背景突变铁律）**：对应的场景元素（element scene）多角度无人物四宫格场景图。系统必须严密解析镜头对应的 scene_id，并拉取该场景唯一绑定的四宫格参考图 asset_id，绝对复用且仅允许传递此唯一绑定的资产。若相邻镜头或全片指向同一场景 ID，系统**必须在 MultiModalToVideo 中绑定完全相同的场景 asset_id 资源**作为 reference_image，场景图一律复用已绑定资产（动态重复生成不同批次的场景图排除在外）！在生成视频前，提示词中**必须强行加入对四宫格参考图每个格具体分配内容（Grid 1: 全景定场、Grid 2: 陈设特写、Grid 3: 纵深透视、Grid 4: 气氛光效）的精准说明**，作为视频生成渠道的参考输入，并配合防分屏/防拼贴指令强制融合四格特征为单一连续3D镜头画面（详见「媒体提示词」章节规则），从源头上彻底防止制作视频时生成分屏或四宫格视频。
-    3. **声音与唇形高精度对齐（Lip-Sync Core）**：若该镜头中角色有台词对白，在 MultiModalToVideo 任务的音频参考中，**必须强制绑定该角色的声音凭证 key_element_audio 作为 reference_audio 传入**。在视频生成时，多模态模型会读取此声音特征与提示词中的 {dialogue} 文本，通过声学-视觉特征交叉注意力机制（Acousto-Visual Cross-Attention），驱动角色的嘴唇、舌头、面部咬肌和下颌骨进行毫秒级的语音轮廓契合（Phoneme-to-Viseme alignment）。生成的视频画面中，角色的发音口型、吞吐节奏与 key_element_audio 的音色频率必须达到完美的物理级同步，严防口型“不开口、对不上、张合频率脱节”的穿帮。
-    4. **跨镜连续性（可选）**：若当前镜头与前一镜头在动作或空间上具有极强的连续性，可将前一镜的视频作为 reference_video 传入，保障画面过渡的流畅性与色彩/笔触的一致性。
-  - **时值约束**：视频生成工具一律严格读取并继承故事板（storyboard）中该分镜（shot）所设定的 duration 属性。**鉴于所选视频渠道存在最低时长限制，生成时值必须严格遵循全局设置中的时长参数（以渠道支持的最小时长为下限）**，以此作为生成命令的绝对时长参数；绝对禁止忽略故事板的时长设定、或全量套用 5 秒等默认时长。在动作切换明显时主动切镜。
-- **容错与异常处理机制**：本短片视频制作统一走全局设置的默认出视频渠道（擅自切换其他视频生成模型排除在外）。若默认渠道由于权限、额度或系统错误报错，系统不应进行任何其他模型的降级，应直接暂停任务并将报错原因反馈给用户，由用户决定如何处理。
-</media_generator>
+## 六、提示词写法
 
-<write_media_prompt>
-- 涉及对白台词、旁白等配音文本时，必须严格遵循 制片规格.md 所规定的输出语言。
+写三视图/四视图/表格图/视频提示词时，读 `references/提示词写作.md`（read_skill(resource="references/提示词写作.md")）。
 
-**图像生成提示词写作（渠道与模型由全局设置决定，本文档不指定）：**
-- **主导画风标签（首部写入）**：
-  - "Wu Shan Wu Xing (雾山五行) anime style, traditional Chinese ink wash painting, dynamic ink splash (泼墨写意), gorgeous mineral pigment splash colors (泼彩叠彩: emerald green, malachite blue, cinnabar red, ochre, rich gold)."
-- **线条与人物质感（对应镜头动能的画风缩放）**：
-  - **静态/慢速镜头提示词**："refined fine-line ink wash painting, elegant delicate outlines (工笔细描, 纤细匀称线条), smooth wet-on-wet ink gradients, clean paper texture, peaceful posture."
-  - **动态/高能打击镜头提示词**："rough hand-drawn keyframe animation style, extremely thick charcoal ink lines (粗犷焦墨勾线), dry-brush scratch marks (枯笔飞白排线), massive explosive ink splatters (爆裂泼墨喷溅), raw sketch aesthetic, high-velocity action."
-- **人设三视图特殊提示词（系统补全与重塑时）**：
-  - 生成/重塑人物三视图时，额外在提示词中追加：character sheet, three-views study, front view, side view, back view, standing, white background，并在提示词前部结合用户参考图特征进行融合重绘设计，确保生成出的重塑概念图结构规整、干净，正面/侧面/背面三视图清晰，便于后续多模态理解与视频生成绑定。
-- **场景多角度无人物四宫格设计图提示词规范（系统补全或重塑时）**：
-  - 生成四宫格场景图时，提示词中必须强制加入："scene design sheet, 4-grid layout (四宫格布局), no characters, no humans (无人物), clear white border separators, traditional Chinese ink wash style."
-  - 必须对四宫格固定分配的内容在提示词中显式量化声明："Grid 1 (top-left) shows a panoramic establishing shot of the entire landscape (全景定场); Grid 2 (top-right) shows a detailed close-up of scenic objects and furnishings like ancient trees, tables, or stone monuments (陈设特写); Grid 3 (bottom-left) shows deep perspective lines and multi-layered depth of the scene (纵深透视); Grid 4 (bottom-right) shows dramatic atmospheric lighting with gorgeous mineral pigment splash and heavy ink contrast (气氛光效)."
-- **书法大字定格卡提示词写作规范（Typography Title Cards，图像/视频渠道遵循全局设置）**：
-  - 生成此类纯文字/大字定格图时，提示词必须使用极简黑白灰或高对比度泼彩设计，强制加入："gigantic traditional Chinese calligraphy characters in heavy black ink (重墨书法大字), bold aggressive calligraphic brushstrokes showing furious energy, bleeding ink on aged Xuan paper (宣纸宿墨渗透), splashing cinnabar red mineral pigment, dynamic black ink splatters, hyper-detailed traditional Chinese art style, extreme high-contrast, epic martial arts movie title cards, negative space (留白)"。
-  - 提示词中需用英文双引号和中文括号将要呈现的字重叠括起（例如：the words "【万火归一】" written on the center），确保文字边缘带有狂草干裂笔锋（dry-brush calligraphy edges），画面限定为纯文字构图（人物、现代英文字体或 CGI 立体特效字排除在外）。
-- **经典中式山水陈设水墨质感提示词规范（中英双语，全流程适用）**：
-  - **万古劲松（Rugged Ancient Pines）**："gnarled ancient pine tree (万古古松), rugged scaling bark with dry-brush calligraphic lines (开裂焦墨树皮), needle clusters rendered in fine-line gongbi detail (工笔松针), extreme high-contrast lighting, mineral pale gold highlights on top branches, heavy ink shade underneath (重色焦墨压阵), dramatic ink wash martial arts aesthetic."
-  - **沧桑孤碑（Isolated Ancient Stone Tablets）**："weathered solitary stone monument (孤碑), jagged stone textures with dry calligraphy cracks (枯笔石纹裂隙), moss spots painted as vibrant malachite green and cinnabar red splatters (石绿与朱砂写意泼彩青苔), glowing ancient engraved characters, dramatic sharp side-lighting casting deep relief shadows, atmospheric ink wash background."
-  - **写意竹林（Whispering Bamboo Forests）**："dense bamboo forest shrouded in ethereal mist (竹林云雾), bamboo stalks drawn with rapid calligraphic strokes showing dry ink nodes (干笔墨竹), bamboo leaves in sharp individual brush-marks (个/介字撇叶), dynamic translucent layered shadows (半透明叶影叠层), dappled sunlight filtering through rustling canopy (斑驳碎光), highly textured Xuan paper canvas."
-- **光影与构图**：
-  - "High-contrast dramatic lighting, cinematic framing, detailed paper texture, stylized traditional aesthetics."
-- **五行特效画风质感规范（中英双语提示词）**：金/木/水/火/土五行特效及各自爆发态的详细双语提示词库拆分至附属参考资料；编写五行招式镜头提示词前，必须先 read_skill(name="水墨风格武侠短片", resource="references/五行特效与爆发态提示词库.md") 按需加载并严格遵循。基调速览：金行=亮金锋刃与白光轨，木行=狂草藤蔓翠绿能量流，水行=深蓝泼墨与极寒冰刃，火行=朱砂熔金烈焰配焦墨骨架，土行=枯笔巨石赭石泼彩。
-- **不同场景色彩比例提示词控制（图像/视频渠道遵循全局设置）**：
-  - **意境空镜/文戏场景**：提示词中显式量化三大参数：
-    - **工笔勾勒 (Gongbi Line Art, 占 35%-40%)**: "35% refined fine-line gongbi ink wash painting, elegant delicate outlines (工笔细描), smooth wet-on-wet ink gradients, highly detailed characters and costumes with clean and neat lines."
-    - **意境留白 (Negative Space, 占 35%-40%)**: "40% extensive negative space (意境留白), ethereal misty clouds and soft smoke, blank paper texture, breathing space, high atmospheric depth."
-    - **古典泼彩 (Classical Splash Color, 占 20%-25%)**: "25% classical Chinese landscape splashed colors (写意泼彩), subtle accents of pale azurite (淡石青), light malachite (淡石绿), and mineral pale gold (矿物淡金), soft low-contrast lighting, peaceful and quiet atmosphere."
-  - **常规对打/过渡场景**：在提示词中维持均衡对比，破开焦墨阴云，如 "50% dark charcoal ink wash base, 50% vibrant mineral pigments, dynamic lighting with bright sunbeams breaking through heavy ink clouds, rich textures, stark light-dark contrast"。
-  - **决战/招式冲撞场景**：在提示词中突出爆裂泼彩与焦墨压制，如 "70% explosive cinnabar red (朱砂) and rich gold splashed colors, 30% stark pitch-black heavy charcoal outlines (焦墨压阵), extreme high-contrast dramatic backlight, electric gold sparks, dynamic ink splatters, blinding white flash"。
-- **写意碎落粒子与焦墨烟尘高级渲染提示词规范（中英双语，全流程适用）**：
-  - **写意碎落粒子（Ink-Wash Splattered Particles & Flakes）**：词汇一律从物理介质的写意破碎感出发（CGI、魔法粒子或日漫光效词汇排除在外），细化其国画质感：
-    - 矿物碎彩与碎屑："shattered mineral pigment flakes (矿物泼彩碎屑), floating raw azurite particles (悬浮石青色粉微粒), raw cinnabar splinters (朱砂色斑碎屑), vibrant mineral pigment dust (矿物颜料飞落尘埃)"，展现带有厚重色粉阻尼感、色彩斑斓的碎裂细节。
-    - 神兵崩毁与金屑激射："exploding shimmering gold foil flakes (金箔爆裂碎屑), scattering liquid gold dust particles (流金粒子), razor-sharp metallic silver spark flecks (刀剑撞击的银白锐利碎屑)"，展现金属碎屑撕裂空间的寒芒张力。
-    - 书法笔痕与飞白碎痕："sharp calligraphy brush-splinters (书法枯笔碎落屑), flying dry-brush charcoal flakes (飞散的焦墨纸屑), translucent dynamic ink splashes (半透明水墨飞溅飞落点)"，用不规则的书法碎片、风沙拖尾在空中桥接物理能量。
-  - **焦墨烟尘与妖煞毒雾（Charcoal-Ink Smoke, Dust & Demonic Mists）**：烟雾词汇以有机粗粝质感为准（平滑的3D立体烟雾、粒子体积烟等词排除在外），烟雾必须被赋予炭黑与枯笔摩擦的有机粗粝质感：
-    - 焦墨烟云与飞灰："rough textured charcoal-ink smoke clouds (粗粝焦墨烟尘), swirling pitch-black carbon dust (飞舞的焦黑炭尘), fluttering burnt paper ash (飞落的焦灼宣纸纸灰), dense heavy carbon soot dispersion (浓稠焦墨烟灰)"，体现如同干裂毛笔在粗糙宣纸上重重划过、带有灼烧感的残迹。
-    - 漫天飞沙与尘暴："ochre-tinted dynamic dust clouds (矿物赭石写意扬尘), swirling sand and gravel outlined in thick dry-brush black ink (伴随枯笔焦墨勾边的漫天风沙碎石)"，表现重力压迫与尘暴的物质重量。
-    - 边缘墨晕晕开质感："smoke and dust edges showing dry-brush calligraphy scratch marks and organic wet-on-wet liquid ink diffusion on Xuan paper (烟尘边缘呈现枯笔刮擦和湿润水墨在宣纸上渐变扩散的有机双重质感)"，通过边缘的飞白开裂和水墨晕开痕迹建立绝佳的视觉质感。
-- **角色面部微表情与情绪爆发水墨细节提示词规范（中英双语，全流程适用）**：
-  - **日常神态与文戏微观表情**：使用 "elegant subtle facial expressions (传神微表情), quiet determination in the eyes, high-detail eyes with ink-wash iris, delicate lip contours, soft facial shadows (面部温润晕染)"，勾勒高雅深邃的东方神韵。
-  - **大招碰撞、爆发与受击痛楚（极端情绪爆发）**：必须使用极具张力的生理细节词汇以塑造血性与压迫感：
-    - 情绪与面部力量："intense emotional outburst, extreme facial tension, teeth clenching (咬牙切齿), clenching jaw with popping veins on temple (额头青筋暴起), bulging facial muscles, wide-eyed fury, pupils dilated into tiny ink points, dynamic facial distortion (痛苦/狂怒引起的面部肌肉拉扯)"。
-    - 水墨细节微观渲染："high-contrast face shadowed with stark black charcoal paint (面部重焦墨阴影), dry calligraphy ink streaks outlining facial structure, thick dry-brush scratch marks on the face representing struggle, dynamic ink splatters across the cheeks mimicking blood and sweat (双颊横飞写意墨点)"，使角色的精神意志与肉体受创完全重合在水墨介质的破裂中。
-- **负面排除提示**：
-  - 必须加入 "3D rendering, CGI, photorealistic, Western watercolor, smooth modern generic anime, soft gradients" 确保不会产生廉价的 3D 或普通日漫风。
+## 七、组装导出
 
-**视频生成提示词写作（渠道与模型由全局设置决定，本文档不指定）：**
-- **画面主体指代与连续性**：在提示词中，使用 <<<image_1>>>、<<<image_2>>> 等占位符精准指代已绑定的角色元素（element character）与场景元素（element scene），防止生成时主体漂移。当引入前一镜视频作为参考时，提示词需显式承接上一镜结束时的动态特征（如：前一镜动量方向、站位与特效残留），以实现镜头间的无缝过渡。
-- **台词对白封装语法（若所选视频渠道支持，Dialogue Wrapping Rules）**：
-  - 对白与人声必须使用 {dialogue} 包裹，且在括号内部，**必须以 \[语言标识: 纯台词文本\]** 的规范格式进行书写，例如：{zh: “休得狂妄，看招！”} 或 {en: "Stop right there!"}。台词必须与故事板设计以及 制片规格 的输出语言 100% 完全相同。
-  - **情绪与语气指引**：在 {dialogue} 大括号内的台词前，可使用方括号加入微观情绪指引，例如 {zh: \[愤怒咆哮\]“休得狂妄，看招！”}，以便驱动模型渲染出更具爆发力、咬肌拉扯明显的唇形与面部神经抽动。
-  - 战斗音效使用 <sfx> 包裹，局部特征音乐使用 (...) 包裹。
-- **动作控制链（Motion Stack）**：
-  - **格式**：镜头轨迹 -> 角色主体动作 -> 五行特效/空间变化 -> 声音标记。
-  - **示例提示词**：
-    "Whip zoom into the character's face. <<<image_1>>> charges forward with a flaming spear, striking the opponent. Ink splashes burst. Stark black and white ink flash (黑白水墨闪) impact frame at the collision beat. <heavy metal clang and flaming explosion sfx>"
-- **五行相克对决提示词写作**：当编写克制性对决的视频提示词时，必须用明确的色彩侵蚀与介质转换来进行物理和质感描述：
-  - 水克火示例："flowing sapphire blue water floods and completely engulfs the blazing cinnabar red flames, turning the fire into thick plumes of dramatic white steam clouds, dynamic ink wash style."
-  - 火克木示例："blazing cinnabar red flames instantly spread along the emerald green vines like thick black ink on Xuan paper, carbonizing the leaves into fluttering black ink ash."
-- **特定武招流派视频提示词设计（图像/视频渠道遵循全局设置）**：当编写核心招式流派的提示词时，必须使用具体的细节词汇增强画面的力量与动感：
-  - **拳法与连击（Boxing/Fist/Combos）**：使用 "close combat physical strike, heavy punch impacts, rapid fist combos, barrage of strikes, extreme muscle tension, expanding shockwaves drawn as circular ink ripples (水墨涟漪气劲), explosive ink splatters on hit, dramatic high-contrast impact frame" 强化连续轰击的爆发力。
-  - **轻功（Qinggong/Leaping）**：使用 "leaping across forest treetops, defying gravity, vertical ascent, motion blur with elegant trailing ink-wash wind lines (水墨风迹), soaring silhouette against ink sun" 展现飘逸感。
-  - **暗器（Hidden Weapons）**：使用 "flick of the wrist releasing flying silver needles (暗器), sharp metallic glints, multiple speed lines slicing the air, whip pan tracking the ultra-fast projectile flight" 塑造速度和精准度。
-  - **刀剑/冷兵器角力（Swords/Cold Weapons/Blade Lock）**：使用 "intense sword clash, blades locking with flying sparks (刀剑咬合火花四溅), weapon grinding and high-frequency vibration, extreme close-up of blade collision, bulging facial veins, high-contrast sword fight action, dramatic light reflection on cold steel" 展现极度死锁角力时的金属材质感与微观张力。
-  - **太极气功与柔拳掌风（Tai Chi Qigong / Soft Palm Winds）**：使用 "Tai Chi Qigong posture, slow flowing circular palm gestures, swirling translucent ink-wash vortex (水墨气劲涡流), dynamic expanding circular wind ripples, paper tearing airwave trails (撕裂纸张般的写意气浪), slow-motion build-up followed by rapid release, highly textured calligraphic wind streaks, extreme spatial distortion, <low-frequency wind suction sfx>, <heavy airwave explosion sfx>"，展现气流撕裂空间的气浪威压。
-  - **身法瞬移与高速位移（Agility/Dash/Teleportation）**：使用 "body flicker technique (瞬身术), teleportation in a flash, translucent ink silhouette left at start position (原位留下半透明水墨残影), sharp dark ink dash trails (深色写意冲刺墨痕), high-speed physical displacement, highly compressed background with radial motion streaks, instant relocation, cinematic action anime style, <instant whip-whoosh sfx>, <vacuum relocation pop sfx>"，展现超越物理极限的瞬移与高速腾挪。
-  - **妖兽诡异动作与破坏力（Monster Eerie Slashes & Demonic Blasts）**：使用 "monstrous mutation (妖躯畸变), organic morphing, sharp jagged pitch-black ink claws, toxic purple and green mist (妖异紫绿浓烟), demonic energy shockwaves, chaotic heavy ink splattering, shattering stone pillars and snapping trees, ground cracked" 等极具物质张力和不规则几何形变的词汇。
-    - **形体突变解构**：追加使用 "grotesque physical transformation, body parts stretching, morphing into swirling black demonic smoke (熔解为黑烟), sudden instant reappearance, wide Dutch angle, extreme wide-angle distortion (大广角镜头畸变)" 引导视频生成渠道展现妖兽怪诞诡谲的机动性。
-    - **狂暴撕咬与撕碎破坏**：追加使用 "jagged speed lines tearing the canvas, deep jagged calligraphic slash marks (锯齿状枯笔抓痕), shattering scenery rocks, debris flying towards screen, catastrophic collateral damage, chaotic dynamic brushwork" 展现对物理环境的撕裂与横扫重击。
-    - **妖气吐息爆轰**：追加使用 "colossal demonic energy beam blast, massive shockwave tearing through Xuan paper, dense splash of pitch-black ink and toxic green flame, landscape obliterated, shockwave ripple, extreme high-contrast lighting, <catastrophic roar sfx>, <demonic energy blast explosion sfx>" 展现大范围破坏和妖火肆虐。
-  - **多段连击与招式切换残影控制（Combo & Move Switch Smear Prompting）**：在编写快节奏动作切换与多段连击镜头的提示词时，必须加入物理残影与动能拖尾的控制词，引导视频生成渠道生成连续的写意帧过渡：
-    - 动作轨迹残影：追加使用 "motion smear frame (高动态残影帧), multi-frame ink-wash ghosting (多重水墨鬼影), multiple translucent hand-drawn afterimages following the fast strike (随疾速打击产生的多重手绘半透明残影), fluid calligraphy brush sweep trails (流体写意笔锋拖尾)"。
-    - 招式瞬态切换过渡：在两段不同动作在同一镜头内突变时，追加 "instant action transition with dramatic ink explosion (招式瞬态切换伴随猛烈水墨爆浆), sharp jagged speed lines slicing the canvas, dynamic camera displacement, high-velocity motion artifacts"，用物理介质的爆破与笔锋撕裂感强制拉满两段动作切换时的动能过渡。
-- **急速运镜控制提示词（Whip Camera Motion Prompting）**：在编写打斗镜头的运镜提示词时，必须使用以下特定英文标签及双语对照释义，确保视频生成渠道能够产生极具视觉冲击力的透视形变与镜头推拉动力学，并显式嵌入声效标记以契合时间线组装的多轨编排：
-  - **急推（Whip Zoom / Push）**：使用 "instant camera whip-zoom (极速画面急推), hard zoom-in, dramatic perspective change, immediate extreme close-up on \[Character ID\], cinematic kinetic energy" 瞬间将视角砸向受击处或脸部，拉满压迫感。同时，在提示词末尾封装急增声效标记（如 <whoosh energy surge sfx> 或 <heavy kinetic punch sfx>）。
-  - **急拉（Whip Pull / Pull-back）**：使用 "explosive whip-pullback (急拉倒镜头), instant wide-angle pull-out, rapid zoom-out, revealing shattering environment, massive scale transition" 在大招爆发或角色飞退瞬间迅速扩大视野，烘托破坏力。同时，在动作爆发切入点封装爆破与碎石声效标记（如 <explosive blast and environment shattering sfx>）。
-  - **急扫/横扫（Whip Pan / Sweep）**：使用 "ultra-fast horizontal whip-pan (极速横向扫掠), motion-blurred background (背景笔墨高速失焦), directional camera swipe, tracking high-speed martial arts trajectory" 模拟相机高速追猎、背景笔墨急速撕裂并产生虚化飞白的效果。同时，封装指向性气流声效标记（如 <ultra-fast whip-whoosh sfx>）。
-- **非战斗诗意转场与水墨意境提示词设计**：当编写需要表现传统水墨写意美学的非战斗镜头或过渡转场提示词时，必须使用具体的质感和渐变消融词汇：
-  - **墨滴晕染转场**：使用 "slow motion ink dripping and bleeding on Xuan paper (墨滴自然晕染渗透), soft ink diffusion, watercolor bleeding transition, dissolving into <<<image_x>>>" 引导模型生成水墨自然晕开、物象渐次消融演变的效果。
-  - **飞白拖尾转场**：使用 "dynamic calligraphy brush sweeping across screen, elegant dry-brush flying-white stroke (飞白拖尾) slicing the canvas, revealing <<<image_x>>> behind the stroke, traditional Chinese aesthetic transition" 表达极具动感和中国书法笔锋气韵的擦除式过渡。
-  - **意境营造**：空镜头或抒情镜头中，加入 "poetic traditional Chinese landscape, ethereal mountains shrouded in mist (云雾缭绕), minimalist composition with extensive negative space (大面积留白), peaceful and quiet atmosphere" 等词汇，拉满古典诗意。
-  - **长卷平移与慢速推拉提示词（Scroll-Panning & Slow Zoom Prompting）**：编写文戏慢速运镜时，必须显式定义极低频的相机位移与画面呼吸变化：
-    - 横向平移（Pan）提示词：使用 "ultra-slow horizontal panning (微速横向平移), long scroll handscroll aesthetic (手卷长卷美学), panoramic ink scenery slowly unfurling (山水画卷徐徐展开), characters walking within landscape, peaceful breathing rhythm"。
-    - 纵向或拉远（Tilt / Pull-back）提示词：使用 "micro-speed vertical tilt (极缓纵向扫移), extremely slow cinematic pull-back (微速拉镜头), expanding negative space (留白逐渐开阔), revealing layered distance (展现远山层次)"。
-    - 水墨及云雾呼吸（Ink Breathing & Diffusion）提示词：必须引入 "gently breathing ink wash (水墨呼吸感), slow dynamic ink wash bleeding and fading (水墨渐次晕染与消融), swirling ethereal mist rising and falling in micro-motion (微速吞吐起伏的云雾), wet-on-wet ink diffusion showing paper texture (湿晕墨迹自然渗透渲染)"，引导模型生成画面内气流流转、云雾和淡墨自然扩散的慢速动态呼吸感，严防背景死板静止。
-  - **山水陈设特写微动态控制（Decorative Close-up Micro-dynamics）**：编写经典山水陈设（松、碑、竹）特写视频提示词时，必须使用具体的微观动能词汇引导模型产生缓慢生长的墨韵变化：
-    - **劲松傲骨**：使用 "Extreme close-up of <<<image_y>>>'s gnarled pine branches. Micro-camera panning. Ink wash clouds drifting slowly behind the branches, showing deep texture diffusion (背景水墨层徐徐晕染), needles vibrating slightly in the wind, dramatic high-contrast lighting."
-    - **孤碑刻痕**：使用 "Close-up tracking shot across the weathered text of the solitary monument <<<image_y>>>. A single drop of dark ink-liquid sliding down the calligraphic engraving (一滴宿墨顺刻痕滑落). Gentle misty breath rising from the stone base, soft side-lighting casting sharp textured shadows on Xuan paper."
-    - **竹林萧瑟**：使用 "Slow zoom-in on bamboo leaves <<<image_y>>>. Rustling canopy with leaves swaying in the breeze, casting dancing translucent shadows across the stalks. Dynamic ink-mist swirling slowly through the bamboo groves, wet-on-wet ink diffusion showing breathing space (湿晕水墨在宣纸上慢速渐变呼吸扩散)."
-- **防止场景四宫格参考图导致视频分屏/拼贴的提示词硬性规避机制**：
-  - 当视频生成使用 <<<image_y>>> (四宫格场景参考图) 作为场景输入时，**必须在视频提示词的首部与尾部增加空间融合与消除分屏的否定/指令描述**，引导视频生成渠道融合四格特征输出单一连续视频画面。
-  - **强制在提示词中附加的防分屏/防拼贴英文声明句链（明确定义四宫格每个格子的具体内容，防止生成四宫格视频）**：
-    "The reference scene image <<<image_y>>> is a 4-grid layout design sheet representing a single unified environment with four distinct perspectives: Grid 1 (top-left) is the panorama establishing shot (全景定场), Grid 2 (top-right) is the furnishing close-ups of scenic objects (陈设特写), Grid 3 (bottom-left) is the deep perspective lines showing spatial depth (纵深透视), and Grid 4 (bottom-right) is the atmospheric lighting and mineral color scheme (气氛光效). Synthesize all these four perspectives into a SINGLE, UNIFIED, CONTINUOUS 3D cinematic space for the camera to move through. DO NOT generate split-screens, DO NOT generate multi-panel layouts, NO grids, NO comic strips, NO dividing lines, NO 4-grid pattern in the final output video. The output must be a single, undivided continuous camera shot."
-- **负面限制**：
-  - 几乎所有武打镜头均应默认写入 "no music"（背景音乐由独立 bgm 轨道承载，避免与生成音效混淆），且必须加入 "no subtitles"（防止画面生成杂乱的内嵌字幕）。
-</write_media_prompt>
-
-<video_assembler>
 **时间线编排与后期剪辑控制：**
 - **详细参数按需加载（本 Skill 为目录包）**：打斗剪辑律动与大冲撞卡点、音画精密对齐与大碰撞多轨音频设计两套详细参数拆分至附属参考资料；开始时间线组装前，必须先 read_skill(name="水墨风格武侠短片", resource="references/武打剪辑律动与多轨音效设计参考.md") 加载并严格遵循其中全部时值/卡点/频带避让参数。
 - **概要口径（未加载资源时的底线）**：战斗剪辑节奏极度紧凑（常规攻击约 1.0s - 2.0s 短切）；招式交汇的绝对瞬间执行「黑白水墨闪」硬切 + 微重力定格；音效采用双层叠加结构（高频特征层 + 低频能量层），碰撞瞬间 BGM 执行频带削峰避让；出现对白/旁白时相关音轨动态下压避让，对白波形起步瞬态与口型首帧毫秒级对齐。
-</video_assembler>
+
+## 八、参考资料
+
+需要细节时读取对应分册：
+
+- `references/媒体生成.md`
+- `references/提示词写作.md`
+- `references/五行特效与爆发态提示词库.md`
+- `references/武打剪辑律动与多轨音效设计参考.md`

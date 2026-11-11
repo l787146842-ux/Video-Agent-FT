@@ -33,10 +33,8 @@ def test_s6_skill_sections_golden_pinned():
         )
 
 
-@pytest.mark.allow_degradation
-def test_s6_heading_fallback_warns_on_silent_inherit():
-    """连续 ≥3 节未命中关键字而沿用上一阶段 → 记降级遥测（静默沿用不再无声）。
-    （A1/M4 两级制：切点只认 ##，用例同步从 # 级改为 ## 级。）"""
+def test_s6_unmapped_headings_do_not_warn():
+    """通用 skill 允许任意标题：未命中阶段关键字不记降级遥测（不误报）。"""
     from src.video_agent.utils import live_metrics
 
     content = (
@@ -52,8 +50,10 @@ def test_s6_heading_fallback_warns_on_silent_inherit():
         return rec["count"] if rec else 0
 
     before = _count()
-    split_skill_sections(content)
-    assert _count() > before, "静默沿用未触发降级遥测"
+    got = split_skill_sections(content)
+    assert _count() == before
+    # 未映射标题沿用上一阶段（检索面），但不产生告警
+    assert "正文丁" in got["storyboard_shot"]
 
 
 # ---------- #7 resolve_entry 唯一命中 ----------

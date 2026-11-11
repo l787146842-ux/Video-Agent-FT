@@ -71,20 +71,18 @@ def test_get_skill_doc_reads_bom_file(tmp_path):
     assert doc["description"] == "测试"
 
 
-def test_save_skill_doc_foreign_requires_section_tag(tmp_path):
-    """P2-4①：外来章节判定与 lint 口径一致（f\"<{t}>\" 存在），
-    正文散文里提及工具名不标为外来（裸子串误报清偿）。"""
-    # 散文提及工具名（无章节 tag）→ 保存逐字节忠实，不注 source
+def test_save_skill_doc_does_not_auto_mark_source(tmp_path):
+    """2026-11-11：不再按标签猜测“用户导入”，保存逐字节忠实。"""
     prose = "# 散文桩\n正文提及 resource_prepare_and_analyze 工具名\n"
     sd.save_skill_doc("散文桩", prose)
     assert (tmp_path / "skills" / "散文桩" / "SKILL.md").read_text(
         encoding="utf-8") == prose
-    # 含外来章节 tag → 新建文档补 source 来源标记
-    sd.save_skill_doc(
-        "章节桩", "# 章节桩\n<resource_prepare_and_analyze>\n分析正文\n"
-        "</resource_prepare_and_analyze>\n")
+    # 即使含旧标签，也按普通文本原样保存，不自动补 source
+    tagged = "# 章节桩\n<resource_prepare_and_analyze>\n分析正文\n</resource_prepare_and_analyze>\n"
+    sd.save_skill_doc("章节桩", tagged)
     saved = (tmp_path / "skills" / "章节桩" / "SKILL.md").read_text(encoding="utf-8")
-    assert "source: 用户导入" in saved
+    assert saved == tagged
+    assert "source:" not in saved
 
 
 def test_save_skill_doc_unclosed_header_keeps_original(tmp_path):

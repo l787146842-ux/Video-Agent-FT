@@ -22,8 +22,8 @@
 2. **能力面每个名字要么可委派、要么在豁免表内**：能力面出现「委派面没有、
    又无人消费」的名字即 FAIL（除非显式登记豁免 + 理由）——这正是本闸
    要防的漂移形态。
-3. **每个 Skill 的章节 tag 100% 被 `SECTION_TAG_STAGES` 覆盖**：
-   当前 16/16 满分，钉住防回退（新增章节 tag 忘记登记映射即被拦）。
+3. （已退役）2026-11-11 通用 skill 迁移后 Skill 正文不再有标签章节，
+   原「章节 tag 100% 被映射表覆盖」断言删除；本闸只校验 1、2 两条。
 
 ## 豁免表纪律（与 R2_BASELINE / DECLARED_PREFIXES 同口径）
 
@@ -58,7 +58,7 @@ CAPABILITY_ONLY_EXEMPT: Dict[str, str] = {
     "storyboard_shots": "批6 合并遗留：同上",
     "storyboard_audio": "批6 合并遗留：同上",
     "audio_generate": "能力词（供 available_tools 探针）；其 generation 章节已由 media_generate 阶段注入（2026-10-01 媒体生成支）",
-    "video_assembler": "D-8 待裁决：组装阶段无对应委派工具（Skill 规定由用户在工作台操作），章节不注入",
+    "video_assembler": "平台工具已落地（成片合成/方案落盘/推画布），但组装由主代理直接执行，不进委派面",
 }
 
 # 委派面出现、能力面没有的名字 —— 合并阶段的合法别名（有意为之，非漂移）。
@@ -69,25 +69,17 @@ DELEGATE_ONLY_ALLOWED: Set[str] = {"storyboard_design"}
 
 
 def _load_faces() -> Tuple[Set[str], Set[str], Dict[str, str], Set[str], Set[str]]:
-    """导入两集合 + 章节映射 + Skill 章节 tag 全集（fail-closed）。"""
+    """导入两集合（fail-closed）。
+
+    2026-11-11 通用 skill 迁移：Skill 正文不再有标签章节，原「章节 tag 覆盖」
+    断言随之退役；本脚本只校验委派面与能力面的一致性。
+    """
     from src.video_agent.core.subagent import PIPELINE_STAGE_KINDS
     from src.video_agent.skill_runtime.registry import PIPELINE_CAPABILITY_TOOLS
-    from src.video_agent.web.skill_docs import SECTION_TAG_STAGES
 
     delegate = set(PIPELINE_STAGE_KINDS)
     capability = set(PIPELINE_CAPABILITY_TOOLS)
-    tag_stages = dict(SECTION_TAG_STAGES)
-
-    # 全部 Skill 实际书写的章节 tag（独占行、成对闭合形态）
-    import io
-    import re
-    skills_dir = ROOT / "data" / "skills"
-    tags: Set[str] = set()
-    if skills_dir.is_dir():
-        for f in sorted(skills_dir.glob("*/SKILL.md")):
-            text = io.open(f, encoding="utf-8", errors="replace").read()
-            tags.update(re.findall(r"^<([a-zA-Z_][a-zA-Z0-9_]*)>\s*$", text, re.M))
-    return delegate, capability, tag_stages, tags, set()
+    return delegate, capability, {}, set(), set()
 
 
 def _ascii_safe(text: str) -> str:
@@ -125,21 +117,12 @@ def main() -> int:
         violations.append(
             "豁免表含已不在能力面的死条目（须删除）: " + ", ".join(stale))
 
-    # ---- 断言 3：Skill 章节 tag 100% 被映射表覆盖 ----
-    uncovered = sorted(t for t in skill_tags if t not in tag_stages)
-    if uncovered:
-        violations.append(
-            f"Skill 章节 tag 未被 SECTION_TAG_STAGES 覆盖（{len(uncovered)} 个）: "
-            + ", ".join(uncovered))
-
     # ---- 信息性输出（不进退出码）----
     # 注意：输出一律 ASCII-safe——Windows GBK 终端无法编码 ⊆/⊇ 等符号，
     # 会在 print 处抛 UnicodeEncodeError 把「通过」伪装成「失败」
     # （acceptance.py 模块 docstring 记载的同型事故）。
     notes.append(f"capability face = {len(capability)} names / "
                  f"delegate face = {len(delegate)} names")
-    notes.append(f"skill section tags = {len(skill_tags)}, "
-                 + ("all mapped" if not uncovered else f"{len(uncovered)} unmapped"))
     if CAPABILITY_ONLY_EXEMPT:
         notes.append(f"exempt entries = {len(CAPABILITY_ONLY_EXEMPT)} (shrink-only)")
 

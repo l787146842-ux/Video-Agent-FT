@@ -1,7 +1,8 @@
 import { createSignal, For, Show } from 'solid-js';
 import { FiChevronsLeft, FiFilePlus, FiTrash2 } from 'solid-icons/fi';
 import {
-  allDocs, selectedSlug, selectSkill, newDraft, removeSkill, studioLoading,
+  allDocs, loadFailures, selectedSlug, selectSkill, newDraft, removeSkill,
+  studioLoading,
 } from '@/stores/skill-studio';
 import { isSkillEnabled, toggleSkillEnabled } from '@/stores/skill-prefs';
 
@@ -32,6 +33,29 @@ export function SkillStudioList(props: { onCollapse: () => void }) {
         </div>
       </div>
       <div class="skst-list-body">
+        <Show when={loadFailures().length > 0}>
+          <details
+            class="skst-load-fail"
+            style={{
+              margin: '6px 8px',
+              padding: '6px 8px',
+              'border-radius': '6px',
+              background: 'rgba(220, 120, 60, 0.12)',
+              color: '#b45309',
+              'font-size': '11px',
+              'line-height': '1.4',
+            }}
+          >
+            <summary style={{ cursor: 'pointer' }}>
+              有 {loadFailures().length} 个 Skill 加载失败（点击查看原因）
+            </summary>
+            <ul style={{ margin: '6px 0 0', padding: '0 0 0 16px' }}>
+              <For each={loadFailures()}>
+                {(f) => <li>{f.slug}：{f.error}</li>}
+              </For>
+            </ul>
+          </details>
+        </Show>
         <For each={allDocs()}>
           {(doc) => {
             const enabled = () => isSkillEnabled(doc.slug);

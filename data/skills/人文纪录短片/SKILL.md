@@ -2,21 +2,28 @@
 name: 人文纪录短片
 description: 制作人文纪录短片，先确认制片规格（题材地域、画幅、时长、视觉风格），再推进故事板与生成。
 ---
-<planner>
+# 人文纪录短片
+
+## 一、这个 Skill 做什么
+
+制作人文纪录短片，先确认制片规格（题材地域、画幅、时长、视觉风格），再推进故事板与生成。
+
+## 二、制作流程
+
 **全片流程与阶段依赖：**
 1. 和用户确认并建立 制片规格.md（片名、题材地域、画幅比例、目标时长、视觉风格、输出语言）→ document_write
-2. 生成故事板（关键元素、镜头列表、音频层）→ storyboard_designer。故事板准备就绪后，扫描当前上下文，查找用户提供或之前生成的、与故事板条目匹配的任何资产（例如元素图像、背景音乐）。对于每个匹配项，在进行生成步骤之前，通过 media_generator 将资产绑定并分配给相应的故事板插槽 → media_generator
+2. 生成故事板（关键元素、镜头列表、音频层）故事板准备就绪后，扫描当前上下文，查找用户提供或之前生成的、与故事板条目匹配的任何资产（例如元素图像、背景音乐）。对于每个匹配项，在进行生成步骤之前，通过 媒体生成 将资产绑定并分配给相应的故事板插槽
 3. 设置元素：
 - 如果用户已经上传了元素资源（例如角色图像或引用的参考角色），直接将其绑定为相应 key_elements 的资产。
-- 否则，为所有元素生成图像 → media_generator。
-4. 为每个镜头生成首帧图（start_frame）→ media_generator
-5. 参考步骤4的首帧图生成视频 → **media_generator**
-6. 生成 BGM 音频层 → **media_generator**
-7. 完成全片时间线组装 → **video_assembler**
+- 否则，为所有元素生成图像
+4. 为每个镜头生成首帧图（start_frame）
+5. 参考步骤4的首帧图生成视频
+6. 生成 BGM 音频层
+7. 完成全片时间线组装
 
 **依赖顺序：** 2→1；3→2；4→2；5→4；6→2；7→5,6
 **暂停节点：** 不得一次性跑完全部流程。在 Storyboard 完成、元素图/首帧图完成、视频完成、音频生成后各暂停，等待用户确认再继续。
-注意: 用户提供或预先存在的媒体（主要影响第 3-5 步）： 在填充生成内容之前，先通过 media_generator 将媒体绑定并分配到适当的故事板位置；避免重复生成用户已提供的内容。
+注意: 用户提供或预先存在的媒体（主要影响第 3-5 步）： 在填充生成内容之前，先通过 媒体生成 将媒体绑定并分配到适当的故事板位置；避免重复生成用户已提供的内容。
 
 **建立 制片规格.md 的指南**
 1. 片名：名称应契合“人文纪录片”调性，避免过度商业或浮夸的命名
@@ -29,14 +36,14 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 - 包含空气感：灰尘、水汽、潮湿、热浪、风。
 - 光线限定：仅限自然光（晨光、黄昏、阴天、窗边光）。
 - 保留不完美：允许并刻意保留轻微失焦、曝光波动、真实混乱感。
-</planner>
 
-<script_analyze>
+## 三、剧本分析
+
 - 若用户上传参考图片或视频，提取以下信号供下游使用：主体身份与外貌特征、场景地点与环境氛围、光线条件（方向 / 色温 / 质感）、画面色调与饱和度风格。
 - 输出结构化描述，不做主观评价。
-</script_analyze>
 
-<storyboard_designer>
+## 四、故事板设计
+
 **全球人文纪录片剧本与剧情规划规范**
 一、 核心叙事理念：观察生活，而非“拍故事”
 - 去戏剧化：摒弃强戏剧冲突、商业广告式的剧情设计。剧情规划重点不在于“讲一个起承转合的故事”，而是呈现“真实世界的人类生活”。
@@ -86,9 +93,9 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 **音频层设计**
 - BGM（可选）：若使用，选择极简器乐或无调性环境音景；禁止流行音乐节奏。
 - 不以对白驱动叙事。
-</storyboard_designer>
 
-<media_generator>
+## 五、媒体生成
+
 **元素图/首帧图生成（每个镜头的 start_frame）**
 - 工具：**TextToImage/ImageToImage**，模型与分辨率按全局设置的默认渠道填写
 - 首帧图须与 Storyboard 镜头描述的景别、光线、主体姿态一致，作为视频生成的视觉锚点。
@@ -104,9 +111,9 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 
 **失败处理**
 - 若音频生成失败，优先在同一渠道内重试；不要自动切换至其他工具，停止并告知用户。
-</media_generator>
 
-<write_media_prompt>
+## 六、提示词写法
+
 **首帧提示词**
 核心逻辑：聚焦于“决定性瞬间”的捕捉、胶片色彩质感、真实的光影与空气感。摒弃任何运镜和节奏词汇。
 1. Prompt 万能公式
@@ -135,9 +142,9 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 3. 示例 Prompt (视频)
 (EN) Fixed camera with slight handheld breathing. A slow long take of a South American woman washing clothes by the river. Her back is to the camera. The damp morning air slowly blows her hair. Natural overcast light with subtle environmental shifts. ARRI Alexa Natural, Sony Venice Documentary LUT, low saturation, soft highlights. Cinematic pacing, breathing space, no fast cuts. Nomadland and Honeyland style, Netflix documentary vibe, observational, slow, human, quiet, timeless.
 (ZH解析) 固定镜头带有微弱的手持呼吸感。一个缓慢的长镜头：一位南美妇女在河边洗衣服，背对镜头。潮湿的晨风缓缓吹动她的头发。自然的阴天光线，带有微妙的环境变化。ARRI Alexa Natural，索尼威尼斯纪录片LUT，低饱和度，高光柔和。电影级节奏，呼吸感留白，无快剪。无依之地与蜂蜜之地风格，Netflix纪录片氛围，观察性，缓慢，人文，安静，永恒。
-</write_media_prompt>
 
-<video_assembler>
+## 七、组装导出
+
 **节奏原则**
 - 长镜头优先，保留完整的时间流动感；不为追求"有趣"而剪短镜头。
 - 镜头间可用 0.5–1s 的黑场或声音延续过渡，制造呼吸感。
@@ -146,4 +153,3 @@ description: 制作人文纪录短片，先确认制片规格（题材地域、�
 **音画关系**
 - BGM（如有）音量低于视频层声音；淡入淡出，不抢画面。
 - 不做强制音画同步；画面与声音各自自然流动。
-</video_assembler>

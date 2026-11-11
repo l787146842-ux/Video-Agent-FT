@@ -60,8 +60,10 @@ from src.video_agent.core.turn_executor import TurnExecutor
 from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.progress import emit_event_card
+from src.video_agent.config import settings
+from src.video_agent.skill_runtime import frontmatter as skill_frontmatter
 from src.video_agent.skill_runtime.registry import (
-    STAGE_LABELS, fallback_skill_from_state, labeled_tool_sections,
+    STAGE_LABELS, fallback_skill_from_state,
 )
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_contract, workflow_runtime
@@ -428,9 +430,9 @@ class Planner:
         复用同一 `run_agent_loop`（经子 Planner）连续跑完 → 只回摘要。
 
         `kind` = 具名类型（qoder 花名册形态）：决定子级工具白名单与职责块。
-        `stage` = 阶段执行器（2026-09-15 试点，对齐 Flova 章节隔离）：带 stage 时
-        系统精准注入该阶段 Skill 章节全文 + 工具面去 read_skill（断跨阶段预读
-        污染）；未知/缺省回落通用形态全现状。
+        `stage` = 阶段归组（2026-11-11 通用 skill 口径）：带 stage 时子代理仍拿
+        Skill 主文档全文，stage 只用于 actor 标签、建卡限定与遥测；不再按阶段
+        切章节，也不再 deny read_skill（分册由子代理按需自读）。
         非机械执行器：发起方=模型、走同一 `guard_pipeline`、无 `exec_*`。子 Planner
         自带独立 FCToolRunner/TurnExecutor 实例（避免与父共享 runner 的轮内状态），
         仅共享 StateManager（父此刻挂起等待，无并发写冲突）。"""
@@ -540,38 +542,28 @@ class Planner:
                   or "").strip()
         if _brief:
             base_task += f"\n\n{_brief}"
-        # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）：
-        # 带 stage → 精准注入该阶段章节全文（不截断；章节缺失回落全文截断）；
-        # 不带 stage → 现状全文前 8000 字截断（通用委派零改动）。
-        # 2026-10-04 事故 9999：注入面走 **labeled** 版（保留 <tag>/标题行），
-        # 使多章拼接后章界可见——原先只给纯正文，子代理误判「写法那章没给我」
-        # （实为两章已并注），退化为只填模板槽位，11/11 张表格图漏「景别与时长标注」。
-        # 只还原标记，不改章节正文、不加要求。
+        # 平台把 Skill 主文档整篇注入子代理（通用 skill 口径）：
+        # 不再按 stage 切章节；stage 只用于 actor 标签与遥测。
+        # 分册（references/…）不注入，子代理需要时自行 read_skill。
         parent_skill = str(getattr(parent_ctx, "skill_name", "") or "").strip()
         if parent_skill and self._skill_docs is not None:
-            injected = ""
-            if resolved_stage:
-                try:
-                    injected = labeled_tool_sections(parent_skill, resolved_stage)
-                except Exception as _e:
-                    logger.warning("[Subagent] 阶段章节取读失败（回落全文截断）: {}", _e)
-                    injected = ""
-            if injected:
-                base_task += (
-                    f"\n\n===== 注入 Skill 章节（{parent_skill} · {resolved_stage}）=====\n"
-                    f"{injected}")
-            else:
-                try:
-                    getter = getattr(self._skill_docs, "get_skill_doc", None)
-                    if getter:
-                        doc = getter(parent_skill)
-                        if doc and doc.get("content"):
-                            sk = doc["content"]
-                            if len(sk) > 8000:
-                                sk = sk[:8000] + "\n...（章节内容截断，超预算，子代理可按需调 read_skill 读全文）"
-                            base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
-                except Exception as _e:
-                    logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
+            try:
+                getter = getattr(self._skill_docs, "get_skill_doc", None)
+                doc = getter(parent_skill) if getter else None
+                sk = skill_frontmatter.strip_frontmatter(
+                    (doc or {}).get("content") or "").strip()
+                if sk:
+                    total = len(sk)
+                    max_chars = int(getattr(
+                        settings, "skill_subagent_inject_max_chars", 0) or 0)
+                    if max_chars > 0 and total > max_chars:
+                        sk = (sk[:max_chars]
+                              + f"\n...（主文档共 {total} 字，已截断；"
+                                "其余内容按需调 read_skill 读取）")
+                    base_task += (
+                        f"\n\n===== Skill 主文档（{parent_skill}）=====\n{sk}")
+            except Exception as _e:
+                logger.warning("[Subagent] Skill 主文档注入失败（跳过）: {}", _e)
         # 流式二期（子代理活动 actor 归组）：子循环事件经 tagger 统一打标
         # subagent={cid,stage,label,depth}，前端按 cid 把同一子代理的活动归成
         # 一张 actor 卡（flova 具名 specialist 形态）。只加字段、不改子事件原有

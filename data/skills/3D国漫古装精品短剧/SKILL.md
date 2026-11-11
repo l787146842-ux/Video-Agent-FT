@@ -2,7 +2,14 @@
 name: 3D国漫古装精品短剧
 description: 制作3D国漫风格古装短剧，需上传剧本；按场景判断选择对应路径，推进规格、故事板到生成的全流程。
 ---
-<planner>
+# 3D国漫古装精品短剧
+
+## 一、这个 Skill 做什么
+
+制作3D国漫风格古装短剧，需上传剧本；按场景判断选择对应路径，推进规格、故事板到生成的全流程。
+
+## 二、制作流程
+
 **启动协议**
 用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选择对应路径：
 1. **从零开始（0→1）：** 用户只有创意构思或粗略大纲，尚无完整剧本。先与用户深入沟通，帮助其梳理故事框架、人物关系、核心冲突；在用户确认框架后，协助将构思发展为可拍摄的短剧剧本。每一步修改须向用户展示并确认，不得擅自定稿。
@@ -26,16 +33,16 @@ description: 制作3D国漫风格古装短剧，需上传剧本；按场景判�
 **所有细化建议以卡片或对话形式逐条呈现，用户逐条确认后才能写入剧本；用户否决的不得强行保留。**
 
 **全流程阶段与依赖关系**
-1. 读取并分析用户上传的剧本文件或创意大纲，提取角色、场景、关键道具，识别剧本类型，评估剧本成熟度与钩子强度→**script_analyze**
+1. 读取并分析用户上传的剧本文件或创意大纲，提取角色、场景、关键道具，识别剧本类型，评估剧本成熟度与钩子强度
 2. **（可选）剧本细化与钩子增强：** 若剧本不成熟或用户要求优化，按上述服务逐条向用户提出修改建议，确认后落地→**document_write**（更新剧本文本）
 3. 将全局制作参数写入制片规格.md（画幅比例：16:9横版（固定，不可更改）；目标时长；影像风格基调：3D古风；输出语言）→**document_write**
-4. 设计Storyboard：登记所有key_element（角色、场景、关键道具），将剧本拆解为有序shot列表，规划audio_layer（BGM、旁白）→**storyboard_designer**
-5. 生成所有key_element设定图（角色三视图、场景四视图、关键道具图）及角色key_element_audio（音色样本）→**media_generator**
-6. 逐shot生成视频。每镜引用对应角色key_element图像 + 场景四宫格key_element图像→**media_generator**。从第二个shot起追加空间一致性参考帧。撰写视频提示词前须执行空间校验，截帧、选帧四层过滤、防漏帧校验的具体规则见 **media_generator** 与 **script_analyze** 分区。
+4. 设计Storyboard：登记所有key_element（角色、场景、关键道具），将剧本拆解为有序shot列表，规划audio_layer（BGM、旁白）
+5. 生成所有key_element设定图（角色三视图、场景四视图、关键道具图）及角色key_element_audio（音色样本）
+6. 逐shot生成视频。每镜引用对应角色key_element图像 + 场景四宫格key_element图像从第二个shot起追加空间一致性参考帧。撰写视频提示词前须执行空间校验，截帧、选帧四层过滤、防漏帧校验的具体规则见 媒体生成 与 **script_analyze** 分区。
    - **第一个shot视频生成后强制暂停（强制）：** 第一个shot是全片视觉基调的锚点——场景空间、人物站位、光影风格、角色外貌都在此镜确立。生成后必须暂停，向用户展示视频，请用户确认场景布局是否正确（如角色背后的背景元素是否符合预期）、人物站位是否合理。若用户不满意，根据反馈调整空间锚点卡/shot描述后重新生成，确认通过后再继续后续shot。
-   - **重新生成单个shot时的内容锁定（强制）：** 须复用该shot已确认的提示词原稿，仅改用户指定部分（完整规则见media_generator与write_media_prompt）。
-7. 生成所有audio_layer音频资产（BGM、第三人称旁白）→**media_generator**（角色台词与内心OS已内嵌于视频生成，不在此步单独生成）
-8. 按Storyboard顺序组装时间线，完成音画同步与剪辑输出→**video_assembler**
+   - **重新生成单个shot时的内容锁定（强制）：** 须复用该shot已确认的提示词原稿，仅改用户指定部分（完整规则见媒体生成与提示词写法）。
+7. 生成所有audio_layer音频资产（BGM、第三人称旁白）（角色台词与内心OS已内嵌于视频生成，不在此步单独生成）
+8. 按Storyboard顺序组装时间线，完成音画同步与剪辑输出
 
 **依赖关系：** 2→1；3→1,2；4→1,2,3；5→4；6→5；7→4；8→5,6,7
 
@@ -60,9 +67,9 @@ description: 制作3D国漫风格古装短剧，需上传剧本；按场景判�
 **信息缺失处理：** 剧本中未写明的角色长相、场景细节、影像风格，一律主动询问用户，不得静默假设或擅自补充。
 
 **最高原则——不擅自决策：** 本Skill涉及的所有创作决策（剧本改写、角色外貌定义、场景细节补充、钩子设计、镜头取舍等），无论大小，必须向用户呈现选项或建议并经确认后才执行。宁可多问一句，不可擅自拍板。
-</planner>
 
-<script_analyze>
+## 三、剧本分析
+
 **剧本/创意大纲分析**
 - 读取用户上传的剧本文件或创意大纲，提取所有角色（姓名、身份、关系）、场景（空间类型、关键陈设）、关键道具，识别剧本类型（权谋/武侠/言情/悬疑等），评估剧本成熟度（结构完整性、台词是否齐备）与钩子强度（开篇3秒是否有足够吸引力）。
 - 若用户上传的是小说而非分镜脚本，识别并标注需短剧化改编的部分，告知用户该文本需先完成改编。
@@ -83,10 +90,10 @@ description: 制作3D国漫风格古装短剧，需上传剧本；按场景判�
   - **在场角色与位置：** 列出帧中出现的角色及其在画面中的位置（左/中/右、前景/后景）。
   - **景别：** 标注该帧的景别（大特写/特写/近景/中景/中全景）。
 - **背景匹配预检（强制）：** 分析完成后，将该帧的可见背景元素清单与下一镜空间锚点卡中"各角色背后/左侧/右侧可见背景元素"逐项比对。若该帧的背景元素与下一镜空间锚点卡描述的背景元素**不一致**（如帧中背景是大门但下一镜空间锚点卡写的是高台），该帧须标注"背景不匹配——不建议用于下一镜"，并在选帧阶段排除。若匹配，标注"背景匹配"。此预检是前置过滤——在帧进入选帧池之前就排除背景不一致的帧，避免背景不匹配的帧在选帧时因景别/方向/角色等元数据通过而被误纳入。
-- **回溯补截（被调用时执行）：** 若media_generator阶段发现所需参考帧缺失（如当前shot需要女主近景帧但前序帧中没有），须回溯调用本工具从前序shot视频重新截取对应类型的帧，补截后同样执行视觉内容分析与背景匹配预检。
-</script_analyze>
+- **回溯补截（被调用时执行）：** 若媒体生成阶段发现所需参考帧缺失（如当前shot需要女主近景帧但前序帧中没有），须回溯调用本工具从前序shot视频重新截取对应类型的帧，补截后同样执行视觉内容分析与背景匹配预检。
 
-<storyboard_designer>
+## 四、故事板设计
+
 **全局风格锁定**
 所有视觉设计统一采用3D建模风格：以3D CGI渲染质感呈现中国古代/古风场景与人物，兼具国风美学（丝绸光泽、玉石质感）与明亮清透的柔和光影。角色与场景的材质、色调、氛围均以此为基调（写实摄影与欧美卡通风格不在选项内）。
 
@@ -204,187 +211,17 @@ description: 制作3D国漫风格古装短剧，需上传剧本；按场景判�
 - **旁白（第三人称VO）**：如有画外音/旁白（非角色视角的第三方叙述），以narration类型登记，注明narration_speaker_profile（音色特征）、语气、具体台词文本及覆盖的镜头范围。
 - **角色内心OS**：当画外音属于某角色的内心独白（OS）时，一律按角色专属声音通道处理——必须绑定到该角色的key_element_audio，使内心独白与该角色台词使用同一音色，保持角色声音一致性。**内心OS须内嵌在视频生成中（与台词同级，不作为独立旁白轨单独生成），其时间计入shot总时长（纳入时间分配，不跳过）——按OS文本字数估算所需时长并纳入shot的内切镜时间分配。内心OS期间角色不开口说话（嘴唇不动）**——OS是角色的内心声音，画面中角色嘴巴保持闭合，须为OS时段设计具体的面部表情变化路径（如"眉头缓缓拧紧→目光从柔和转为凌厉→唇角微压"），须像台词表演一样逐拍写出表情节拍，与OS情绪递进同步，逐拍写出表情节拍（避免笼统的"微表情传递情绪"写法）。在audio_layer中登记时标注所属角色element ID，并注明"使用该角色key_element_audio作为音色参考，内嵌于视频生成"。
 - 视频生成阶段视频本身**不内嵌BGM**（在audio_layer独立生成后于组装阶段混音）；台词/音效/内心OS可在视频生成时内嵌。
-</storyboard_designer>
 
-<media_generator>
-**key_element设定图生成**
-- **角色设定图：** 使用 **TextToImage**，模型与分辨率按全局设置的默认渠道填写。**画幅遵循全局设置中的画幅参数。** 按「媒体提示词」章节中的角色图提示词模板撰写。
-- **场景四视图：** 使用 **TextToImage**，模型与分辨率按全局设置的默认渠道填写。每个场景生成一张四视图设定图（2×2网格：从空间A端看向B端/从空间B端看向A端/从左侧横向看/从右侧横向看），覆盖两个纵深方向与两个横向方向，构成完整四向空间覆盖。场景中的关键道具/固定陈设自然融入四个空间视角中，不单独给特写角度。**场景设定图不渲染光影——采用平光、无阴影的均匀照明（flat even lighting, no cast shadows），仅展示空间结构、材质与纹样细节，不呈现方向性光源或阴影。色彩调性仍须与全局色调基调一致——明亮清透、色彩明度偏高、饱和度中低到中等（灰暗或高饱和的色偏不在基线内）。** 按「媒体提示词」章节中的场景四视图提示词模板撰写。
-- **关键道具设定图：** 使用 **TextToImage**，模型与分辨率按全局设置的默认渠道填写。按「媒体提示词」章节中的关键道具资产图提示词模板撰写。
-- **同一角色多套造型：** 使用 **ImageToImage**，模型与分辨率按全局设置的默认渠道填写，将首套造型图作为reference_image上传，仅替换服装/发型/妆容/配饰，锁定脸型/五官/肤色/身高比例。
-- **角色key_element_audio（音色样本）：** 为每个有台词/内心OS的角色产出一段音色样本，由系统音频生成通道（text_to_narration 旁白模式，具体渠道与模型由全局设置决定，本文档不指定）按角色描述中的声音特征（音色/语气/情绪基调）产出一段短样本（时长遵循全局设置中的时长参数），注册asset_id并绑定到该角色的key_element_audio槽位，供后续视频生成时保持台词与内心OS跨镜音色一致。若用户已上传角色声音参考，可直接注册绑定，无需重新产出。
+## 五、媒体生成
 
-**用户上传资产处理**
-- 用户上传的角色/场景/道具资产图经分析判定为非3D风格时，须先通过 **ImageToImage**（渠道与模型遵循全局设置）将原图转化为3D古风风格后方可绑定到key_element（非3D资产图一律先转化后使用）。
-- 转化时以原图为reference_image，提取原图角色身份特征，注入3D古风风格关键词，要求保持身份特征不变、仅转化渲染风格。
-- 用户上传的3D风格资产图可直接注册asset_id并绑定到对应key_element槽位。
+需要选模型、绑参考图、生成音频时，读 `references/媒体生成.md`（read_skill(resource="references/媒体生成.md")）。
 
-**单shot视频生成**
-- 使用 **generate_video**（MultiModalToVideo 多模态参考通道），模型与分辨率按全局设置的默认渠道填写，时长遵循全局设置中的时长参数。**降级方案（强制）：** 若默认视频模型不可用（如非会员或模型失败），在同工具内按可用模型策略降级，并将降级情况告知用户。降级时须告知用户当前使用的模型。若MultiModalToVideo所有模型均失败，停止任务并向用户说明，处理范围限定在本工具路径内。
-- **生成前资产重检（强制）：** 每次生成镜头视频之前，必须重新检查当前镜头涉及的所有key_element下已有哪些已绑定资产，以及当前镜头是否已有参考资产（空间一致性参考帧等）。用户可能随时新增资产，**不可依赖上次的记忆**，必须以当前实际资产列表为准。**防漏帧校验（强制）：** 若检查发现当前shot所需的某种参考帧（特定角色视角/景别/方向）在前序截取帧中不存在，须先回溯前序shot视频补截对应帧并补做视觉内容分析，补截完成后再进入生成。检查后按以下规则选取参考：
-  - **角色图：** 若某角色有多套妆造参考图，只选与当前场景服装一致的那一套，无需同时放入多套造型图。
-  - **场景图：** 选取当前镜头所属场景的场景四宫格key_element图像。
-  - **空间一致性参考帧：** 若为第二个shot起，须从所有已生成的前序shot中由Agent自行挑选空间一致性参考帧（一帧或多帧）。Agent须回溯前序所有已生成shot已绑定的参考帧，根据当前shot的需求挑选最相关的帧——不仅限于紧邻的上一镜，也可回溯更早的shot（例如当前shot有某角色在中间shot缺席后重新出场且站位应与之前一致，可回溯该角色上次在场时的shot的角色视角帧）。**选帧须同时通过以下四层过滤，任一层不通过则排除该帧：** ①**背景内容匹配过滤（强制基线）：** 检查该帧在截帧时生成的视觉内容分析标签中的"可见背景元素清单"，将其与当前shot空间锚点卡中各角色背后/左侧/右侧可见背景元素逐项比对——背景元素不一致的帧直接排除。若帧没有视觉内容分析标签（如用户手动上传的帧），须先补做视觉内容分析再比对。②**角色过滤：** 当前shot不在场角色的视角帧须排除，只保留站位帧、当前shot在场角色的视角帧。③**方向过滤：** 帧的场景方向须与当前shot机位方向一致。④**景别兼容性区间过滤（强制）：** 参考帧的景别须在当前shot最宽内切镜景别对应的兼容区间内——大特写shot可参考大特写/特写/近景；特写shot可参考特写/大特写/近景/中景；近景shot可参考近景/中景；中景shot可参考中景/近景/中全景/特写；中全景shot可参考中全景/中景/近景/特写/大特写。任何shot一律将全景/大全景帧排除在参考范围外。若前序shot中只有宽景别帧可用（如仅有站位中全景帧）且其景别不在当前shot兼容区间内，则不为当前shot纳入该帧——改用角色key_element图像 + 场景四宫格 + 提示词文字描述固定站位关系，不引入景别不匹配的参考帧。**若前序帧通过景别/方向/角色过滤但未通过背景内容匹配过滤，同样予以排除——背景不匹配的帧比没有参考帧更危险，会导致模型生成与空间锚点卡矛盾的背景。**
-- **第一个shot的参考输入：** 该镜涉及的所有角色key_element图像（按上述重检规则选取对应造型） + 对应场景四宫格key_element图像。光影须以shot描述中继承的场景光影基准为准，空间关系以shot描述中的镜头相对描述为权威。**第一个shot是全片视觉基调的锚点——场景空间、人物站位、光影风格、角色外貌都在此镜确立，务必确保空间锚点卡中的背景元素描述准确。**
-- **跨镜空间一致性帧截取（强制）：** 每个shot视频生成完成后，由Agent根据下一镜的需求从该视频中截取**一帧或多帧**画面。**截帧数量最小化原则（强制）：** 若当前shot与下一镜之间人物未走动、站位未变、背景场景相同，只截取**一帧**最关键的画面即可——多截同质帧无意义且增加干扰。仅当下一镜需要不同视角的信息（如不同角色的清晰帧、不同方向的场景背景帧）且这些信息无法从单一帧中获得时，才截取多帧。截取不限于站位中全景——Agent须判断下一镜需要哪些参考：下一镜聚焦男主则截取男主视角清晰的帧，聚焦女主则截取女主帧，需要场景背景则截取场景信息最丰富的帧，需要整体站位则截取中全景帧。\*\*景别兼容性截帧约束（强制）：\*\* 截取帧的景别须在下一镜最宽内切镜景别对应的兼容区间内——大特写shot可截取大特写/特写/近景帧；特写shot可截取特写/大特写/近景/中景帧；近景shot可截取近景/中景帧；中景shot可截取中景/近景/中全景/特写帧；中全景shot可截取中全景/中景/近景/特写/大特写帧。全景/大全景帧一律排除在截帧范围外（宽景别帧会拉扯模型向宽画面偏移导致切镜后突然变远、人物位置漂移）。应从当前shot中截取景别落在下一镜兼容区间内的帧。\*\*截帧前须先查阅下一镜Storyboard确认下一镜实际出场人物——下一镜不在场的角色不截取其角色视角帧，因为不在场角色的视角帧中场景背景角度与下一镜不同，纳入后会导致模型误引入该角度的背景而造成场景漂移。站位帧可纳入（传递站位关系），但角色视角帧仅限下一镜在场角色。\*\*所有纳入的帧的场景方向须与下一镜机位方向一致，纳入帧统一保持同一机位方向。多帧之间互补，覆盖不同视角、不同角色和不同区域，帮助下一镜更完整地还原空间。截取的帧逐一注册asset_id并绑定到该shot，供下一shot视频生成时作为空间一致性参考帧。截帧操作由 Agent 回看该 shot 视频后直接完成（可经 view_storyboard_media 加载草稿媒体核对）。
-- **从第二个shot起的参考输入：** 在第一个shot参考输入基础上追加 **从所有已生成的前序shot中由Agent自行挑选的空间一致性参考帧（一帧或多帧）**。Agent须回溯前序所有已生成shot已绑定的参考帧，根据当前shot的需求挑选最相关的帧——不仅限于紧邻的上一镜，也可回溯更早的shot（例如当前shot有某角色在中间shot缺席后重新出场且站位应与之前一致，可回溯该角色上次在场时的shot的角色视角帧）。**选帧须通过上述"生成前资产重检"中的四层过滤（背景内容匹配→角色过滤→方向过滤→景别兼容性）。** 若所有前序帧均未通过背景内容匹配过滤，则不为当前shot纳入任何参考帧，改用角色key_element图像 + 场景四宫格 + 提示词文字描述固定站位关系。**这些参考帧用于固定人物站位关系和场景背景，不影响当前shot的镜头景别、运镜和切镜设计**——当前shot镜头仍完全按Storyboard描述执行。
-- **第一个shot视频生成后强制暂停（强制·不受模式选择影响）：** 第一个shot生成后必须暂停，向用户展示视频，请用户确认场景布局是否正确（如角色背后的背景元素是否符合预期）、人物站位是否合理。若用户不满意，根据反馈调整空间锚点卡/shot描述后重新生成，确认通过后再继续后续shot。**无论用户选择一键生成模式还是逐镜确认模式，第一个shot的强制暂停均不可跳过。** 一键生成模式下，第一个shot确认通过后剩余shot连续生成不再逐镜暂停；逐镜确认模式下，每个shot生成后均暂停等待用户确认。
-- 若用户上传或已生成的资产匹配Storyboard槽位，优先绑定使用，避免重新生成用户已有内容。
-- **重新生成单个shot时的内容锁定（强制）：** 当用户要求对已生成的某shot重新生成（而非修改Storyboard），Agent必须严格复用该shot在Storyboard中已确认的提示词原稿——台词原文、角色动作、情绪路径、镜头景别/机位/运镜、空间锚点卡描述均须逐字保持不变。仅根据用户明确指出的调整诉求（如"角色站位不对""背景元素有误"）修改对应部分，修改范围以用户明确指出为限（擅自改写台词、增删动作、调整情绪路径、改动镜头设计均不在范围内）。重新生成前须向用户展示"本次重新生成保留的内容vs修改的内容"清单，经用户确认后执行。
+## 六、提示词写法
 
-**音频生成**
-- **BGM：** 由系统音频生成通道（text_to_instrumental 纯音乐模式，具体渠道与模型由全局设置决定，本文档不指定）按audio_layer中的BGM设计产出。视频生成时视频本身不内嵌BGM，BGM在audio_layer独立生成后于组装阶段混音。
-- **第三人称旁白（VO）：** 由系统音频生成通道（text_to_narration 旁白模式，具体渠道与模型由全局设置决定，本文档不指定）按narration_speaker_profile产出。
-- **角色内心OS：** 内心OS不作为独立旁白轨单独生成——须内嵌在视频生成中（写入视频提示词 \[音频\] 段，与台词同级），通过该角色的key_element_audio绑定保持音色一致。OS时间计入shot总时长，按说话时长估算。OS期间角色嘴唇不动，须为OS时段设计具体的面部表情变化路径并写入视频提示词主体段，与OS情绪递进同步。
-- **角色台词与内心OS音色一致性：** 视频生成时通过character的key_element_audio绑定保持台词与内心OS跨镜音色一致。
+写三视图/四视图/表格图/视频提示词时，读 `references/提示词写作.md`（read_skill(resource="references/提示词写作.md")）。
 
-**资产管理**
-- 为每个生成的或用户上传的资源注册稳定asset_id，并绑定到Storyboard对应槽位（key_element/shot/audio_layer）。
-- 同一资源的新版本可通过rebinding更新关联，保持asset_id稳定。
-</media_generator>
+## 七、组装导出
 
-<write_media_prompt>
-**全局提示词撰写原则（适用于所有提示词类型）**
-- **风格关键词强制写入（所有提示词类型）：** 无论是视频提示词、角色图提示词、场景图提示词还是道具图提示词，都必须写入关键词组：半写实3D国漫风格，stylized anime-doll beauty, youthful androgynous pretty face, narrow oval V-shaped face, soft jawline, slightly enlarged almond eyes, delicate straight nose, soft thin lips, smooth poreless porcelain skin, clean stylized skin shader, soft cinematic close-up lighting。关键词逐字写入（"按项目风格填写""与全片风格一致"等模糊措辞不在选项内），确保模型每次生成都落在统一的3D古风渲染风格上。**例外（场景四视图提示词）：** 场景四视图设定图不渲染光影，将风格关键词组中的 "soft cinematic close-up lighting" 替换为 "flat even lighting, no shadows, no cast shadows, no dramatic light direction"——但色调关键词（bright and clear tone, medium-high lightness, low to medium saturation, fresh harmonious color palette）仍然适用于场景设定图，确保场景图的色彩明度与饱和度与视频画面保持同一基调。场景设定图仅不呈现方向性光源或阴影效果，色彩调性须与全局色调一致。
-- **禁用真人摄影/解剖学词汇（强制）：** 角色外貌描述须使用3D角色造型语言（如sculpted、stylized、3D character face），禁止使用真人摄影/解剖学词汇（如weathered、deep-set、heavy brow ridge、prominent cheekbones、photographic、ultra-realistic等）——这些词汇在训练数据中几乎只与真人摄影关联，会将输出拉向写实方向。面部特征用3D雕塑化语言描述，如"sculpted jaw"、"stylized brow"、"3D rendered cheekbones"。
-- **禁止抽象表述，全部具体化：** 提示词描述一律落到可被模型直接渲染的具体视觉元素（"优美的""有氛围感的""戏剧性的"等抽象形容词排除在外）——写明具体颜色、材质、光位、角度、距离、动作幅度、表情肌肉状态等。例如不写"优雅的姿态"，而写"右手轻提裙摆至腰侧，左肩微向后展，下颌微抬15°"；不写"昏暗的光线"，而写"右侧高处窗光，暖黄色3200K，投射角约45°"。
-- **禁用比喻性/情绪化外观词（强制）：** 禁止使用中文中带有物理外观副作用的比喻性情绪词或成语——模型会将这些词中的颜色、损伤、形变描述**按字面渲染**，而非理解为情绪比喻。典型示例：①"面目狰狞"→模型会添加伤疤、疤痕、面部扭曲；②"面色惨白""面无血色""面如死灰"→模型会将整张脸渲染为纯白色/灰白色，破坏肤色一致性；③"血盆大口"→模型会渲染出带血的嘴部；④"青面獠牙"→模型会生成绿色皮肤和尖牙；⑤"面如桃花""面若桃花"→模型会将面部渲染为粉色/桃花色色块。这类词的共同特征是：字面包含颜色词、损伤词或形变词，实际想表达的是情绪状态（恐惧、愤怒、震惊、害羞等）。替代写法：将情绪**拆解为面部肌肉层面的具体微表情**——如不写"面目狰狞"，而写"眉头猛然拧紧，鼻翼扩张，上唇掀起露出牙齿，下颌前突"；不写"面色惨白"，而写"瞳孔骤缩，嘴唇微张，面部肌肉僵硬"（肤色由key_element图像锁定，提示词不干预肤色）。
-- **仅描述物理可见内容（强制）：** 提示词只描述画面中实际可见的元素——可见的动作、表情、姿态、光影和空间关系。不要描述画面外的元素，不要向模型解释角色动机、内心活动或情感背景；只写镜头能拍到的物理事实，让模型通过可见的肢体语言和面部表情自行呈现情绪，而非用文字"告诉"模型角色在想什么。
-- **人物站位关系一致性（强制）：** 在为Storyboard shot、参考图片撰写提示词时，人物之间的相对站位关系（左右顺序、前后景层级、彼此距离）必须与该shot的空间锚点卡完全一致，同一场景的各提示词统一使用同一套站位描述。同一场景内多个shot之间，若人物未发生位移，站位关系须逐字保持一致；若发生位移，须在提示词中明确写出从何处移动到何处。
-- **空间关系描述方式（强制——镜头相对描述）：** 描述角色与场景的空间关系时，禁止使用"角色面向某物"的角色相对朝向写法（如"角色面向龙椅"），必须改为镜头相对描述——直接写从镜头视角看，角色背后/左侧/右侧可见什么背景元素，以及哪些关键场景元素位于画面外或景深处不可见。这样无需模型做空间推理，直接指定该渲染什么、不该渲染什么。
-
-**内切镜时长估算（视频提示词撰写前）**
-若Storyboard shot未标注各内切镜时长，按以下经验值估算，确保单shot合计时长符合全局设置中的时长参数且满足最低时长保障：
-镜头类型建议时长大特写/手部脚部特写2–3.5s面部特写（含台词）3–5s近景胸像（含台词）3.5–5s中景/中全景4–6s运镜推进/拉远/环绕基础景别时长 +1s台词落点后停留+1s（强制，每句台词末尾须留余韵）动作落点后停留+1s（强制，每个主要动作完成后须保持收势姿态停留，禁止做完即切）
-
-**台词时长估算（强制）：** 每句台词须按字数估算说话时长（中文约2.5字/秒——古风戏剧化念白带情绪停顿与气息，实际语速低于日常对话，以2.5字/秒为基线），加上台词落点后1s停留，作为该台词对应内切镜的最低时长。若台词+停留时间超过该景别建议时长上限，以台词+停留时间为准。
-**动作完成度校验（强制）：** 每个内切镜的时长须覆盖该镜内所有动作的完整起势→执行→收势过程**加上动作落点后1s停留**——若动作链条+停留需要5s但景别建议时长只有3s，以动作完成+停留所需时长为准，动作完整性优先于景别建议时长。
-超出全局设置的时长上限必须拆分为独立shot。
-
-画幅遵循全局设置中的画幅参数。按以下模板撰写提示词，各字段填入该角色的具体信息：
-> 角色：\[角色名\]，\[年龄段\]，\[性别/体态\]，\[身份/职业\]。
-> 外貌：\[脸型、五官、眉眼、鼻梁、唇形、发型、肤色、年龄感、核心气质、标志性识别点\]。
->
-> 风格：**所有角色须强化视觉品质**——在提示词中显式写入："半写实3D国漫风格，stylized anime-doll beauty, youthful androgynous pretty face, narrow oval V-shaped face, soft jawline, slightly enlarged almond eyes, delicate straight nose, soft thin lips, smooth poreless porcelain skin, clean stylized skin shader, soft cinematic close-up lighting."**所有角色（含配角）的肤色必须统一为warm porcelain-white skin with soft golden undertone**。
-> 服装：\[必须严格贴合中国古代/古风服饰体系——主角偏华丽精致、层次丰富：内搭、中衣、外袍、披帛、腰带等多层叠穿，面料写明（丝绸、织锦、纱罗、锦缎等），配以刺绣纹样与玉佩、金簪等饰物，体现身份品阶；配角可适当简化但风格统一。逐一列明：内搭、外袍、下装、鞋、首饰、关键道具、材质、颜色、纹样、新旧程度\]。
-> 表情与气质：\[常用表情须具体到面部肌肉层面（如"眉尾微挑、唇角轻抿、眼底含笑但不达眼底"），标注情绪强度；标志性微表情（如习惯性抿唇/假笑时眼角不动等）作为跨镜识别锚点；情绪底色、人物状态\]。3D渲染角色表情需要比真人更鲜明、更具戏剧张力的描述。
-> 画面排列：左侧1/3区域为超大高清面部特写，右侧2/3区域整齐排布角色三张全身三视图，包含角色的正面、侧面及背面三个维度的全身站姿视图。纯白背景，干净极简，无阴影，高清，精致细节；角色长相和服装细节一致。
-> 背景：白色背景，柔和均匀灯光，无场景道具，无复杂背景。
-> 限制：必须是同一个角色；脸型、发型、服装、鞋子、配饰完全一致；不要生成多个不同人物；不要换装；不要改变发色；不要随机文字；不要水印；不要logo。
-
-**同一角色多套妆造提示词（ImageToImage，具体渠道与模型由全局设置决定，本文档不指定）**
-当同一角色需要生成第二套及以后造型图时，使用ImageToImage，将首套造型图作为reference_image上传，提示词在前述角色图模板基础上做以下调整：
-- **外貌字段**：与首套完全一致，脸型、五官、肤色、身高比例、核心识别特征逐项锁定——这些由垫图保证，提示词中重复写明以强化锁定。
-- **服装字段**：替换为本套造型的具体服装/发型/妆容/配饰描述，同样遵循古风服饰体系与主角华丽精致要求。
-- **画面排列、背景、风格**：与首套保持一致，确保输出格式统一。
-- 在提示词中显式注明：Reference image: <<<image_1>>> is the same character's first look—keep identical face, facial features, skin tone, body proportions; only change costume/hairstyle/makeup/accessories.
-
-**用户上传非3D资产图的风格转化提示词（ImageToImage，具体渠道与模型由全局设置决定，本文档不指定）**
-当用户上传的角色/场景/道具资产图经分析判定为非3D风格时，使用ImageToImage将原图转化为3D古风风格。以原图为reference_image，提示词写法如下：
-- 提取原图中的角色身份特征（脸型、五官、发型、肤色、服装款式、配饰等），在提示词中逐项写明，要求转化后保持一致。
-- 注入3D古风风格关键词：半写实3D国漫风格，stylized anime-doll beauty, youthful androgynous pretty face, narrow oval V-shaped face, soft jawline, slightly enlarged almond eyes, delicate straight nose, soft thin lips, smooth poreless porcelain skin, clean stylized skin shader, soft cinematic close-up lighting,
-- 在提示词中显式注明：Reference image: <<<image_1>>> is the same character/scene/prop—keep identical identity features (face shape, facial features, hairstyle, costume structure, proportions); only convert the rendering style to 3D ancient Chinese CGI. Do not alter the character's identity.
-- 服装/道具若含现代元素，在转化提示词中一并替换为符合古风世界观的对应物品。
-- 限制：保持原图角色身份不变；不要改变脸型/五官/肤色/身高比例；不要随机文字、水印、logo。
-
-**关键道具资产图提示词（TextToImage，具体渠道与模型由全局设置决定，本文档不指定）**
-按以下字段撰写，纯白背景、干净极简、无阴影、高清；画幅遵循全局设置。各字段填入该道具具体信息：尺寸、材质、颜色、新旧程度、正反面（如有差异需在同一张图中同时展示正反两面）、当前状态。风格关键词必须显式写入：3D CGI rendering, ancient Chinese aesthetic, PBR materials, stylized 3D CGI（逐字写入，不省略）。限制：只生成该道具本身，不要出现人物或场景；不要随机文字、水印、logo。
-
-**场景四视图提示词（TextToImage，具体渠道与模型由全局设置决定，本文档不指定）**
-A location reference sheet of \[场景描述，含空间结构/材质/标志物/纹样工艺细节\].
-**Lighting: Flat, even, shadowless illumination—uniform ambient light only, no cast shadows, no dramatic light sources, no directional light, no ambient occlusion shadows, no light rays or god rays. The scene reference sheet should read like a clean** 半写实3D国漫风格，**3D model viewport render with flat ambient lighting, not a cinematically lit shot.**
-Show four directional views of the same location in one composite image (2×2 grid). Each view is a full spatial angle—no isolated prop close-ups. Key furnishings and fixed landmarks naturally appear within whichever angle they are visible from:
-Top-left: View from end A looking toward end B (forward depth—what is visible looking into the space from one end)
-Top-right: View from end B looking toward end A (reverse depth—what is visible looking back from the opposite end)
-Bottom-left: Left-side lateral view (camera positioned at the left side of the space, looking across horizontally)
-Bottom-right: Right-side lateral view (camera positioned at the right side of the space, looking across horizontally)
-Identical flat even lighting (no shadows, no dramatic light direction), color palette, and props across all four panels.
-\[Style\]: Richly detailed ancient Chinese interior/exterior environment—carved wooden furniture with intricate grain patterns, painted beams with traditional motifs (cloud dragons, floral scrolls, geometric fretwork), lattice windows with openwork designs, inlaid mother-of-pearl surfaces, silk curtains with embroidered borders, bronze incense burners, jade ornaments. Color palette follows classical Chinese aesthetics—warm wood tones, muted indigo, elegant ochre, subtle moon-white, harmonious and layered.
-\[人群条件\]：若为群像场景（上朝、集市、宴会等），将模板末尾的 "No people in frame." 替换为以下人群描述：Populate the scene with background crowd NPCs in period-appropriate ancient Chinese attire—\[人群规模/服饰风格/站位分布/活动状态，如 "court officials standing in formal rows", "market vendors and pedestrians browsing and haggling"\]. Crowd figures should be slightly lower in detail than the main environment, serving as atmospheric background without dominating the frame. 若为非群像场景则保留：No people in frame.
-No text, no labels, no watermark, no cast shadows, no dramatic lighting.
-
-**视频提示词撰写前空间校验（强制）**
-撰写每个shot的视频提示词前，执行一次空间校验：
-- 对照该shot的空间锚点卡，逐角色确认提示词中描述的背景元素是否正确——根据空间锚点卡中角色的镜头相对背景描述，确认每个角色背后/左侧/右侧可见的背景元素在提示词中描述正确。
-- 确认画面外不可见的场景元素已在提示词中排除，未被误写为可见。
-- 确认提示词与空间锚点卡的空间描述完全一致。
-- **参考帧分工说明：** 空间一致性参考帧已在视频生成准备阶段经四层过滤（背景内容匹配→角色过滤→方向过滤→景别兼容性）选出，本阶段不重复执行选帧过滤，仅做提示词写作层面的一致性校验：背景匹配确认、景别兼容性确认、背景元素逐项对照。
-- **参考帧背景内容匹配校验（从第二个shot起强制）：** 若本shot纳入了从任意前序shot中挑选的空间一致性参考帧，须执行以下校验序列（任一步不通过则排除该参考帧）：
-  1. **背景内容匹配检查（强制基线）：** 检查该帧在截帧时生成的视觉内容分析标签中的"可见背景元素清单"，将其与当前shot空间锚点卡中各角色背后/左侧/右侧可见背景元素逐项比对。若帧的背景元素与空间锚点卡不一致（如帧中背景是大门但空间锚点卡写的是高台），该参考帧必须排除（本shot提示词中不再引用）。若帧没有视觉内容分析标签，须先补做视觉内容分析再比对。
-  2. **景别兼容性检查：** 确认参考帧景别在本shot最宽内切镜景别对应的兼容区间内——大特写可参考大特写/特写/近景；特写可参考特写/大特写/近景/中景；近景可参考近景/中景；中景可参考中景/近景/中全景/特写；中全景可参考中全景/中景/近景/特写/大特写。若参考帧景别不在兼容区间内，该参考帧必须排除。
-  3. **背景元素逐项对照：** 通过背景内容匹配和景别检查后，确认提示词中描述的每个可见背景元素在参考帧中确实可见且一致。若参考帧中拍到了某背景元素但提示词未提及，须补入；若提示词描述了某背景元素但参考帧中看不到（可能该方向实际不可见），须回溯修正空间锚点卡和提示词。
-  - 若参考帧未通过背景内容匹配检查或景别兼容性检查，该帧必须排除——排除后改用角色key_element图像 + 场景四宫格 + 提示词文字描述固定站位关系，引用范围以景别与背景双匹配的参考帧为限。校验通过后，在提示词 \[空间\] 段中以 <<<image_reference_frame>>> 占位符显式引用参考帧，并写明"background elements must match reference frame <<<image_reference_frame>>>—\[列出需保持一致的具体背景元素\]"。
-- 若校验发现不一致，须先修正提示词中的场景元素描述（或回溯修正shot描述/空间锚点卡），修正后再进入视频生成（以修正通过为生成前提）。
-- **重新生成时的提示词锁定（强制）：** 须复用上次已确认的视频提示词原稿，仅改用户指定部分（完整规则见「视频生成」章节）。
-
-**单shot视频提示词**
-每个shot输出一段提示词，影像风格行作为整体基调先行，其后严格按 **摄影机→主体→空间→音频** 四段顺序撰写：
-\[影像风格\]: 半写实3D国漫风格, stylized 3D CGI rendering, ancient Chinese aesthetic,
-bright and clear tone, medium-high lightness, soft global illumination, soft shadows with preserved detail in dark areas, no harsh light rays, no god rays, silk painting color palette, low to medium saturation, fresh harmonious color palette, stylized depth of field, 24fps.
-
-\[摄影机\]: \[按内切镜顺序逐镜写明：景别 + 机位角度 + 运镜方式 + 切镜变化\]，多镜时每镜换行；同一shot内各镜景别/机位/运镜须有变化，避免重复堆叠
-**固定镜头时长上限（强制）：** 任何标注为fixed/lock-off的内切镜时长不宜过长——需要更长时长必须改为带运镜的镜头（push-in/pull-out/orbit/pan/dolly等）或拆成多个有切镜变化的短镜。对话场景禁止长段固定机位。
-**台词-镜头动势联动（强制）：** 每句台词对应的内切镜描述中必须包含至少一个镜头动势词——运镜变化（push-in/pull-out/orbit/pan/tilt/crane/dolly/whip-pan等）、景别切换（cut to close-up/cut to extreme close-up/cut to reaction/cut to detail/cut to over-shoulder（须同时点名两个不同角色——前景肩为一人，背景脸为另一人）等）或机位变化（switch to low angle/switch to side profile等），由Agent根据台词情绪与叙事功能自行判断选用。禁止 "static camera, character speaks" 式的零动势描述；同一shot内多句台词的动势词须有变化，不可句句重复同一运镜。
-示例1（单镜，短时长固定）: Medium waist shot, fixed camera, eye-level, 3s
-示例2（多镜含反应镜头与细节特写）:
-1. Medium two-shot, slow dolly-in, eye-level—A and B facing each other
-2. Close-up on A, slow push-in—A delivers line with suppressed fury
-3. Close-up on B, fixed, 2s—B's reaction: eyes widen, jaw tightens (reaction shot)
-4. Extreme close-up on A's eyes, rapid push-in—A speaks key line, eyes narrow with cold rage
-5. Extreme close-up on A's clenched fist, fixed, 2s—knuckles white, veins bulging (detail cutaway)
-6. Close-up on A, push-in tighter—A continues, voice drops
-
-示例3（含过肩镜头）:
-1. Medium two-shot, eye-level—A and B facing each other across the desk
-2. Over Character B's shoulder, looking at Character A, slow push-in—A speaks with suppressed fury (foreground: B's shoulder/back silhouette; background: A's face)
-3. Over Character A's shoulder, looking at Character B, fixed, 3s—B's reaction: lips press tight, gaze drops (foreground: A's shoulder; background: B's face)
-
-**过肩镜头写法（强制）：** 过肩镜头必须同时点名两个不同角色——写明"over \[前景角色\]'s shoulder, looking at \[背景角色\]"，前景角色只有肩/背出现在画面前景，背景角色是画面主体（正脸/表情）。禁止将同一角色同时写在前景和背景（如"over Character A's shoulder, looking at Character A"）。
-
-**反应镜头写法**：对话段落中，在说话者的镜头之间插入听者反应特写（reaction shot），用 "reaction shot" 标注并写明听者面部微表情；切回说话者时可收紧景别强化情绪。
-
-**重点台词推进写法**：关键台词处用 "rapid push-in to extreme close-up" 或 "slow push-in from close-up to extreme close-up on eyes/lips" 标注推进路径，速度词与情绪强度匹配。
-
-**身体部位细节特写写法**：需要非面部细节特写时，用 "extreme close-up on \[身体部位\] (detail cutaway)" 标注，紧跟情绪词描述局部状态（如 "clenched fist, knuckles white"），与面部镜头交替出现，同一shot内不超过两个细节特写。
-
-**对话镜头动势池（强制泛化）：** 对话段落中镜头须持续变换景别与机位，主动从以下动势池中选取组合，让每句台词都有不同的画面呈现方式（Agent根据台词情绪与叙事功能自行判断，不局限于以下列举）：
-- **运镜类**：slow push-in（缓推逼近情绪）/rapid push-in（急推强化冲击）/pull-out（拉远揭示孤立或压迫）/orbit/arc shot（环绕呈现对峙张力）/whip-pan（急摇切场或转注意力）/dolly/tracking（跟随走位）/crane up-down（升降揭示空间或心境）/tilt/pan（横纵摇揭示关系）
-- **景别切换类**：cut to extreme close-up on eyes/lips/brow（面部局部大特写）/cut to close-up on hands/fist/fingers（手部细节）/cut to over-shoulder（过肩——前景为镜头背后角色的肩/背，背景为对面的另一角色正脸，两人必须不同）/cut to two-shot（双人镜头交代关系）/cut to medium-full（拉远至中全景制造疏离或震惊——禁止拉至全景/大全景）
-- **反应与细节类**：cut to reaction shot（听者反应）/cut to detail cutaway（道具/身体局部细节特写）/cut to insert（插入镜头：如被握紧的信件、颤抖的杯盏等叙事道具）
-- **机位变化类**：switch to low angle（仰拍强化压迫）/switch to high angle（俯拍强化弱势）/switch to side profile（侧面轮廓强化内心封闭）
- 组合原则：同一对话段落内连续的内切镜应交替使用不同类别的动势（如push-in→reaction→detail cutaway→orbit），避免连续多镜都属同一类别（如连续三镜都是push-in）。对话越长，动势组合越须丰富。
-
-\[主体\]: <<<image\_角色>>>—\[当前服装/状态，与设定图一致\]；\[人物动作分解，按叙事顺序推进，主要动作→次要动作;
-每个关键节拍须附带具体面部微表情描述（如"brows snap together, jaw tightens, eyes narrow with suppressed fury"），标注情绪强度词；3D CGI角色情绪需比真人更夸张才能被模型呈现;
-**每句台词必须搭配一个明确的肢体动作**（gesture/body shift/head turn/gaze shift），动作与台词情绪合理匹配，禁止static standing dialogue;
-**动作幅度词库（强制）：** 每个关键动作必须附带一个标准化幅度词，从以下词库选取：large/sweeping/sharp/explosive/sudden/violent/forceful/dramatic/swift/wide。示例："sweeps sleeve wide", "snaps head around", "stumbles half a step back", "slams fist onto the table"。**禁止**使用subtle/slight/gentle/mild/soft/faint等弱幅度词描述主要动作——3D CGI角色的小幅微动会被模型忽略或渲染成僵硬站姿，主要动作必须用强幅度词才能被准确呈现;
-**情绪-动作联动（强制）：** 动作幅度必须与情绪强度挂钩——高情绪强度（愤怒/震惊/悲痛/恐惧）必须配大幅度肢体动作（甩袖/猛然转身/后退半步/握拳/拍案/摔物等），用large/explosive/violent/sudden等词描述；低情绪强度（平静/试探/犹豫/克制）才允许小幅度动作，用measured/restrained等词描述。**禁止出现"情绪激烈但身体不动"的割裂写法**——当情绪标注为高强度时，对应肢体动作幅度必须同步升级，否则模型会渲染出表情狰狞但身体僵硬的违和画面;
-**情绪动态与放大（强制）：** 情绪不能全程平和——视频提示词中每个shot须有明确的情绪起伏，关键节拍处情绪强度必须显式升级（如suppressed anger→explosive fury, calm composure→visible shock），标注情绪变化路径；3D CGI角色情绪需比真人更夸张才能被模型呈现，平和段与爆发段的情绪反差须拉大，避免全程低情绪输出;
-**眼神互动（强制）：** 每句台词至少附带一个具体的眼神动作描述（gaze locked on/eyes dart to/avoids eye contact/glares at/glances sideways at/looks up to meet/drops gaze等），眼神方向与目标须明确写出；对话场景中须设计角色间的眼神互动——A说话时标注B的眼神反应（如B's eyes widen/B averts gaze/B holds stare），用眼神传递潜台词与角色关系张力。禁止空洞注视（empty stare）或无指向目光;
-动作变化须合理，服务于情绪递进，不可为动而动;
-避免写绝对秒数，用slow/quick/lingering描述节奏；**台词落点后须描述至少1s的情绪延续动作**（如"holds gaze, expression lingers, slight exhale"），禁止台词说完即切——须让角色保持在末尾情绪状态中呼吸，否则模型会在台词音轨结束时同步截断画面;
-**动作落点后停留（强制）：** 每个主要动作完成后须描述至少1s的姿态延续与余势（如"holds final pose, body lingers, slight exhale before next movement"），禁止动作刚做完即切——须让角色在收势姿态中停留呼吸，否则模型会在动作完成时同步截断画面导致动作仓促收尾;
-**动作完整性（强制）：** 每个动作节拍须写明完整的起势→执行→收势三段（仅写"角色A转身"式的省略写法排除在外）——模型需要完整的动作链条才能在时长内自然执行，省略过程会导致动作被压缩成瞬间跳变或仓促收尾\]
-
-**武打shot动作描写（当shot为武打场景时）：** 按Storyboard武打设计的四段式结构（起手→接触→命中→结果）逐段写明动作分解；打击动作用sharp/explosive/impact等力度词描述，命中处可标注slow-motion（仅决胜一击）；闪避、格挡、落空、反制动作须与命中动作交替出现（命中与非命中交替）；镜头晃动仅标注在命中瞬间（全程晃动排除在外）。
-
-**动作完整链条（强制）：** 每个交手节拍必须写清六要素完整因果链——①谁先动（发起方+具体动作）→②谁防守（防守方+具体应对）→③接触点在哪里（兵器/身体接触的确切位置）→④谁被击中或格挡成功（交锋结果）→⑤受力结果是什么（身体/姿态的即时变化）→⑥段末人物停在什么状态（节拍结束时双方站位/姿态）。禁止用"二人激烈打斗""动作华丽"等笼统概括，必须逐拍拆解为可被模型渲染的具体动作序列。
-
-\[空间\]: <<<image\_场景>>>—\[逐字继承该场景element scene的固定光影基调（光源 + 色温 + 氛围词），以逐字继承为唯一口径（改写措辞排除在外）；仅在剧情明确要求光影变化时方可调整并注明原因\]；\[镜头相对空间描述：从镜头视角写明画内可见的背景元素、各角色相对位置（角色背后/左侧/右侧可见什么背景元素），以及哪些关键场景元素位于画面外或景深处不可见——禁止用"角色面向某物"的角色相对朝向写法\]
-**参考帧引用（从第二个shot起强制）：** 若本shot纳入了从任意前序shot中挑选的空间一致性参考帧，须在空间段末尾追加参考帧绑定指令：<<<image_reference_frame>>>—Reference frame from a prior shot. **IMPORTANT: This reference frame is for background layout and scene backdrop consistency ONLY.** The camera angle, shot scale, framing, perspective, and camera movement described in the \[摄影机\] section above MUST take full precedence—do NOT replicate, copy, or imitate the reference frame's camera perspective, shot composition, lens height, or framing. The reference frame defines what background elements exist and where they are positioned in the scene; it does NOT define how the camera shoots them. Background elements and spatial layout behind/left/right of each character MUST match this frame. Specifically: \[逐元素列出需保持一致的背景元素，如"the grand door visible behind Character A's back, the carved screen on the left side, the dragon throne platform in the far background"——这些元素须与空间校验中对照参考帧确认的结果一致\]。Do not change or relocate these background elements; the scene backdrop must remain identical to the reference frame. **However, the camera angle, shot scale, framing, and composition must follow the \[摄影机\] section instructions exclusively—the reference frame's visual perspective must not influence the camera language of this shot.**
-\[音频\]: \[台词\] \[角色\]: {台词原文} (with \[情绪词\] tone)；\[内心OS\] \[角色\]: {(OS)OS原文} (with \[情绪词\] tone, no lip movement—inner voice only, character's mouth stays closed; **facial expression must shift in sync with OS emotional arc—write specific micro-expression beats in \[主体\] section for the OS duration, e.g. brows slowly tighten, gaze hardens from soft to sharp**)；\[音效\] <\[音效描述，紧贴对应动作\]>；无音乐——BGM在audio_layer独立生成、后期混音，视频生成时须内嵌no background music
-
-\[禁止\]: No subtitles, no background music, no text overlay, no watermark, no modern elements (modern clothing, electronic devices, plastic, modern architecture, etc.)—strictly ancient Chinese setting.
-
-\[时长\]: Approximately \[X\]s
-
-**固定尾部规则：**
-- 所有视频提示词末尾必须包含No subtitles, no background music, no text overlay, no modern elements——BGM在audio_layer独立生成，后期混音；台词/音效/内心OS可内嵌；现代元素禁止项覆盖服装、器物、建筑、用语等一切与古代背景不符的内容。
-- 若所选视频渠道支持内嵌音频/文本标记（具体渠道与模型由全局设置决定，本文档不指定）：音乐 (...)、音效 <...>、台词 {...}（非项目语言需在括号前标明语言）、内心OS {(OS)...}（括号内只写原文，不加情绪标注）、片内字幕 【...】；台词和内心OS括号内只写原文，不加情绪标注。角色名写在花括号外，格式为 \[角色\]: {台词原文}、\[角色\]: {(OS)OS原文}。内心OS须标注"(OS)"前缀以区分开口台词，并在对应内切镜的\[主体\]描述中注明角色嘴唇不动（no lip movement, mouth stays closed），同时为OS时段设计具体的面部表情变化路径（须像台词表演一样逐拍写出表情节拍，与OS情绪递进同步，以具体节拍替代笼统的"微表情"写法）。
-- 不依赖绝对时间戳（如 "0–3s"）描述动作节奏，改用速度形容词。
-</write_media_prompt>
-
-<video_assembler>
 **跨镜空间一致性策略**
 - 跨镜空间一致性在视频生成阶段已通过参考帧机制保障，组装阶段不重复执行选帧过滤。
 - 组装时如发现跨镜站位漂移或场景背景不一致，须回溯视频生成阶段重新截取参考帧或调整本shot空间锚点描述，检查通过后再拼接。
@@ -406,4 +243,10 @@ bright and clear tone, medium-high lightness, soft global illumination, soft sha
 **导出基准**
 - 视频轨分辨率对齐生成时的最高规格；如需提升，经super_resolution（待平台补齐工具）上采样后再导出。
 - 帧率24fps；如需流畅慢动作片段，对目标shot单独执行帧插值（fps提升至60）后再并入时间线。
-</video_assembler>
+
+## 八、参考资料
+
+需要细节时读取对应分册：
+
+- `references/媒体生成.md`
+- `references/提示词写作.md`

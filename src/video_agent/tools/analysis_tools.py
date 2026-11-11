@@ -22,7 +22,7 @@
 披露：不常驻注入，读完即进历史）。
 
 命名口径：工具名 = ``script_analysis_report``，与能力词
-``script_analyze``（Skill 章节标签，阶段标记非工具名）刻意区分——
+``script_analyze``（Skill 标题阶段名，阶段标记非工具名）刻意区分——
 防幻影能力词回潮进助手白名单（test_skill_assistant_route 钉死）。
 
 形态口径（批 5，对齐外部标杆 机制）：外部标杆 全程没有结构化字段表——

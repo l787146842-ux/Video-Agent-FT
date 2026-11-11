@@ -231,15 +231,19 @@ def test_api_skills_excludes_rejected_but_docs_keeps_full(portal_env):
     assert resp2.status_code == 200, resp2.text
     doc_slugs = {d["slug"] for d in resp2.json()["docs"]}
     assert {"good-pack", "bad-pack"} <= doc_slugs  # 工作台仍可见坏包供修复
+    # 2026-11-11：坏包仍 fail-closed，但失败原因经 failed[] 旁路可见
+    failed = {f["slug"]: f["error"] for f in resp2.json().get("failed", [])}
+    assert "bad-pack" in failed and "name" in failed["bad-pack"]
 
 
 # ---------- ⑦ 存量包字节级目录快照 ----------
 
 
 def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
-    """空停用 + 全注册：build_skill_catalog 输出与磁盘口径基线逐字节相等
+    """空停用 + 全注册：build_skill_catalog 的**存量包**输出与磁盘口径基线逐字节相等
     （基线固化 tests/fixtures/skill_catalog_golden.json；2026-09-05 存量 15 包
     重采；2026-09-09 随用户新增「新-Skill」包重采为 16 包）。
+    用户后续新增的 Skill 不参与存量快照（只过滤非存量条目，新增包仍须可加载）。
     数据面临时回挂真实 data/skills，避开测试镜像夹具桩。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
@@ -247,9 +251,19 @@ def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
     registry.reset_registry()
     registry.sync_all(force=True)
     try:
-        assert len(registry.loadable_entries()) == 16, "存量 16 包须全注册（M1 口径）"
+        assert len(registry.loadable_entries()) >= 16, "存量 16 包须全注册（允许用户新增）"
         golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
         actual = _pb(_base_state()).build_skill_catalog(_ctx())
-        assert actual == golden["catalog"], "存量包目录段发生字节级漂移"
+        stock_names = {
+            line[2:].split("：", 1)[0].strip()
+            for line in golden["catalog"].splitlines() if line.startswith("- ")
+        }
+        # 只比对存量条目：用户新增 Skill 的行不进入快照（新增不影响存量字节基线）
+        actual_lines = [
+            line for line in actual.splitlines()
+            if not line.startswith("- ")
+            or line[2:].split("：", 1)[0].strip() in stock_names
+        ]
+        assert "\n".join(actual_lines) == golden["catalog"], "存量包目录段发生字节级漂移"
     finally:
         registry.reset_registry()

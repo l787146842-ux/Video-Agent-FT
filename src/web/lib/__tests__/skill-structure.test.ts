@@ -1,6 +1,6 @@
 /**
  * skill-structure 解析/序列化 round-trip 单测。
- * fixtures 覆盖双格式：tag 式（对齐 data/skills 存量）与标题式（对齐 DEFAULT_SKILL_DOC）。
+ * fixtures 覆盖：标题式（通用格式）与旧标签文本（只作普通文本，不触发章节解析）。
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -62,22 +62,17 @@ describe('splitFrontmatter', () => {
   });
 });
 
-describe('parseSkillStructure（tag 式）', () => {
+describe('parseSkillStructure（旧标签按普通文本）', () => {
   const s = parseSkillStructure(TAG_FIXTURE);
   it('name/description 提取且剥离前缀', () => {
     expect(s.name).toBe('剧本生视频（需上传剧本）');
     expect(s.description).toBe('本 Skill 面向「已有剧本」的短视频工业化生成。');
-    expect(s.format).toBe('tag');
+    expect(s.format).toBe('heading');
   });
-  it('章节顺序与 kind', () => {
-    expect(s.sections.map((x) => x.kind)).toEqual(['tag', 'tag', 'preamble']);
-    expect(s.sections[0].id).toBe('planner');
-    expect(s.sections[0].title).toBe('流程规划');
-    expect(s.sections[1].id).toBe('storyboard_shots');
-    expect(s.sections[2].body).toContain('散落的补充说明文本');
-  });
-  it('章节元数据 hint', () => {
-    expect(sectionMeta(s.sections[0]).hint).toContain('按什么顺序推进');
+  it('标签不再触发章节解析，整段作为前言', () => {
+    expect(s.sections.map((x) => x.kind)).toEqual(['preamble']);
+    expect(s.sections[0].body).toContain('<planner>');
+    expect(s.sections[0].body).toContain('散落的补充说明文本');
   });
 });
 
@@ -164,7 +159,7 @@ skill_name: 不生效的裸键行（不在文档首行起）
 });
 
 describe('round-trip', () => {
-  it('tag 式：parse(serialize(parse)) 深相等', () => {
+  it('旧标签文本：parse(serialize(parse)) 深相等', () => {
     const once = parseSkillStructure(TAG_FIXTURE);
     const twice = parseSkillStructure(serializeSkillStructure(once));
     expect(twice).toEqual(once);
@@ -202,28 +197,23 @@ describe('工具函数', () => {
   });
   it('blankSkillTemplate 可解析', () => {
     const s = parseSkillStructure(blankSkillTemplate());
-    expect(s.name).toBe('新 Skill');
-    expect(s.sections.map((x) => x.title)).toContain('流程规划');
+    expect(s.sections.map((x) => x.id)).toContain('三、制作流程');
   });
-  it('blankSkillTemplate 六章节齐全（新建 Skill 模板，2026-10-20 用户裁决）', () => {
+  it('blankSkillTemplate 是通用标题式骨架（2026-11-11 迁移）', () => {
     const s = parseSkillStructure(blankSkillTemplate());
-    // 顺序 = 平台 Skill 的章节惯例（流程→分析→故事板→生成→提示词→组装）
-    expect(s.sections.map((x) => x.title)).toEqual([
-      '流程规划', '素材分析', '故事板设计', '媒体生成', '提示词写法', '组装导出',
+    expect(s.sections.map((x) => x.id)).toEqual([
+      '一、这个 Skill 做什么', '二、开工前先确认', '三、制作流程',
+      '四、结构与素材', '五、专业方法', '六、参考资料',
     ]);
-    // 每节都有占位正文，保存后能力探针可识别（非空章节）
+    expect(s.sections.every((x) => x.kind === 'heading')).toBe(true);
+    expect(s.format).toBe('heading');
+    expect(s.name).toBe('新 Skill');
     for (const sec of s.sections) expect(sec.body.trim().length).toBeGreaterThan(0);
   });
-  it('标题式章节复用 tag 的 label/hint（六段标题不再是裸标题）', () => {
+  it('章节显示名回退标题原文（不再有平台标签映射）', () => {
     const s = parseSkillStructure(blankSkillTemplate());
-    const byTitle = new Map(s.sections.map((x) => [x.title, x]));
-    expect(sectionMeta(byTitle.get('流程规划')!)).toMatchObject({ label: '流程规划' });
-    expect(sectionMeta(byTitle.get('流程规划')!).hint).toContain('按什么顺序推进');
-    expect(sectionMeta(byTitle.get('素材分析')!).hint).toContain('看完素材后');
-    expect(sectionMeta(byTitle.get('故事板设计')!).hint).toContain('故事板');
-    expect(sectionMeta(byTitle.get('媒体生成')!).hint).toContain('出图');
-    expect(sectionMeta(byTitle.get('提示词写法')!).hint).toContain('提示词');
-    expect(sectionMeta(byTitle.get('组装导出')!).hint).toContain('剪辑');
+    const flow = s.sections.find((x) => x.title.includes('制作流程'))!;
+    expect(sectionMeta(flow).label).toBe(flow.title);
   });
   it('blankSkillTemplate 含可注册 frontmatter（name/description 非空）', () => {
     const raw = blankSkillTemplate();

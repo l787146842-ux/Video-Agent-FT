@@ -128,11 +128,8 @@ class SkillEntry:
     slug: str
     name: str
     content: str
-    # stage → 章节原文（split_skill_sections 产出）
+    # stage → 章节原文（split_skill_sections 产出；按 Markdown 标题推导）
     sections: Dict[str, str] = field(default_factory=dict)
-    # stage → 章节条目（split_skill_sections_labeled 产出）：保留原始标签/标题，
-    # 供注入面渲染章界（P1：与 sections 同一份解析，只是多留标记）。
-    section_blocks: Dict[str, List[Dict[str, str]]] = field(default_factory=dict)
     @property
     def manifest(self) -> Optional[Dict[str, dict]]:
         """manifest 声明活读：frontmatter 唯一源，注册不快照，
@@ -179,40 +176,6 @@ class SkillEntry:
             parts.append(body)
         return "\n\n".join(parts).strip()
 
-    def labeled_section_for(self, tool: str) -> str:
-        """该能力声明对应的章节全文，**保留原始章节标记**（注入面用）。
-
-        与 `section_for` 同源同语义（去重规则一致：同一段正文只出现一次），
-        唯一区别是每节前还原其原始标签/标题行（`<media_generator>` /
-        `## 提示词写法`），使多章拼接后**章界对模型可见**。
-
-        **2026-10-04 事故 9999**：原注入面只给纯正文，子代理看不出手里有
-        两章——而 `<media_generator>` 章内写着「具体提示词写法见下方
-        「媒体提示词」章节」，它据此误判该章未注入，退化为「只填模板槽位」，
-        11/11 张分镜表格图全漏「景别与时长标注」。本方法只还原标记，
-        **不改任何章节正文、不新增要求**（非 prose 方案）。
-        """
-        stages = CAPABILITY_TOOL_STAGES.get(tool) or ()
-        parts: List[str] = []
-        seen: set = set()
-        for s in stages:
-            for item in self.section_blocks.get(s) or []:
-                body = item.get("body", "")
-                if not body or not body.strip():
-                    continue
-                # 与 section_for 同一去重口径：同 body 只注入一次
-                if body in seen:
-                    continue
-                seen.add(body)
-                head = (item.get("head") or "").strip()
-                tail = (item.get("tail") or "").strip()
-                if head:
-                    blocks = f"{head}\n{body}" + (f"\n{tail}" if tail else "")
-                else:
-                    blocks = body
-                parts.append(blocks)
-        return "\n\n".join(parts).strip()
-
     @property
     def package_root(self) -> Optional[Path]:
         """目录包根（data/skills/<slug>/）；主文档不在场返回 None。
@@ -236,6 +199,24 @@ class SkillEntry:
             k: v for k, v in raw.items()
             if isinstance(k, str) and k.strip() and isinstance(v, dict)
         }
+
+    @property
+    def asset_manifest(self) -> List[str]:
+        """目录包素材清单（assets/ 下全部实际文件，包内相对路径，排序）。
+
+        只作描述符通道：图/音/视频/文档素材按引用消费，二进制不进文本上下文。
+        """
+        root = self.package_root
+        if root is None:
+            return []
+        assets = root / ASSET_DIR_NAME
+        if not assets.is_dir():
+            return []
+        return sorted(
+            f.relative_to(root).as_posix()
+            for f in assets.rglob("*")
+            if f.is_file() and not f.is_symlink()
+        )
 
     @property
     def resource_manifest(self) -> List[str]:
@@ -263,6 +244,9 @@ class SkillEntry:
 
 _registry: Dict[str, SkillEntry] = {}
 _synced: bool = False
+# 坏包可见性（2026-11-11 通用 skill 批）：注册仍 fail-closed（坏包不进
+# _registry），但把失败原因旁路留存，供 /api/skills/docs 展示。
+_failures: Dict[str, str] = {}
 
 # 目录包资源分层（P2-4）：附属资源唯一开放子目录 = references/；
 # 资源清单只收录文本类后缀（二进制资源不经 read_skill 文本通道开放）。
@@ -307,16 +291,13 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     # SkillEntry.manifest 属性活读，注册不快照。章节解析只对剥离声明块
     # 后的正文（YAML 头不是 Skill 正文，不得混入章节/探针）。
     content = frontmatter.strip_frontmatter(doc.get("content") or "")
-    # 章节解析：正文面（sections）与注入面（section_blocks）**同一份解析**
-    # （P1 单一事实源）——labeled 版多留原始标签/标题，供注入渲染章界；
-    # 端口未提供 labeled 实现时回落纯正文（章界退化为现状，不阻断注册）。
-    labeled = getattr(sd, "split_skill_sections_labeled", None)
+    # 章节解析：只按 Markdown 标题推导 stage 键（阶段探针过渡用）；
+    # 注入面已改为整篇主文档，不再保留“按 stage 切片”的第二份数据。
     return SkillEntry(
         slug=slug,
         name=doc.get("name") or slug,
         content=content,
         sections=sd.split_skill_sections(content),
-        section_blocks=(labeled(content) if callable(labeled) else {}),
     )
 
 
@@ -338,6 +319,7 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     """
     entry = _load_entry(slug)
     if entry is None:
+        _failures[slug] = "主文档无法解析（SKILL.md 不存在或读取失败）"
         return None
     errors, warnings = split_issue_warnings(
         frontmatter.validate_manifest(entry.manifest))
@@ -356,6 +338,7 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
         # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）
         _registry.pop(slug, None)
+        _failures[slug] = "；".join(errors)
         logger.error(
             f"[SkillRuntime] Skill「{entry.name}」frontmatter schema 校验失败，"
             f"拒绝注册（fail-hard，修复 data/skills/{slug}/SKILL.md 头部声明 "
@@ -363,6 +346,7 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
         )
         return None
     _registry[slug] = entry
+    _failures.pop(slug, None)
     tools = entry.available_tools
     logger.info(
         f"[SkillRuntime] 已注册 Skill「{entry.name}」"
@@ -398,6 +382,7 @@ def sync_all(force: bool = False) -> int:
     global _synced
     if _synced and not force:
         return len(_registry)
+    _failures.clear()
     from pathlib import Path
 
     directory = Path(ports.skill_docs_port().SKILL_DOCS_DIR)
@@ -423,6 +408,8 @@ def sync_all(force: bool = False) -> int:
             logger.error(
                 f"[SkillRuntime] alias 碰撞，拒绝注册 {slug!r}"
                 f"（同身份已注册: {seen_canon[canon]!r}）")
+            _failures[slug] = (
+                f"slug 身份冲突：与「{seen_canon[canon]}」归一后同名")
             continue
         try:
             # fail-hard 拒注册的 Skill 不计入、不占 canonical 身份
@@ -431,11 +418,19 @@ def sync_all(force: bool = False) -> int:
                 seen_canon[canon] = slug
                 count += 1
         except Exception as e:
+            _failures[slug] = str(e)
             logger.warning(
                 f"[SkillRuntime] 跳过无效 Skill {slug!r}: {e}"
             )
     _synced = True
     return count
+
+
+def scan_failures() -> Dict[str, str]:
+    """坏包失败清单（slug → 原因）；只读旁路，不影响 fail-closed 注册。"""
+    if not _synced:
+        sync_all()
+    return dict(_failures)
 
 
 def _ensure_synced() -> None:
@@ -448,6 +443,7 @@ def reset_registry() -> None:
     """清空注册表（测试隔离用）。"""
     global _synced
     _registry.clear()
+    _failures.clear()
     _synced = False
 
 
@@ -544,24 +540,6 @@ def tool_sections(skill_name: str, tool: str) -> str:
     entry = resolve_entry(skill_name)
     if entry is None:
         return ""
-    return entry.section_for(tool)
-
-
-def labeled_tool_sections(skill_name: str, tool: str) -> str:
-    """同 `tool_sections`，但保留原始章节标记（子代理注入面唯一入口）。
-
-    两函数共用同一解析与去重口径；选用哪个由消费面语义决定：
-    - `tool_sections`：检索/探针面（能力真值、lint、测试探针）→ 纯正文；
-    - `labeled_tool_sections`：**注入面** → 章界可见（2026-10-04 事故 9999）。
-
-    实现缺失 section_blocks（如测试桩端口未提供 labeled 解析）时，
-    自动回落纯正文，保证调用方零分支、委派永不阻断。
-    """
-    entry = resolve_entry(skill_name)
-    if entry is None:
-        return ""
-    if entry.section_blocks:
-        return entry.labeled_section_for(tool)
     return entry.section_for(tool)
 
 

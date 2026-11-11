@@ -7,16 +7,22 @@ Skill 下拉数据 = 仅文档 Skill（data/skills/<slug>/SKILL.md 单一包形�
 以它为源编辑保存整文件覆盖，含声明头才不会抹掉必填键导致拒注册；用户改文档就是改流程。
 """
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from loguru import logger
 
-import re
+import json
 from typing import Dict, List, Literal, Optional
 
+from src.video_agent.core.sse_events import (
+    SSE_DELTA,
+    SSE_DONE,
+    SSE_ERROR,
+    SSE_REASONING_DELTA,
+    SSE_STATUS,
+)
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.core.token_budget import window_recent_turns
-from src.video_agent.tools import ToolManager
-from src.video_agent.tools.canvas_tools import register_canvas_tools
 from src.video_agent.web.chat_opening import _create_chat_adapter
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 from src.video_agent.core.provider_config import (
@@ -24,16 +30,22 @@ from src.video_agent.core.provider_config import (
     load_merged_providers,
 )
 from src.video_agent.state.manager import StateManager
-from src.video_agent.skill_runtime import registry as skill_registry
+from src.video_agent.skill_runtime import frontmatter, registry as skill_registry
 from src.video_agent.web.skill_authoring import (
     build_create_system,
     repair_messages,
     validate_skill_draft,
 )
+from src.video_agent.web.skill_doc_stream import (
+    DocStreamSplitter,
+    SSE_DOC_DELTA,
+    extract_skill_doc,
+)
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
     list_skill_doc_history,
+    list_skill_sections,
     save_skill_doc,
     delete_skill_doc,
     lint_skill_content,
@@ -52,8 +64,15 @@ class SkillDoc(BaseModel):
     content: str = ""
 
 
+class SkillLoadFailure(BaseModel):
+    """坏包失败项（注册 fail-closed，但界面要看见原因）。"""
+    slug: str
+    error: str
+
+
 class SkillDocsResponse(BaseModel):
     docs: List[SkillDoc] = []
+    failed: List[SkillLoadFailure] = []
 
 
 class SkillDocVersion(BaseModel):
@@ -103,8 +122,12 @@ def _planning_executors_of(skill_name: str):
 
 @router.get("/skills/docs", response_model=SkillDocsResponse)
 async def get_skill_docs():
-    """文档面板：Skill 文档列表（含全文）"""
-    return {"docs": list_skill_docs()}
+    """文档面板：Skill 文档列表（含全文）+ 坏包失败清单（只读旁路）。"""
+    failed = [
+        {"slug": slug, "error": err}
+        for slug, err in sorted(skill_registry.scan_failures().items())
+    ]
+    return {"docs": list_skill_docs(), "failed": failed}
 
 
 class ActiveSkillRequest(BaseModel):
@@ -204,23 +227,34 @@ class SkillFormatRequest(BaseModel):
 
 
 _FORMAT_SYSTEM = """你是一个 Skill 文档格式化专家。用户会给你一段文本（可能是任意格式的流程说明、提示词、规则等），
-请将其整理为以下标准 Skill Markdown 格式：
+请将其整理为通用 Agent Skills 的 Markdown 格式：
+
+---
+name: Skill 名称
+description: 一句话说明何时使用本 Skill
+---
 
 # Skill 名称
 
-> 调用规则：一句话说明何时使用本 Skill
+## 一、这个 Skill 做什么
+目标、用户给什么、最后交付什么。
 
-## 流程规划
+## 二、开工前先确认
+启动前必须问清的信息。
 
-### 步骤一
-...
+## 三、制作流程
+步骤、依赖关系、关键暂停点。
 
-### 步骤二
-...
+## 四、专业方法
+分类、拆解、提示词写法、自检清单等。
+
+## 五、参考资料
+需要时读取 references/… 分册。
 
 要求：
 - 保留原文的核心内容和逻辑，不要编造新内容
 - 用中文输出
+- 只用 Markdown 标题分节，不要使用平台私有标签（planner 等尖括号章节名）
 - 只输出整理后的 Markdown，不要加任何解释
 """
 
@@ -261,7 +295,7 @@ class SkillAssistantMessage(BaseModel):
 class SkillAssistantRequest(BaseModel):
     """当前 Skill 全文 + 会话历史（末条为本次用户请求）；
     provider/model 与主对话胶囊同源（前端 agent-prefs），缺省回落首个可聊天供应商。
-    mode=create：新建 Skill 的创作模式（六章节契约 + 服务端自检/一次自修复）；
+    mode=create：新建 Skill 的创作模式（通用标题式契约 + 服务端自检/一次自修复）；
     mode=optimize：改写既有 Skill（保留原结构）。"""
     content: str
     messages: List[SkillAssistantMessage] = []
@@ -290,49 +324,132 @@ _ASSISTANT_SYSTEM_TMPL = """你是 Skill 优化助手，帮助用户定制/优�
 用户会给你当前 Skill 文档全文与优化请求。
 输出要求：
 1. 先给不超过 150 字的简短说明（说明改了什么、为什么）；
-2. 然后必须用 ```markdown 代码块输出更新后的 Skill 文档全文。
+2. 然后输出独占一行的 <<<SKILL_DOC>>>，紧跟更新后的 Skill 文档全文，最后以独占一行的 <<<END_SKILL_DOC>>> 结束；整篇文档不要再包一层代码围栏（文档内部示例代码块照常使用 ```）。
 规则：
 - 保留原文档头部 YAML frontmatter 声明（如有），不删除不改写；
-- 保留「# 标题」与「> 调用规则：」行结构；
-- 工具名只允许使用平台真实注册清单：{tool_names}；文档中的章节标签是阶段标记而非工具名，把章节标签当工具名写进流程指令属编造；
+- 保留原文档的标题式章节结构：用 Markdown 标题（# / ##）分节；不要引入平台私有标签（planner 等尖括号章节名），也不要中途换成标签格式；
+- 用自然语言写清每一步做什么、产出什么、依赖什么；不要在文档里罗列具体工具名或工具清单（平台模型会按描述自行选择工具）；章节标题是文档结构，不是工具名；原文档已有工具清单/工具名时，改写时删除或改为自然语言；
+- 文档用中文散文写，不要写成 API 字段说明；不要用平台内部字段名/字段表（如 shot_id、beat、duration、shot_size、camera、subject_action、expression、props、background、gag、transition、on_screen_text、audio_cue、character_id、scene_id、prop_id、assets、shots、music_id、sfx_id、vocal_id）；原有字段表改写成「第 1 镜：……」段落；
+- 提示词示例用正文段落或 > 引用块，不要用 ``` 代码块，也不要「模板 A/B/C/D」这种代码卡片式标题；参考库里已有 Skill 的散文节奏：先讲原则，再讲具体做法；
 - 不写死厂商/模型/分辨率/时长参数（以全局设置为唯一权威源）；
 - 用户请求不明确时保持原文不变。
 """
 
 
 def _assistant_system() -> str:
-    """助手 system prompt（可用工具名单动态化）。
-
-    名单唯一源 = 平台注册表（ToolManager，画布工具补注册后取全集，
-    register 幂等），不硬编码名单（防幻影工具名误导助手）。
-    """
-    register_canvas_tools()
-    names = "/".join(sorted(ToolManager._tools))
-    return _ASSISTANT_SYSTEM_TMPL.format(tool_names=names)
-
-_ASSISTANT_BLOCK_RE = re.compile(r"```(?:markdown|md)?\s*\n(.*?)```", re.S | re.I)
+    """助手 system prompt：自然语言流程，不注入工具目录（2026-10-26 用户裁决）。"""
+    return _ASSISTANT_SYSTEM_TMPL
 
 
 def _extract_skill_block(text: str) -> Optional[str]:
-    """从助手回复中提取最后一个 markdown 代码块作为新 Skill 全文；
-    无代码块或不含标题行（不像 Skill 文档）时返回 None（前端只展示回复不覆盖预览）。"""
-    matches = list(_ASSISTANT_BLOCK_RE.finditer(text or ""))
-    if not matches:
-        return None
-    content = matches[-1].group(1).strip()
-    if not content or "# " not in content:
-        return None
+    """从助手回复中提取 Skill 全文（哨兵/围栏/裸文档，口径见 skill_doc_stream）。"""
+    _, content, _ = extract_skill_doc(text)
     return content
 
 
-def _display_reply(text: str, has_content: bool) -> str:
-    """聊天区展示文案：剥掉整篇 Skill 代码块（正文已进左侧预览，避免重复刷屏）。"""
-    cleaned = _ASSISTANT_BLOCK_RE.sub("", text or "").strip()
-    if cleaned:
+def _doc_name(doc: str) -> str:
+    """frontmatter name（完成摘要用；解析失败返回空串）。"""
+    declaration, _, err = frontmatter.split_frontmatter(doc or "")
+    if err or not declaration:
+        return ""
+    return str(declaration.get("name") or "").strip()
+
+
+def _completion_summary(
+    doc: str, checks: Optional[Dict[str, object]], mode: str,
+) -> str:
+    """完成摘要（确定性文案）：章节数 + 自检结果 + 保存引导。"""
+    sections = list_skill_sections(doc or "")
+    name = _doc_name(doc)
+    if name:
+        head = f"已生成「{name}」草稿" if mode == "create" else f"已更新「{name}」"
+    else:
+        head = "已生成 Skill 草稿" if mode == "create" else "已更新 Skill 文档"
+    parts = [f"{head}：{len(sections)} 个章节" if sections else head]
+    if checks is not None:
+        issues = checks.get("issues") or []
+        parts.append(
+            "自检通过"
+            if checks.get("passed")
+            else f"自检发现 {len(issues)} 项待补（见下方清单）"
+        )
+    parts.append("左侧预览已更新，确认后点「保存」落盘")
+    return " · ".join(parts)
+
+
+# 聊天区模型短说明的字数帽（用户裁决：说明只保留摘要级信息）
+_REPLY_PREAMBLE_LIMIT = 200
+
+
+def _display_reply(
+    text: str, has_content: bool, doc: Optional[str] = None,
+    *, mode: str = "optimize", checks: Optional[Dict[str, object]] = None,
+) -> str:
+    """聊天区展示文案：模型短说明 + 确定性完成摘要（文档正文只进预览）。"""
+    preamble, extracted, _ = extract_skill_doc(text or "")
+    cleaned = (preamble or "").strip()
+    if len(cleaned) > _REPLY_PREAMBLE_LIMIT:
+        cleaned = cleaned[:_REPLY_PREAMBLE_LIMIT - 1] + "…"
+    if not has_content:
         return cleaned
-    if has_content:
-        return "已生成 Skill 草稿，左侧预览已更新；确认后点「保存」落盘。"
-    return ""
+    summary = _completion_summary(doc or extracted or "", checks, mode)
+    return f"{cleaned}\n\n{summary}" if cleaned else summary
+
+
+def _assistant_messages(
+    body: "SkillAssistantRequest", system_prompt: str,
+) -> List[Dict[str, str]]:
+    """system + 当前全文 + 截尾历史：非流式/流式同一组装口径。
+
+    会话历史截尾（统一口径）：真实用户轮组原子窗口，
+    语义单一事实源 = token_budget.window_recent_turns（默认 10 轮）。
+    """
+    messages: List[Dict[str, str]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
+    ]
+    hist_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
+    for m in window_recent_turns(hist_dicts):
+        role = m["role"] if m["role"] in ("user", "assistant") else "user"
+        messages.append({"role": role, "content": m["content"]})
+    return messages
+
+
+_STYLE_ISSUE_MARKERS = ("平台内部字段", "代码块")
+
+
+def _needs_style_repair(issues: List[str]) -> bool:
+    """优化模式只在文风类问题上自修复一次（不因既有结构调整而重写）。"""
+    return any(
+        marker in issue for issue in issues for marker in _STYLE_ISSUE_MARKERS
+    )
+
+
+async def _maybe_repair_draft(
+    adapter, messages, text, content, issues, *, create_mode: bool = True,
+):
+    """一次自修复：把机械自检问题回喂，整篇重写后取问题更少的一版。
+    失败不阻断：保留首版草稿 + 问题清单，用户仍可手改/保存。"""
+    try:
+        fixed = await adapter.chat(
+            repair_messages(messages, content, issues), temperature=0.2,
+            thinking_level="",
+        )
+        fixed_text = (fixed.content or "").strip()
+        fixed_content = _extract_skill_block(fixed_text)
+        if fixed_content:
+            fixed_issues = validate_skill_draft(
+                fixed_content, create_mode=create_mode,
+            )
+            if len(fixed_issues) < len(issues):
+                logger.info(
+                    f"[SkillAssistant] 草稿自修复：{len(issues)} → "
+                    f"{len(fixed_issues)} 项问题"
+                )
+                return fixed_text, fixed_content, fixed_issues
+    except Exception as e:
+        logger.warning(f"[SkillAssistant] 创作草稿自修复失败: {e}")
+    return text, content, issues
 
 
 @router.post("/skills/assistant")
@@ -353,52 +470,138 @@ async def skill_assistant(body: SkillAssistantRequest):
         raise VideoAgentError(
             "无可用聊天供应商，请先在 API 配置中添加", status_code=503
         )
-    # 创作模式：六章节契约 + 工具目录；优化模式：保留既有结构
+    # 创作模式：通用标题式契约 + 工具目录；优化模式：保留既有结构
     system_prompt = build_create_system() if body.mode == "create" else _assistant_system()
-    messages: List[Dict[str, str]] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
-    ]
-    # 会话历史截尾（统一口径）：真实用户轮组原子窗口，
-    # 语义单一事实源 = token_budget.window_recent_turns（默认 10 轮）
-    hist_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
-    for m in window_recent_turns(hist_dicts):
-        role = m["role"] if m["role"] in ("user", "assistant") else "user"
-        messages.append({"role": role, "content": m["content"]})
+    messages = _assistant_messages(body, system_prompt)
     try:
-        # 统一走 BaseChatAdapter.chat（generate 是媒体适配器接口，chat 适配器没有）
-        result = await adapter.chat(messages, temperature=0.3)
+        # 统一走 BaseChatAdapter.chat（generate 是媒体适配器接口，chat 适配器没有）；
+        # thinking_level="" = 按模型编辑面板（chat_models_meta）的开关/档位注入
+        result = await adapter.chat(
+            messages, temperature=0.3, thinking_level="",
+        )
         text = (result.content or "").strip()
     except Exception as e:
         logger.warning(f"[SkillAssistant] LLM 调用失败: {e}")
         return {"reply": f"LLM 调用失败：{e}", "content": None, "checks": None}
 
-    content = _extract_skill_block(text)
+    _, content, source = extract_skill_doc(text)
     checks: Optional[Dict[str, object]] = None
     if content:
         issues = validate_skill_draft(content, create_mode=body.mode == "create")
-        # 创作模式一次自修复：把机械自检问题回喂，整篇重写后取问题更少的一版
-        if body.mode == "create" and issues:
-            try:
-                fixed = await adapter.chat(
-                    repair_messages(messages, content, issues), temperature=0.2,
-                )
-                fixed_text = (fixed.content or "").strip()
-                fixed_content = _extract_skill_block(fixed_text)
-                if fixed_content:
-                    fixed_issues = validate_skill_draft(fixed_content, create_mode=True)
-                    if len(fixed_issues) < len(issues):
-                        logger.info(
-                            f"[SkillAssistant] 创作草稿自修复：{len(issues)} → "
-                            f"{len(fixed_issues)} 项问题"
-                        )
-                        text, content, issues = fixed_text, fixed_content, fixed_issues
-            except Exception as e:
-                # 自修复失败不阻断：保留首版草稿 + 问题清单，用户仍可手改/保存
-                logger.warning(f"[SkillAssistant] 创作草稿自修复失败: {e}")
+        if issues and (body.mode == "create" or _needs_style_repair(issues)):
+            text, content, issues = await _maybe_repair_draft(
+                adapter, messages, text, content, issues,
+                create_mode=body.mode == "create",
+            )
         checks = {"passed": not issues, "issues": issues}
+    logger.info(
+        f"[SkillAssistant] 完成: {len(text)} 字, 提取来源={source}, "
+        f"content={'有' if content else '无'}"
+    )
     return {
-        "reply": _display_reply(text, bool(content)),
+        "reply": _display_reply(
+            text, bool(content), content, mode=body.mode, checks=checks,
+        ),
         "content": content,
         "checks": checks,
     }
+
+
+# ---------- Skill 优化助手（SSE 流式 v2：思考与正文实时下发） ----------
+
+# SSE 帧头：与主对话 event stream 同口径（禁缓存/禁代理缓冲）
+_STREAM_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _sse_frame(payload: Dict[str, object]) -> str:
+    """SSE data 帧（中文直出，前端 JSON.parse 即读）。"""
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/skills/assistant/stream")
+async def skill_assistant_stream(body: SkillAssistantRequest):
+    """Skill 优化/创作助手（SSE 流式）：思考/正文实时下发。
+
+    事件名复用主链约定（reasoning_delta/delta/status/done/error），
+    载荷为本端点专属形状；done 帧携带 {reply, content, checks}，
+    与非流式 /skills/assistant 同一业务语义，前端据此收敛草稿与自检徽标。
+    """
+    if not body.content.strip() and not body.messages:
+        raise VideoAgentError(
+            "内容不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
+    try:
+        adapter = _resolve_chat_adapter(body.provider, body.model)
+    except Exception as e:
+        raise VideoAgentError("chat 渠道不可用", status_code=503, raw=str(e)) from e
+    if adapter is None:
+        raise VideoAgentError(
+            "无可用聊天供应商，请先在 API 配置中添加", status_code=503
+        )
+    system_prompt = build_create_system() if body.mode == "create" else _assistant_system()
+    messages = _assistant_messages(body, system_prompt)
+
+    async def event_stream():
+        # 累积全文 → 每帧切分：聊天段发 delta，文档段发 doc_delta（预览实时跟进）
+        buf = ""
+        splitter = DocStreamSplitter()
+        try:
+            async for chunk in adapter.chat_stream(
+                messages, temperature=0.3, thinking_level="",
+            ):
+                if chunk.type == "reasoning_delta" and chunk.text:
+                    yield _sse_frame({"type": SSE_REASONING_DELTA, "text": chunk.text})
+                elif chunk.type == "text_delta" and chunk.text:
+                    buf += chunk.text
+                    for channel, delta in splitter.feed(buf):
+                        if not delta:
+                            continue
+                        event = SSE_DELTA if channel == "chat" else SSE_DOC_DELTA
+                        yield _sse_frame({"type": event, "text": delta})
+        except Exception as e:
+            logger.warning(f"[SkillAssistant] 流式调用失败: {e}")
+            yield _sse_frame({"type": SSE_ERROR, "message": f"LLM 调用失败：{e}"})
+            return
+        # 收尾：把 holdback 的聊天尾巴发完（文档尾巴由 done.content 权威覆盖）
+        for channel, delta in splitter.flush(buf):
+            if not delta:
+                continue
+            event = SSE_DELTA if channel == "chat" else SSE_DOC_DELTA
+            yield _sse_frame({"type": event, "text": delta})
+        text = buf.strip()
+        _, content, source = extract_skill_doc(text)
+        # 诊断可见：模型输出长度/提取来源/是否解析出全文（预览不动时先查这条日志）
+        logger.info(
+            f"[SkillAssistant] 流式完成: {len(text)} 字, 提取来源={source}, "
+            f"content={'有' if content else '无'}"
+        )
+        checks: Optional[Dict[str, object]] = None
+        if content:
+            issues = validate_skill_draft(content, create_mode=body.mode == "create")
+            if issues and (body.mode == "create" or _needs_style_repair(issues)):
+                # 自修复为非流式补调：先下发状态帧，避免长时间静默
+                yield _sse_frame({
+                    "type": SSE_STATUS,
+                    "text": "草稿自检发现待补项，正在自动修复…",
+                })
+                text, content, issues = await _maybe_repair_draft(
+                    adapter, messages, text, content, issues,
+                    create_mode=body.mode == "create",
+                )
+            checks = {"passed": not issues, "issues": issues}
+        yield _sse_frame({
+            "type": SSE_DONE,
+            "reply": _display_reply(
+                text, bool(content), content, mode=body.mode, checks=checks,
+            ),
+            "content": content,
+            "checks": checks,
+        })
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_STREAM_HEADERS,
+    )

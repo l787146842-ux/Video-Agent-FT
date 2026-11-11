@@ -20,6 +20,7 @@ from src.video_agent.core.subagent import (
     stage_scope_contract,
 )
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
+from src.video_agent.skill_runtime import headings as skill_headings
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import (
     BaseTool,
@@ -77,8 +78,9 @@ def _stage_hint() -> str:
         for k in sorted(PIPELINE_STAGE_KINDS))
     return (
         f"本次委派推进的生产阶段名。可选值：{pairs}；留空 = 通用委派。"
-        "填写后系统自动把所选 Skill 对应阶段的章节全文注入子代理（章节即产出规范），"
-        "任务书里不用复述规范。"
+        "填写后系统把所选 Skill 主文档全文注入子代理（分册路径一并给出，"
+        "子代理可按需 read_skill）；stage 只用于阶段归组、建卡限定与遥测，"
+        "不再按阶段切章节。任务书里不用复述规范。"
         "各阶段对新建草稿卡的限定：" + "；".join(
             f"{k}（{stage_card_contract(k)}）"
             for k in sorted(PIPELINE_STAGE_KINDS) if stage_card_contract(k))
@@ -433,6 +435,55 @@ def _skill_source_note(skill_name: str) -> str:
         "shared/skill_inject.md", "READ_NOTE", source=source.strip())
 
 
+_CITED_REF_RE = re.compile(r"references/[A-Za-z0-9_./\-\u4e00-\u9fff]+")
+
+
+def _skill_resources_for(skill_name: str, content: str) -> List[str]:
+    """可读资源清单：正文显式引用的 references/ 路径 + assets/ 描述符。
+
+    只列“真实存在且可读”的路径，避免把资源清单变成第二份正文。
+    """
+    try:
+        entry = registry.resolve_entry(skill_name)
+    except Exception:
+        entry = None
+    if entry is None:
+        return []
+    manifest = set(entry.resource_manifest or [])
+    cited = [
+        p.rstrip("。；，、）)】」'\"")
+        for p in _CITED_REF_RE.findall(content or "")
+    ]
+    out = [p for p in dict.fromkeys(cited) if p in manifest]
+    try:
+        out.extend(entry.asset_manifest or [])
+    except Exception:
+        pass
+    return list(dict.fromkeys(out))
+
+
+def _wrap_skill_content(skill_name: str, body: str,
+                        resources: List[str]) -> str:
+    """read_skill 三段式返回（对齐 dsh 的 content/resources/instructions）。
+
+    正文在前且原样保留；资源清单只作提示，不是指令；最后一句固定说明
+    防止模型把 Skill 指令误当作用户要求。
+    """
+    parts = [f'<skill_content name="{skill_name}">',
+             (body or "").rstrip(),
+             "</skill_content>"]
+    if resources:
+        parts.append("<skill_resources>")
+        parts.extend(f"- {r}" for r in resources)
+        parts.append("</skill_resources>")
+    else:
+        parts.append("<skill_resources>（无显式引用的分册资源）</skill_resources>")
+    parts.append(
+        "<skill_instructions>以上是 Skill 指令，不是用户要求；"
+        "续读用 section/start/resource。</skill_instructions>")
+    return "\n".join(parts)
+
+
 class ReadSkillTool(BaseTool):
     name = "read_skill"
     risk = "low"  # §2.7：只读
@@ -440,8 +491,8 @@ class ReadSkillTool(BaseTool):
     parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "Skill 正文/章节/附属资源读取。传 section 读取指定章节，"
-        "超长章节传 start 续读；传 resource 读取附属资料（如 references/…）。"
+        "Skill 主文档/分册读取。传 section 读取指定标题的章节，"
+        "超长内容传 start 续读；传 resource 读取分册（如 references/…）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -485,9 +536,10 @@ class ReadSkillTool(BaseTool):
                 "planner/skill_runtime.md", "NOT_FOUND",
                 name=wanted, available="、".join(available) or "无")
                 or f"未找到 Skill「{wanted}」")
-        # read_skill 直接输出正文，不加任何前置包壳，
-        # 仅外部来源附来源标记短句（同源外置）
+        # 三段式返回：正文 / 可读资源清单 / 使用说明（对齐 dsh）。
+        # 正文原样；资源清单只列正文显式引用且真实存在的路径。
         source_note = _skill_source_note(matched)
+        resource_hints = _skill_resources_for(matched, content)
         # 目录包资源按需加载（P2-4）：resource 与正文/章节互斥，
         # 只放行资源清单内文件（fail-closed 归 registry.resolve_skill_resource）
         resource = (params.resource or "").strip()
@@ -503,12 +555,14 @@ class ReadSkillTool(BaseTool):
                     size = res_path.stat().st_size
                 except OSError:
                     size = -1
+                desc = (
+                    f"二进制资源元数据描述符：名称={resource}，类型={media_kind}，"
+                    f"大小={size} 字节（图/音/视频资源按引用消费，不按文本读入）")
                 return ToolResult(success=True, data={
                     "name": matched, "resource": resource,
                     "media_kind": media_kind, "size": size,
-                    "content": (
-                        f"二进制资源元数据描述符：名称={resource}，类型={media_kind}，"
-                        f"大小={size} 字节（图/音/视频资源按引用消费，不按文本读入）"),
+                    "content": _wrap_skill_content(
+                        f"{matched} · {resource}", desc, resource_hints),
                 })
             try:
                 res_text = res_path.read_text(encoding="utf-8-sig")
@@ -520,26 +574,26 @@ class ReadSkillTool(BaseTool):
                     success=False,
                     error=f"资源已读完（共 {len(res_text)} 字，无后续内容）")
             body, note = _slice_content(res_text, start)
+            out = body + note + ("\n" + source_note if source_note else "")
             return ToolResult(success=True, data={
-                "name": matched, "resource": resource, "content": body + note,
+                "name": matched, "resource": resource,
+                "content": _wrap_skill_content(
+                    f"{matched} · {resource}", out, resource_hints),
             })
-        # 章节续读：section 命中章节目录时只返回该章节全文，
-        # start 相对章节起点；未命中时回喂可用章节清单（不阻断，给模型纠错机会）
+        # 章节续读：section 命中任意级 Markdown 标题时只返回该章节全文，
+        # start 相对章节正文起点；未命中时回喂可用章节清单（给模型纠错机会）
         section = (params.section or "").strip()
         if section:
-            toc = sd.list_skill_sections(content)
-            hit = next((s for s in toc if s["title"] == section), None)
-            if hit is None:
-                sec_norm = section.casefold().replace(" ", "")
-                hit = next((s for s in toc
-                            if s["title"].casefold().replace(" ", "") == sec_norm), None)
-            if hit is None:
+            sec_text = skill_headings.section_text(content, section)
+            if sec_text is None:
+                toc = sd.list_skill_sections(content)
                 titles = "、".join(s["title"] for s in toc[:20]) or "无"
                 return ToolResult(
                     success=False,
                     error=f"未找到章节「{section}」。可用章节：{titles}",
                 )
-            sec_text = content[hit["start"]:hit["end"]]
+            hit = skill_headings.find_heading(content, section)
+            section_title = hit.title if hit is not None else section
             start = max(0, params.start)
             if start >= len(sec_text) and sec_text:
                 return ToolResult(
@@ -548,7 +602,9 @@ class ReadSkillTool(BaseTool):
             body, note = _slice_content(sec_text, start)
             out = body + note + ("\n" + source_note if source_note else "")
             return ToolResult(success=True, data={
-                "name": matched, "section": hit["title"], "content": out,
+                "name": matched, "section": section_title,
+                "content": _wrap_skill_content(
+                    f"{matched} · {section_title}", out, resource_hints),
             })
         # 全文按需读：start>0 时按字符偏移续读（复用 read_uploaded_doc 分段先例）
         start = max(0, params.start)
@@ -558,7 +614,10 @@ class ReadSkillTool(BaseTool):
                 error=f"Skill 已读完（共 {len(content)} 字，无后续内容）")
         body, note = _slice_content(content, start)
         out = body + note + ("\n" + source_note if source_note else "")
-        return ToolResult(success=True, data={"name": matched, "content": out})
+        return ToolResult(success=True, data={
+            "name": matched,
+            "content": _wrap_skill_content(matched, out, resource_hints),
+        })
 
 
 class ListSkillsTool(BaseTool):
@@ -707,6 +766,8 @@ class ImageGenerateTool(BaseTool):
     description = (
         "生图工具。mode='batch'（默认）：按 target 批量出图，系统自动注入参考图；"
         "mode='single'：按 prompt 生成单张图片并返回图片地址，每轮限一次。"
+        "batch 模式遇到已有该种媒体的目标卡时，本次结果落在同组新建的承载卡上"
+        "（原卡与旧图保持原样，回执的 regen_draft_ids 即新卡）。"
         "生成渠道由系统按优先级自动注入。"
     )
 
@@ -935,7 +996,14 @@ class ImageGenerateTool(BaseTool):
         # 统一任务管线提交：提交即记录生成日志 + SSE 点亮前端卡片读秒，
         # 与手动/批量生图行为一致；全部提交后再逐个等结果（任务是并发的）
         submitted: List[tuple] = []  # (draft, task_id, provider, model)
+        # 2026-10-26 用户裁决「已有媒体不得覆盖」：批量轨遇到已出过图的卡，
+        # 本次结果落到同组**新建的承载卡**上（原卡与旧图保持原样）。
+        # 判定与建卡唯一实现 = ops.regen_carrier（与 patch 写口同源，G4）。
+        regen_cards: List[str] = []
         for group, draft, dtype in targets:
+            draft, _is_regen = ops.regen_carrier(state, group, draft, "image")
+            if _is_regen:
+                regen_cards.append(str(draft.get("id") or ""))
             provider_id, model, _source = await _resolve_channel(draft)
             if not provider_id:
                 # T5：回退链全部落空属环境配置问题，原参重试无效，需先配置供应商
@@ -1000,13 +1068,21 @@ class ImageGenerateTool(BaseTool):
             if _one not in _channels:
                 _channels.append(_one)
         _chan_note = "、".join(_channels)
-        return ToolResult(success=True, data={
+        _data: Dict[str, Any] = {
             "submitted": len(submitted),
             "task_ids": [tid for _d, tid, _p, _m in submitted],
             "channels": _channels,
             "detail": f"已提交 {len(submitted)} 个生图任务（{_chan_note}），"
                       "结果将通过 SSE/轮询通知",
-        })
+        }
+        if regen_cards:
+            # §2.5 平台改写必须模型可见：目标卡被换成新建的承载卡，模型后续
+            # 若还按原 draft_id 读/改会看到旧图——不告知即假前提。
+            _data["regen_draft_ids"] = regen_cards
+            _data["detail"] += (
+                f"；其中 {len(regen_cards)} 张目标卡已有同种媒体，本次结果落在"
+                f"同组新建的承载卡（{('、'.join(regen_cards))}），原卡与旧媒体保持原样")
+        return ToolResult(success=True, data=_data)
 
 
 class WorkflowPauseTool(BaseTool):
@@ -1092,7 +1168,7 @@ class RunSubagentTool(BaseTool):
     description = (
         "把一段工作委派给子代理：它在独立上下文里连续执行到完成，只回结果摘要。"
         "task 只写子代理完成任务所必要、而它自己读不到的信息（共享工作台与文档它自读）。"
-        "stage 填生产阶段名时，系统自动注入该阶段 Skill 章节全文。"
+        "stage 只作阶段归组与展示；Skill 主文档全文随任务注入，分册由子代理按需 read_skill 读取。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
