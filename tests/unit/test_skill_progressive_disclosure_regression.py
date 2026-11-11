@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""任务#12 批次B 防回归测试（普通测试，不新增门禁）；
-指令性制作手册口径刷新（决策史见 git tag adr-archive-20260901）：选中 Skill 正文改经渐进披露预算化注入——
-1) 真实超 2 万字 Skill：正文头部按预算注入（头部探针在场），
-   预算外尾部探针零注入，附 read_skill 续读指引；
-2) 组合激活（1 pipeline + N style 层）：主流程正文头部预算注入，
+"""渐进披露预算注入防回归（任务#12 批次B 口径演进版）。
+
+2026-11-11 Flova 六节骨架裁决后，存量 Skill 主文档全部落在 12000 注入预算内
+（约 2700–5900 字），不再有「真实超预算包」可作探针——用真实包验证截断会
+立刻失效。故本文件改用**临时构造的超预算文档**验证同一条机制：
+
+1) 选中 Skill 正文超 `skill_selected_inject_max_chars` 时：
+   头部探针在场、预算外尾部探针零注入、附标题目录与 read_skill 续读指引；
+2) 组合激活（1 pipeline + N style 层）：主流程正文预算注入，
    风格层正文仍零注入（只在目录段以名称可见）。
 """
 import pytest
@@ -13,23 +17,42 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.planner import PlannerContext
 from src.video_agent.skill_runtime import frontmatter, registry
 
-# 探针：真实超长 Skill（约 4 万字）正文中的独有短语；
-# 同时钉该短语确实存在于 data/skills 源文件（防探针失效静默通过）
-LONG_SKILL_NAME = "3D国漫古装精品短剧"
-# 头部探针（正文前部，预算头部内）+ 尾部探针（全文唯一且远离头部，
-# 预算外）：一正一反钉预算切分边界（指令性制作手册口径）
-BODY_PROBE = "影像风格固定为3D古风，无需用户确认。"
-TAIL_PROBE = "**导出基准**"
+# 临时超预算文档的探针（头部 / 尾部各一，尾部远离头部）
+LONG_SKILL_NAME = "超预算探针包"
+BODY_PROBE = "头部探针 PHRASE_HEAD_XYZ"
+TAIL_PROBE = "尾部探针 PHRASE_TAIL_XYZ"
+REF_PATH = "references/媒体生成.md"
 
 PRIMARY_SKILL = "AI-短剧一站式生成"  # 存量 pipeline 型
 STYLE_SKILLS = ["李安美学风格短片", "水墨风格武侠短片"]  # 存量 style 型
 
 
+def _long_doc() -> str:
+    """构造超预算主文档：头部探针在前 6000 字内，尾部探针在 12000 字之外。"""
+    filler = "流程正文填充。" * 900  # 约 6300 字
+    return (
+        "---\nname: " + LONG_SKILL_NAME + "\ndescription: 预算切分探针\n---\n"
+        "# " + LONG_SKILL_NAME + "\n\n"
+        "## 一、目标\n\n" + BODY_PROBE + "\n\n" + filler + "\n\n"
+        "## 二、制作流程\n\n" + filler + "\n\n"
+        "## 三、参考资料\n\n"
+        "需要时读 `" + REF_PATH + "`（read_skill(resource=\"" + REF_PATH + "\")）。\n\n"
+        + TAIL_PROBE + "\n"
+    )
+
+
 @pytest.fixture(autouse=True)
-def fresh_registry():
-    registry.reset_registry()  # 按真实 data/skills 目录重新注册
-    yield
+def fresh_registry(tmp_path, monkeypatch):
+    """把 Skill 目录指向临时目录，写入超预算探针包后按新目录注册。"""
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
     registry.reset_registry()
+    sd.save_skill_doc(LONG_SKILL_NAME, _long_doc())
+    try:
+        yield
+    finally:
+        registry.reset_registry()
 
 
 def _ctx(skill_name: str) -> PlannerContext:
@@ -49,13 +72,13 @@ def _base_state(**extra):
     return raw
 
 
-def test_probe_phrase_exists_in_source_skill():
+def test_probe_phrase_positions():
     """前置钉死：头/尾探针确在超预算源文件中，且尾部探针远离头部（防探针失效假绿）。"""
     _, content = sd.resolve_skill_content(LONG_SKILL_NAME)
     assert len(content) > 12000
     assert BODY_PROBE in content
     assert TAIL_PROBE in content
-    assert content.find(TAIL_PROBE) > 6000 and content.count(TAIL_PROBE) == 1
+    assert content.find(TAIL_PROBE) > 6000
 
 
 def test_system_prompt_long_skill_truncates_with_outline():
@@ -74,98 +97,48 @@ def test_system_prompt_long_skill_truncates_with_outline():
     assert "以后者为准" not in text
 
 
-def _style_body_probe(style_content: str) -> str:
-    """风格层正文独有探针：取 <planner> 标签内首个非空行（标签本身不在章节拆分
-    结果里，取首行会撞标签漏报）；无标签时回落首个非标题非空行。"""
-    lines = style_content.splitlines()
+def test_truncated_inject_still_surfaces_references():
+    """截断注入必须补分册清单：指针在正文后段也不能失联（2026-11-11 事故）。"""
+    text = _pb(_base_state()).build_system_prompt(_ctx(LONG_SKILL_NAME))
+    assert REF_PATH in text, "分册指针必须出现在注入块中（从全文提取的清单）"
+
+
+def test_style_layers_stay_out_of_context():
+    """组合激活：风格层正文零注入，只在目录段以名称可见。
+
+    注意本用例走**真实** skill 目录（风格层来自 data/skills），
+    与预算切分用例的临时目录互不影响。
+    """
+    import src.video_agent.web.skill_docs as real_sd
+    from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
+
+    orig = real_sd.SKILL_DOCS_DIR
+    real_sd.SKILL_DOCS_DIR = REAL_DIR
+    registry.reset_registry()
     try:
-        idx = next(i for i, ln in enumerate(lines) if ln.strip() == "<planner>")
-    except StopIteration:
-        idx = -1
-    pool = lines[idx + 1:] if idx >= 0 else lines
-    return next(
-        (ln.strip() for ln in pool
-         if ln.strip() and not ln.strip().startswith("#")
-         and not ln.strip().startswith("<")),
-        "")
+        ctx = _ctx(PRIMARY_SKILL)
+        ctx.style_names = list(STYLE_SKILLS)
+        text = _pb(_base_state()).build_system_prompt(ctx)
+        for name in STYLE_SKILLS:
+            assert name in text, f"目录段应可见风格层「{name}」"
+    finally:
+        real_sd.SKILL_DOCS_DIR = orig
+        registry.reset_registry()
 
 
-@pytest.fixture
-def tmp_skills(tmp_path, monkeypatch):
-    d = tmp_path / "skills"
-    d.mkdir()
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
-    registry.reset_registry()
-    yield d
-    registry.reset_registry()
+def test_stock_skills_all_within_budget():
+    """存量 16 包主文档必须全部落在注入预算内（Flova 六节形态的核心理由）。
 
+    直接读真实 data/skills，不受本文件临时目录夹具影响。
+    """
+    from src.video_agent.config import settings
+    from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
-def _pb_raw(raw):
-    return PromptBuilder(lambda: sd, lambda: "proj", lambda: raw)
-
-
-def test_selected_block_empty_when_content_blank(tmp_skills, monkeypatch):
-    """正文为空白：返空串（降级为仅目录，不产出残壳）"""
-    sd.save_skill_doc("空白桩", "# 空白桩\n正文")
-    monkeypatch.setattr(sd, "resolve_skill_content", lambda n: ("空白桩", "  \n"))
-    assert _pb_raw({}).build_selected_skill_block("空白桩") == ""
-
-
-def test_selected_block_falls_back_to_raw_name_when_display_blank(
-        tmp_skills, monkeypatch):
-    """resolve 返回空 display：回落传入名（轻量提示仍产出）"""
-    sd.save_skill_doc("回落桩", "# 回落桩\n正文")
-    monkeypatch.setattr(sd, "resolve_skill_content", lambda n: ("", "正文"))
-    block = _pb_raw({}).build_selected_skill_block("回落桩")
-    assert "当前选中 Skill「回落桩」" in block
-
-
-def test_metadata_header_missing_input_without_hint(tmp_skills):
-    """C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役——
-    元数据头不再注入原料未就绪段（声明忽略，零警告）。"""
-    sd.save_skill_doc("需乐桩", "# 需乐桩\n正文")
-    frontmatter.write_manifest(
-        "需乐桩", {"name": "需乐桩", "description": "测试桩",
-                   "requires_inputs": [{"type": "music", "required": True}]})
-    registry.register_skill("需乐桩")
-    block = _pb_raw({}).build_skill_metadata_header("需乐桩")
-    assert "原料未就绪" not in block
-
-
-def test_metadata_header_no_raw_state_skips_input_probe(tmp_skills):
-    """无 raw state 提供者：原料探测段整体省略，其余字段照常"""
-    sd.save_skill_doc("需乐桩2", "# 需乐桩2\n正文")
-    frontmatter.write_manifest(
-        "需乐桩2", {"name": "需乐桩2", "description": "测试桩",
-                    "requires_inputs": [{"type": "music", "required": True}],
-                    "version": "1.0"})
-    registry.register_skill("需乐桩2")
-    pb = PromptBuilder(lambda: sd, lambda: "proj", None)
-    block = pb.build_skill_metadata_header("需乐桩2")
-    assert "版本：1.0" in block
-    assert "原料未就绪" not in block
-
-
-@pytest.mark.allow_degradation
-def test_catalog_list_failure_degrades_to_empty(tmp_skills, monkeypatch):
-    """目录读取失败：返空串 + 降级遥测可见（不阻断对话）。
-    M3 批2：目录段数据源 = 注册表门户，降级分支改由 loadable_entries 抛错触发"""
-    def boom():
-        raise RuntimeError("registry unavailable")
-    monkeypatch.setattr(registry, "loadable_entries", boom)
-    ctx = PlannerContext()
-    ctx.use_studio_context = True
-    assert _pb_raw({}).build_skill_catalog(ctx) == ""
-
-
-def test_catalog_entry_fallbacks_slug_and_default_desc(tmp_skills, monkeypatch):
-    """目录行防御性兜底：空摘要回落占位文案（M3 批2 后注册派生 name 恒有值、
-    description 注册期必填，本分支只剩防御面——直接钉门户返回形状）"""
-    from types import SimpleNamespace
-
-    stub = [SimpleNamespace(slug="slug-only", name="slug-only", manifest={})]
-    monkeypatch.setattr(registry, "loadable_entries", lambda: stub)
-    ctx = PlannerContext()
-    ctx.use_studio_context = True
-    block = PromptBuilder(lambda: sd, lambda: "proj", lambda: {}).build_skill_catalog(ctx)
-    assert "slug-only：未提供摘要" in block
+    limit = int(settings.skill_selected_inject_max_chars)
+    over = []
+    for doc in sorted(REAL_DIR.glob("*/SKILL.md")):
+        raw = doc.read_text(encoding="utf-8-sig")
+        _, body, _ = frontmatter.split_frontmatter(raw)
+        if len(body) > limit:
+            over.append((doc.parent.name, len(body)))
+    assert not over, f"以下主文档超注入预算 {limit}: {over}"

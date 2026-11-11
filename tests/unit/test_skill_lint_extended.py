@@ -1,7 +1,8 @@
 """Skill lint 扩展（整改计划批 5，对标外部产品 固定组成）。
 
 三类新检查（只告警不阻断，F4 语义）：
-① 体量预算（全文注入截断阈值 80% 预警）；
+① 注入预算（超选中注入预算即告警；2026-11-11 裁决改用
+   `skill_selected_inject_max_chars` 口径，原 `max_doc_chars*0.8` 已废）；
 ② 章节完整性对照 外部标杆 组成（流程型 Skill 缺核心段才告警）；
 ③ frontmatter 声明体检（解析/schema 编辑期预警，任务#5 后口径）。
 另含保存路由接线断言（814R 型断线防复发：lint 必须有消费方）。
@@ -16,16 +17,17 @@ ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = ROOT / "data" / "skills"
 
 
-def test_bulk_budget_warns_over_80_percent():
-    content = "<planner>\n流程\n</planner>\n" + ("填充" * 13000)  # > 30000*0.8
+def test_bulk_budget_warns_over_inject_budget():
+    """超选中注入预算必须告警（口径 = skill_selected_inject_max_chars）。"""
+    content = "<planner>\n流程\n</planner>\n" + ("填充" * 13000)  # 远超 12000
     result = sd.lint_skill_content(content)
-    assert any("建议预算" in w for w in result["warnings"])
+    assert any("超过选中注入预算" in w for w in result["warnings"])
 
 
 def test_bulk_budget_silent_under_budget():
     content = "<planner>\n流程\n</planner>\n短文档"
     result = sd.lint_skill_content(content)
-    assert not any("建议预算" in w for w in result["warnings"])
+    assert not any("超过选中注入预算" in w for w in result["warnings"])
 
 
 def test_composition_warns_missing_core_parts():

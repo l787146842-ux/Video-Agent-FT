@@ -18,38 +18,39 @@ description: 用户提供宠物用品产品图与卖点时，生成一支产品�
 
 # 宠物用品广告短片
 
-## 一、这个 Skill 做什么
+## 一、目标、输入与交付
 
-把宠物用品的产品图与卖点做成一支广告短片。
+把宠物用品的产品图与卖点做成一支广告短片。用户给产品图与卖点，交付成片。
 
-## 二、制作流程
+## 二、项目结构规划
+
+- 建关键元素、分镜、音频节点；分镜写景别、运镜、画面、卖点指向。
+
+## 三、制片规格
+
+- 画幅、时长、风格、语言写入制片规格，后续阶段不得擅改。
+
+## 四、创作流程规划
+
+**启动协议**：先确认产品图、卖点与输出语言。
 
 1. 读取并整理用户上传的产品素材。
 2. 卖点确认后暂停，等用户确认再继续。
+3. 先出关键元素图，再逐镜静帧，确认后逐镜出视频，最后出音频。
+4. 按分镜顺序组装时间线。
 
 **依赖关系：** 2→1。
 
 **何时暂停：** 每个关键阶段结束后停下来与用户确认。
 
-## 三、剧本分析
+## 五、专业创作方法
 
 - 产品图记录外观、材质、颜色和可用角度；卖点拆成能落到画面的证据。
 
-## 四、故事板设计
+## 六、Reference 路由
 
-- 建关键元素、分镜、音频节点；分镜写景别、运镜、画面、卖点指向。
-
-## 五、媒体生成
-
-- 先出关键元素图，再逐镜静帧，确认后逐镜出视频，最后出音频。
-
-## 六、提示词写法
-
-- 写清主体、动作、环境、光线、景别、运镜；参数以全局设置为准。
-
-## 七、组装导出
-
-- 按分镜顺序组装时间线，导出前再向用户确认一次。
+- 生成设定图与视频前读 `references/媒体生成.md`。
+- 写提示词前读 `references/提示词写作.md`。
 """
 
 
@@ -135,8 +136,11 @@ def test_validate_rejects_internal_fields_and_code_blocks():
     assert any("平台内部字段名" in i for i in issues)
 
     code_doc = GOOD.replace(
-        "- 写清主体、动作、环境、光线、景别、运镜；参数以全局设置为准。",
-        "```text\n主体：宠物\n```",
+        "- 写提示词前读 `references/提示词写作.md`。",
+        "- 写提示词时照此格式：\n```text\n主体：宠物\n```",
+    ).replace(
+        "- 写提示词时照此格式：",
+        "- 写提示词时按提示词规范，照此格式：",
     )
     issues = sa.validate_skill_draft(code_doc, create_mode=True)
     assert any("代码块" in i for i in issues)
@@ -153,12 +157,12 @@ def test_validate_style_issues_are_not_create_only():
 
 
 def test_validate_missing_flow_and_placeholder():
-    no_flow = GOOD.replace("## 二、制作流程", "## 二、杂项说明")
+    no_flow = GOOD.replace("## 四、创作流程规划", "## 四、杂项说明")
     issues = sa.validate_skill_draft(no_flow, create_mode=True)
     assert any("缺少「制作流程」类章节" in i for i in issues)
 
     placeholder = GOOD.replace(
-        "- 按分镜顺序组装时间线，导出前再向用户确认一次。",
+        "4. 按分镜顺序组装时间线。",
         "- 时间线怎么组装、导出前要确认哪些内容",
     )
     issues = sa.validate_skill_draft(placeholder, create_mode=True)
@@ -173,7 +177,7 @@ def test_validate_description_too_long_and_hardcoded_param():
     issues = sa.validate_skill_draft(long_desc, create_mode=True)
     assert any("description 超长" in i for i in issues)
 
-    hard = GOOD.replace("参数以全局设置为准", "输出 1080p、24fps")
+    hard = GOOD.replace("画幅、时长、风格、语言写入制片规格", "输出 1080p、24fps")
     issues = sa.validate_skill_draft(hard, create_mode=True)
     assert any("写死的模型能力参数" in i for i in issues)
 
@@ -194,7 +198,7 @@ def test_validate_optimize_mode_does_not_require_headings():
 # ---------- 路由：创作模式自修复 ----------
 
 def test_create_mode_repairs_once_when_check_fails(client, monkeypatch):
-    bad = GOOD.replace("## 二、制作流程", "## 二、杂项说明")
+    bad = GOOD.replace("## 四、创作流程规划", "## 四、杂项说明")
     adapter = _SeqAdapter([_reply(bad, "初版"), _reply(GOOD, "已修复")])
     monkeypatch.setattr(pr, "_resolve_chat_adapter", lambda provider, model: adapter)
 
@@ -208,7 +212,7 @@ def test_create_mode_repairs_once_when_check_fails(client, monkeypatch):
     assert len(adapter.calls) == 2
     assert data["checks"]["passed"] is True
     assert data["checks"]["issues"] == []
-    assert "## 二、制作流程" in data["content"]
+    assert "## 四、创作流程规划" in data["content"]
     assert "```" not in data["reply"]
     assert "已修复" in data["reply"]
 
@@ -227,7 +231,7 @@ def test_create_mode_no_repair_when_first_draft_passes(client, monkeypatch):
 
 
 def test_optimize_mode_does_not_auto_repair(client, monkeypatch):
-    bad = GOOD.replace("## 二、制作流程", "## 二、杂项说明")
+    bad = GOOD.replace("## 四、创作流程规划", "## 四、杂项说明")
     adapter = _SeqAdapter([_reply(bad, "改了一版")])
     monkeypatch.setattr(pr, "_resolve_chat_adapter", lambda provider, model: adapter)
     resp = client.post("/api/skills/assistant", json={

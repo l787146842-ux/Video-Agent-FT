@@ -21,6 +21,9 @@
 ## TOC_NOTE
 == 标题目录（正文按需经 read_skill(name="{{name}}", section="标题") 读取） ==
 
+## REFS_NOTE
+== 本 Skill 的分册（正文因超预算被截断，以下路径取自全文引用，需要时经 read_skill(name="{{name}}", resource="路径") 读取） ==
+
 ## TRUNC_NOTE
 == 当前选中 Skill「{{name}}」主文档共 {{total}} 字，超过注入预算，下方只注入前 {{head}} 字与标题目录；其余正文经 read_skill(name="{{name}}", start={{head}}) 续读 ==
 

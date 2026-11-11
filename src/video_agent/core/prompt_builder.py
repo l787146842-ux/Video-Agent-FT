@@ -38,6 +38,12 @@ from src.video_agent.utils.prompts import (
 if TYPE_CHECKING:
     from src.video_agent.core.planner import PlannerContext
 
+# 正文里的分册指针（references/…）。截断注入时据此补发分册清单——
+# 否则指针一旦落在头部预算之外，模型就完全不知道分册存在（2026-11-11 事故）。
+_REF_PATH_RE = re.compile(r"references/[A-Za-z0-9_./\-\u4e00-\u9fff]+")
+# 指针尾部常紧跟标点或括号，截取时去掉这些非路径字符
+_REF_TRAIL_CHARS = "。；，、）)】」'\"`"
+
 # 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
 # 提醒清理草稿（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
@@ -428,8 +434,11 @@ class PromptBuilder:
         `skill_selected_inject_max_chars` 时注入开头 `skill_selected_inject_head_chars`
         字 + 标题目录，并提示用 read_skill 续读。其余分册（references/…）
         一律不进上下文，等模型按正文路径自取。
+        截断注入**额外补一份分册清单**：分册指针常写在正文后段（如「参考资料」节），
+        一旦落在头部预算之外，模型就无从知道分册存在；清单从全文提取，
+        保证指针可见性不受截断位置影响。
         块内组成：选中提示行 + 元数据头 + 《Skill 流程纪律》全文 +
-        主文档正文（或预算内开头 + 标题目录）。
+        主文档正文（或预算内开头 + 标题目录 + 分册清单）。
         段序不变（段注册表 order 100 最末，保前缀缓存约束）。
         解析失败/内容为空返回空串（降级为仅目录）。
         """
@@ -461,6 +470,8 @@ class PromptBuilder:
                 getattr(settings, "skill_selected_inject_head_chars", 0) or 0)
             if head_chars <= 0 or head_chars > max_chars:
                 head_chars = max(1, max_chars // 2)
+            # 分册清单必须在截断前从**全文**提取（见 docstring：指针常在正文后段）
+            refs = self._reference_paths(content)
             parts.append(render_prompt_section(
                 "shared/skill_inject.md", "TRUNC_NOTE",
                 name=name, total=len(content), head=head_chars))
@@ -470,9 +481,26 @@ class PromptBuilder:
                 parts.append(render_prompt_section(
                     "shared/skill_inject.md", "TOC_NOTE", name=name)
                     + "\n" + "\n".join(toc))
+            if refs:
+                parts.append(render_prompt_section(
+                    "shared/skill_inject.md", "REFS_NOTE", name=name)
+                    + "\n" + "\n".join(f"- {r}" for r in refs))
         else:
             parts.append(content)
         return "\n\n".join(parts)
+
+    def _reference_paths(self, content: str) -> List[str]:
+        """正文显式引用的 references/… 路径（去重保序，去尾部标点）。
+
+        只提取路径本身，不校验文件是否存在——存在性由 read_skill 的
+        fail-closed 校验负责；注入面只保证「指针不因截断而消失」。
+        """
+        out: List[str] = []
+        for m in _REF_PATH_RE.finditer(content or ""):
+            p = m.group(0).rstrip(_REF_TRAIL_CHARS)
+            if p and p not in out:
+                out.append(p)
+        return out
 
     def _toc_lines(self, content: str, sd: Any) -> List[str]:
         """章节目录行（- 章节名 (字数)）；解析失败返空表。"""

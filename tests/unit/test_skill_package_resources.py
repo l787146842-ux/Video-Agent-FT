@@ -37,7 +37,13 @@ _spec.loader.exec_module(scan_skills)
 PKG = "水墨风格武侠短片"
 REF1 = "references/五行特效与爆发态提示词库.md"
 REF2 = "references/武打剪辑律动与多轨音效设计参考.md"
-NO_REF = "李安美学风格短片"  # 无附属资源的目录包对照
+REF3 = "references/媒体生成.md"
+REF4 = "references/提示词写作.md"
+REF5 = "references/剪辑交付.md"
+# 2026-11-11 Flova 六节骨架裁决：每个包统一带三本分册（媒体生成/提示词写作/剪辑交付），
+# 水墨另有五行特效库与武打剪辑律动两本专属分册。故「无分册包」对照已不存在——
+# 空清单分支改由临时目录用例覆盖（见 test_no_reference_package_has_empty_manifest）。
+ALL_REFS = {REF1, REF2, REF3, REF4, REF5}
 
 
 # ---------- ① 包形态识别 ----------
@@ -48,21 +54,36 @@ def test_package_entry_shape():
     assert entry is not None, "目录包 Skill 未注册（镜像/同步链断裂）"
     assert entry.package_root is not None
     assert entry.package_root.name == PKG
-    assert set(entry.resource_manifest) == {REF1, REF2}
+    assert set(entry.resource_manifest) == ALL_REFS
 
 
-def test_no_reference_package_has_empty_manifest():
-    entry = registry.resolve_entry(NO_REF)
-    assert entry is not None
-    assert entry.package_root is not None
-    assert entry.resource_manifest == []
+def test_no_reference_package_has_empty_manifest(tmp_path, monkeypatch):
+    """无 references/ 目录的包 = 空资源清单（零资源合法，fail-closed 不受影响）。"""
+    import src.video_agent.web.skill_docs as sd
+
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    registry.reset_registry()
+    try:
+        sd.save_skill_doc(
+            "零资源包",
+            "---\nname: 零资源包\ndescription: 无分册的目录包\n---\n"
+            "# 零资源包\n\n## 四、创作流程规划\n流程。\n",
+        )
+        entry = registry.resolve_entry("零资源包")
+        assert entry is not None
+        assert entry.package_root is not None
+        assert entry.resource_manifest == []
+    finally:
+        registry.reset_registry()
 
 
 # ---------- ② resolve_skill_resource fail-closed ----------
 
 
 def test_resolve_resource_manifest_hit():
-    for ref in (REF1, REF2):
+    for ref in (REF1, REF2, REF3, REF4):
         path, err = registry.resolve_skill_resource(PKG, ref)
         assert err == "" and path is not None, ref
         assert path.is_file(), ref
@@ -82,7 +103,8 @@ def test_resolve_resource_traversal_rejected():
 
 
 def test_resolve_resource_absent_package_rejected():
-    path, err = registry.resolve_skill_resource(NO_REF, REF1)
+    # 2026-11-11：全部包都带三本分册，故改指「清单里没有的分册名」作为对照
+    path, err = registry.resolve_skill_resource(PKG, "references/不存在的分册.md")
     assert path is None
     assert "资源清单" in err
 
@@ -136,7 +158,7 @@ async def test_read_skill_resource_denied_outside_manifest():
 
 async def test_read_skill_resource_denied_absent_package():
     res = await ReadSkillTool().aexecute(
-        ReadSkillInput(name=NO_REF, resource=REF1))
+        ReadSkillInput(name=PKG, resource="references/不存在的分册.md"))
     assert not res.success
     assert "资源清单" in res.error
 
@@ -221,12 +243,14 @@ def test_scan_probe_real_package_clean():
     content = f.read_text(encoding="utf-8")
     manifest, body, _err = frontmatter.split_frontmatter(content)
     assert scan_skills.package_resource_warn_probe(PKG, f, body, manifest) == []
-    # 无附属资源的目录包无指针无 scripts → 同样零告警（不误报）
-    f2 = _real_doc(NO_REF)
-    content2 = f2.read_text(encoding="utf-8")
-    manifest2, body2, _err2 = frontmatter.split_frontmatter(content2)
-    assert scan_skills.package_resource_warn_probe(
-        NO_REF, f2, body2, manifest2) == []
+    # 2026-11-11 Flova 六节骨架：全部包都带三本分册，故遍历真实包全量核对
+    # 「指针落地 + 资源全有指针」，任一告警即失败（防分册指针与文件脱节）。
+    for doc in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        slug = doc.parent.name
+        raw = doc.read_text(encoding="utf-8-sig")
+        m, b, _e = frontmatter.split_frontmatter(raw)
+        warns = scan_skills.package_resource_warn_probe(slug, doc, b, m)
+        assert warns == [], f"[{slug}] 资源探针告警: {warns}"
 
 
 def test_scan_probe_dangling_pointer_and_orphan(tmp_path):
@@ -361,7 +385,7 @@ def test_no_resources_declaration_backward_compat(lock_env):
     lock_env("b6lock-none")
     assert registry.register_skill("b6lock-none") is not None
     # 存量真实包（无清单无 hash）行为零变化：照常可读资源清单口径
-    assert registry.resolve_entry(NO_REF) is not None
+    assert registry.resolve_entry(PKG) is not None
 
 
 # ---------- ⑦ 批6：get_skill_asset 只读返回描述符 ----------

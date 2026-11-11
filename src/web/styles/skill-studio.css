@@ -49,7 +49,7 @@
 
 /* ----- 中栏：面包屑 + 结构化视图（右侧经 Splitter 与助手栏拖拽分界） ----- */
 .skst-center {
-  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative;
 }
 .skst-center-header {
   display: flex; align-items: center; gap: 6px; height: 48px;
@@ -107,6 +107,59 @@
 .skst-checks-title { font-weight: 600; }
 .skst-checks-item { color: var(--text-muted); margin-top: 2px; }
 
+/* 助手深度思考：流式实时展开；完成后折叠回看（details） */
+.skst-reasoning {
+  margin-bottom: 8px; padding: 6px 8px; border-radius: 8px;
+  background: color-mix(in srgb, var(--text-dim) 8%, transparent);
+  border: 1px solid var(--border-color);
+  font-size: var(--font-xs); line-height: 1.65;
+}
+.skst-reasoning-title { font-weight: 600; color: var(--text-dim); cursor: pointer; }
+.skst-reasoning.live .skst-reasoning-title { color: var(--color-warning-strong); cursor: default; }
+.skst-reasoning-body {
+  margin-top: 4px; max-height: 132px; overflow-y: auto;
+  color: var(--text-muted); white-space: pre-wrap; word-break: break-word;
+}
+/* 流式思考定高视窗：与主对话 tl-reasoning-live 同口径（新字入底、旧字上滑） */
+.skst-reasoning-body.live { max-height: 102px; }
+/* 流式正文：纯文本直显（done 帧收口后替换为 Markdown 回复） */
+.skst-stream-text {
+  margin: 0; font-family: inherit; font-size: var(--font-sm); line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word; color: var(--text-main);
+}
+/* 文档正文不进聊天：只显示生成进度（正文实时进中间预览） */
+.skst-stream-progress {
+  margin-top: 6px; font-size: var(--font-xs); line-height: 1.6;
+  color: var(--color-info);
+}
+
+/* 中间实时预览：生成中横幅 + 只读结构化章节 */
+.sks-live { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.skst-live-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; font-size: var(--font-sm); color: var(--color-info);
+  border-bottom: 1px solid var(--border-color);
+}
+.skst-live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--color-info); animation: skst-live-pulse 1.1s ease-in-out infinite;
+}
+@keyframes skst-live-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.skst-live-empty {
+  padding: 24px 14px; color: var(--text-dim); font-size: var(--font-sm);
+}
+/* 中间实时预览：覆盖在结构化视图上层（不卸载编辑器） */
+.skst-live-overlay {
+  position: absolute; top: 48px; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column; background: var(--bg-primary);
+  z-index: var(--z-tabs);
+}
+/* 右栏模型的思考/档位编辑浮层向左展开（280px 窄栏不溢出） */
+.skst-assistant .pill-model-editor { left: auto; right: 0; }
+
 /* 左栏收起/展开按钮（与删除钮共用方形图标钮基类） */
 .skst-collapse, .skst-del {
   width: 26px; height: 26px; border-radius: 6px;
@@ -118,3 +171,83 @@
 /* 助手输入区发送键禁用态 */
 .skst-assistant .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .skst-assistant .send-btn:disabled:hover { background-color: var(--bg-hover); border-color: var(--border-color); color: var(--text-main); }
+
+/* ============ 分册面板（references/）：主文档只留路由，细节在这里维护 ============ */
+/* 中间栏纵向布局：结构化视图占剩余空间，分册面板固定在底部、可折叠 */
+.skst-center > .sks-view { flex: 1; min-height: 0; }
+.skst-center > .skst-refs { flex-shrink: 0; }
+
+.skst-refs {
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  display: flex; flex-direction: column;
+  max-height: 45%;
+}
+.skst-refs-header {
+  display: flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 12px; flex-shrink: 0;
+}
+.skst-refs-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: var(--font-sm); color: var(--text-muted);
+  background: transparent; border: none; cursor: pointer; padding: 0;
+}
+.skst-refs-toggle:hover { color: var(--text-main); }
+.skst-refs-count {
+  min-width: 18px; height: 16px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; font-size: var(--font-2xs);
+  background: var(--bg-hover); color: var(--text-muted);
+}
+.skst-refs-create {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px 8px;
+}
+.skst-refs-create input {
+  flex: 1; min-width: 0; height: 28px; padding: 0 8px;
+  border: 1px solid var(--border-color); border-radius: 6px;
+  background: var(--bg-primary); color: var(--text-main);
+  font-size: var(--font-sm);
+}
+.skst-refs-create input:focus {
+  outline: none; border-color: var(--border-highlight);
+}
+.skst-refs-empty {
+  padding: 4px 12px 12px;
+  font-size: var(--font-xs); color: var(--text-dim); line-height: 1.5;
+}
+.skst-refs-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px; height: 30px;
+}
+.skst-refs-item:hover { background: var(--bg-hover); }
+.skst-refs-item.active { background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); }
+.skst-refs-name {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  background: transparent; border: none; cursor: pointer;
+  font-size: var(--font-sm); color: var(--text-main); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skst-refs-chars { font-size: var(--font-2xs); color: var(--text-dim); }
+.skst-refs-item:hover .skst-del { opacity: 1; }
+.skst-refs-editor {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 12px 12px; min-height: 0; flex: 1;
+}
+.skst-refs-editor-head {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.skst-refs-editor-name {
+  font-size: var(--font-sm); font-weight: 500; color: var(--text-main);
+}
+.skst-refs-textarea {
+  flex: 1; min-height: 120px; resize: vertical;
+  padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary); color: var(--text-main);
+  font-family: var(--font-mono); font-size: var(--font-sm);
+  line-height: 1.6;
+}
+.skst-refs-textarea:focus {
+  outline: none; border-color: var(--border-highlight);
+}

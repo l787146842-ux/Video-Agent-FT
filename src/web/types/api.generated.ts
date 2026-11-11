@@ -76,6 +76,32 @@ export interface AssetPickerResponseModel {
   canvas_online: boolean;
 }
 
+export interface AudioGenRequest {
+  channel?: string;
+  prompt?: string;
+  provider_id?: string;
+  model?: string;
+  preview_text?: string;
+  language?: string;
+  sample_rate?: number;
+  audio_format?: string;
+  prefix?: string;
+  voice_id?: string;
+  lyrics?: string;
+  instrumental?: boolean;
+  gender?: string;
+  watermark?: boolean;
+  references?: Record<string, string>[];
+  channels?: number;
+  volume?: number;
+  rate?: number;
+  speed?: number;
+  pitch?: number;
+  emotion?: string;
+  draft_id?: string;
+  draft_type?: string;
+}
+
 export interface BatchImageGenRequest {
   target?: string;
   provider_id?: string;
@@ -131,6 +157,7 @@ export interface CanvasListItem {
 export interface CanvasListResponse {
   canvases: CanvasListItem[];
   canvas_online: boolean;
+  canvas_reachable?: boolean;
 }
 
 export interface CanvasNodeImageItem {
@@ -308,6 +335,7 @@ export interface FetchModelsResponse {
   total?: number;
   protocol?: string;
   error?: string;
+  note?: string;
 }
 
 export interface GenLogRequest {
@@ -570,6 +598,26 @@ export interface SkillLoadFailure {
   error: string;
 }
 
+export interface SkillRefDoc {
+  slug: string;
+  name: string;
+  content?: string;
+}
+
+export interface SkillRefItem {
+  name: string;
+  chars?: number;
+  title?: string;
+}
+
+export interface SkillRefListResponse {
+  refs?: SkillRefItem[];
+}
+
+export interface SkillRefSave {
+  content: string;
+}
+
 export interface SnapshotActionRequest {
   snapshot_id: string;
   name?: string;
@@ -662,6 +710,14 @@ export interface VideoGenRequest {
 export interface ViewSize {
   width: number;
   height: number;
+}
+
+export interface VoiceCloneRequest {
+  provider_id?: string;
+  target_model?: string;
+  audio_url?: string;
+  preview_text?: string;
+  language?: string;
 }
 
 // ===== SSE 事件载荷（sidecar：src/web/types/sse.schema.json）=====
@@ -922,10 +978,13 @@ export const SSE_LEGACY_ERROR_CODES: Record<string, { kind: SseErrorKind; code: 
 export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
   canvas_add_node: 'expand',
   canvas_batch_add_nodes: 'expand',
+  canvas_create_container: 'expand',
   canvas_delete_node: 'output',
+  canvas_group_nodes: 'expand',
   canvas_list: 'output',
   canvas_list_assets: 'output',
   canvas_read_nodes: 'output',
+  canvas_ungroup_nodes: 'output',
   canvas_update_node: 'expand',
   document_write: 'expand',
   generate_video: 'expand',
@@ -949,6 +1008,7 @@ export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
   storyboard_media_to_chat: 'output',
   storyboard_patch_draft: 'expand',
   storyboard_patch_group: 'expand',
+  video_assembler: 'expand',
   view_storyboard_media: 'output',
   workflow_pause: 'expand',
 };
@@ -963,10 +1023,13 @@ export const TOOL_DETAIL_INTERNAL_NONE: readonly string[] = ['model_reasoning'] 
 export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> = {
   canvas_add_node: 'none',
   canvas_batch_add_nodes: 'none',
+  canvas_create_container: 'none',
   canvas_delete_node: 'none',
+  canvas_group_nodes: 'none',
   canvas_list: 'none',
   canvas_list_assets: 'none',
   canvas_read_nodes: 'none',
+  canvas_ungroup_nodes: 'none',
   canvas_update_node: 'none',
   document_write: 'none',
   generate_video: 'confirm',
@@ -990,6 +1053,7 @@ export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> 
   storyboard_media_to_chat: 'none',
   storyboard_patch_draft: 'none',
   storyboard_patch_group: 'none',
+  video_assembler: 'none',
   view_storyboard_media: 'none',
   workflow_pause: 'none',
 };

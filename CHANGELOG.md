@@ -30,6 +30,29 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 
 ## 二、宪法正文迁出的批次 / 裁决 / 事故注记
 
+以下条目原内嵌于 `ARCHITECTURE_RULES.md` 规则正文（地质层）。每条保留原编号、裁决日期与结论；
+规则的**现行语义**仍在宪法正文，本处只留历史细节。
+
+> **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
+> 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
+
+### 2026-11-11 · Skill 形态对齐 Flova 新 skill：16 份六节骨架 + 三本分册 + 分册可见性（用户裁决）
+
+- **起因（实测发现的缺陷）**：上一批迁移只拆了 3 个大包的分册，且那 3 个包的分册指针全部落在正文 12000 字预算之外（3D国漫 15731/16833、李安 12919/15466、水墨 16779+）——选中注入只给前 6000 字 + 标题目录，**模型完全不知道分册存在**，分册「存在但不可发现」。同时 `references/` 在 Skill 工作台**没有任何入口**，用户看不到也编辑不了分册。lint 的体量告警还用 `max_doc_chars*0.8`（30000 的 80%），与注入预算 12000 不同口径，12000–24000 字的文档一条告警都不出。
+- **裁决**：用户要求「四项都做」，并要求主文档按 `C:\Users\ASUS\Desktop\skill\flova-新skill` 的原则与内容改写。
+- **形态（Flova 六节骨架）**：主文档固定六节——目标/输入/交付 → 项目结构规划 → 制片规格 → 创作流程规划（启动协议/步骤/依赖关系/何时暂停）→ 专业创作方法 → Reference 路由。16 份 `SKILL.md` 全部按此重写，主文档体量从 4584–17462 字压到约 2700–5900 字，全部落在 12000 注入预算内（**整篇注入、不再截断**）。
+- **分册三分法**：每包统一三本 `references/媒体生成.md`、`references/提示词写作.md`、`references/剪辑交付.md`（媒体生成含渠道/参考绑定/音频条件/首尾帧；提示词写作含时长估算与各模板/尾部规则；剪辑交付含节奏过渡/混音层级/失败修复/导出基准）。专属分册保留（水墨的五行特效库、武打剪辑律动参考；拉片包的拉片方法分册）。
+- **缺陷 A 修复（指针可见性）**：`prompt_builder.build_selected_skill_block` 在截断注入时**额外从全文提取 `references/` 路径**，作为「分册清单」段附在标题目录之后；新增 `prompts/shared/skill_inject.md::REFS_NOTE`。指针位置不再影响分册可发现性（即便将来又出现超预算文档）。
+- **缺陷 B 修复（lint 口径）**：`lint_skill_content` 改按注入预算判定——超 `skill_selected_inject_max_chars` 告警；分册指针落在 `skill_selected_inject_head_chars` 之后亦告警（截断后指针失联）。旧的 `max_doc_chars*0.8` 口径已废。
+- **缺陷 C 修复（分册可见性）**：新增 `skill_docs.list_skill_refs/get_skill_ref/save_skill_ref/delete_skill_ref` + 4 个路由 `GET/PUT/DELETE /api/skills/docs/{slug}/refs[/{name}]`；前端新增 `SkillRefsPanel`（中间栏底部可折叠面板，列出分册/查看/编辑/新建/删除），分册名 fail-closed 校验（禁路径上跳、禁子目录、只允 `.md`）。
+- **创作契约同步**：`prompts/shared/skill_authoring.md` 改六节骨架 + 三本分册硬要求（主文档 <5000 字、指针必须在前 6000 字内）；`validate_skill_draft` 增「Reference 路由」必查项；`_lint_composition` 关键词覆盖新骨架标题措辞。
+- **连带修复（阶段探针）**：六节骨架标题与旧阶段词完全不同，替换后探针整体落空（实测只剩 `planning`、`available_tools` 只剩 `script_analyze`），会打断子代理工具面、音频闸与 `stage_probes`。`_HEADING_STAGE_HINTS` 纳入骨架标题、匹配改大小写不敏感，并让「Reference 路由」段同时声明 `generation + assembly`（组装/导出已下沉剪辑交付分册）。
+- **分册指针写法（机械探针口径）**：`scan_skills.py::_RESOURCE_POINTER_RE` 只认 `read_skill(resource="…")`，故 16 包的每条路由都补了显式调用形式（反引号人读路径保留）；`scan_skills --gate` 与 `package_resource_warn_probe` 全 CLEAN。
+- **验证**：`acceptance.py` 全量 **OK: all steps passed**（GATES 全 PASS + pytest 3112 passed + vitest 1196 passed + tsc + eslint + cov/fe_cov RATCHETS）；前端构建首屏 **389.90 kB < 400 kB**；`scan_skills.py --gate` OK；`check_prompt_literals.py` PASS。
+- **新增测试**：`test_skill_reference_visibility.py`(4)、`test_skill_inject_budget_lint.py`(4)、`test_skill_refs_storage.py`(17)、`test_skill_stage_probe_flova.py`(5)、`SkillRefsPanel.test.tsx`(6)；`test_skill_authoring.py`(14)、`test_skill_progressive_disclosure_regression.py`(5)、`test_skill_package_resources.py`、`test_subagent_stage.py`、`test_skill_stage_focus.py`、`test_subagent_delegation.py` 按新契约更新；两份 golden 快照按新骨架重采。
+- **前端拆分**：`stores/skill-studio.ts` 超 250 行红线，分册状态拆至 `stores/skill-refs.ts`、助手段拆至 `stores/skill-assistant.ts`（原路径重导出，调用方零改动）。
+- **备份**：`data/skills_backup_20261111_b/`（20 目录 / 25 文件 / 528,200 字节）+ git tag `skill-backup-20261111-b`。
+
 ### 2026-11-11 · Skill 系统通用化：16 份全量迁移 + 去标签章节（用户裁决）
 
 - **立项**：用户三问（改成通用 skill / Flova 新 skill 与通用差异 / 框架影响），确认「格式与写法通用、执行面保持平台专属」；要求全部 skill 一起改、原 skill 备份、不加「什么时候不该用我」。B（read_skill 三段式）与 C（坏包界面可见）采纳；A（官方/用户 bundled 分层）不做。
@@ -40,11 +63,861 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **验证**：`acceptance.py --quick` 全 PASS；`acceptance.py` 全量 PASS（pytest 全量、vitest **143 files / 1189 passed**、tsc、eslint、RATCHETS 全绿）；前端构建 387.12 kB < 400 kB。
 - **报告**：`reports/skill-generic-migration-20261111.md`；冻结项 16 本次全量放行（见 `docs/冻结与暂缓清单.md`）。
 
-以下条目原内嵌于 `ARCHITECTURE_RULES.md` 规则正文（地质层）。每条保留原编号、裁决日期与结论；
-规则的**现行语义**仍在宪法正文，本处只留历史细节。
+### 2026-11-11 · 画布大类容器：原生组 + 成员包围盒实时 refit（用户裁决 B 方案）
 
-> **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
-> 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
+- **现场（5555 / proj-1794369492-03c68d6f，2026-11-11）**：用户要「关键元素/合成关键元素/分镜/音频」
+  四个大类容器，模型按旧口径放了 3 个 text 标题牌（画布无空组）。用户明确：要的是大类容器，
+  不是「一元素一组」；容器坐标/宽高要随创建过程实时变化、边界随内容收缩。
+- **模型（不动作画布代码）**：容器 = 原生 `group` 节点（`metadata.container=true`）+ 一个常驻说明
+  节点（`metadata.groupId` 指向容器），因此从创建起就不是空组，不会被 `emptyGroupIds` 回收；
+  组内只放叶子节点（画布组是单层包裹，不做嵌套）。
+- **动态边界**：`InfiniteCanvasBackend.refit_container` 按成员包围盒重算组的位置与宽高；
+  画布原生「改组位置会带动成员」的语义，用同批 ops 的成员位置回写抵消（组先移、成员写回原坐标，
+  单批渲染不露中间态），实现**坐标 + 宽高同时实时收缩/扩展**。
+- **工具**：新增 `canvas_create_container`（不传坐标时自动排到已有容器右侧；自动建说明节点并 refit）；
+  `canvas_add_node` / `canvas_batch_add_nodes` 支持 `group_id` 入组，x/y 留空时按容器网格自动排布，
+  每个节点/批次后自动 refit；`canvas_delete_node` / 移动类 update 后同步 refit；
+  `canvas_read_nodes` 回 `group_id` / `container` 供模型核对。
+- **口径**：`canvas_group_nodes` 只用于「把已有节点包起来」；大类容器走 `canvas_create_container`。
+  协议同步改写（去掉文本牌占位口径）。
+- **验证**：新增容器/refit 用例（创建自动排布、入组网格、删除收缩、refit 组移位+成员补偿、
+  无位移只改尺寸、空成员 no-op）；相关单测 **222 passed**，全量单测 3083 passed（2 个既有环境/顺序问题），
+  画布集成 36 passed，`acceptance.py --quick` 全 PASS（含 `tool_descriptions` 与 `tsc`）。
+
+### 2026-11-11 · 工具模型可见输出契约（对齐 dsh output/render；用户裁决「复刻规矩，不复刻房子」）
+
+- **现场（6666 / proj-1793964638-12a1cb9f，2026-11-10）**：`canvas_list` 调用成功，但回喂层只转发
+  `data["detail"]`，画布列表（id/标题/节点数）被整包丢弃 → 模型只看到「执行成功」，拿不到
+  `canvas_id`，两次空读后停轮向用户索要画布 ID（表现为「agent 对话框不能操作画布」）。
+- **契约**：`BaseTool.model_view(data)` 成为模型可见结果的唯一来源（默认读 `detail`）；
+  `fc_tool_runner` 执行成功后调用工具自述渲染并随 `tool_results` 提交；
+  `fc_feedback` 不再按工具名特判（原 `group_id` 分支下沉到 `StoryboardCreateGroupTool`）。
+- **不静默为空**：有 `data` 但渲染为空 → 原始返回限长 1200 字符兜底 + 一次性告警
+  （`tool.model_view.missing` 只记日志，不进降级遥测）；纯动作工具无 data 仍保持一行「执行成功」。
+- **画布 9 工具全部实现 model_view**：列表（id/标题/节点数）、节点清单（id/类型/坐标）、
+  新建/批量（node_id(s)）、更新/删除、打组/解散、素材库（名称/类型）。
+- **回归**：新增 `tests/unit/test_tool_model_view_contract.py`（全注册工具断言
+  「成功 + data ⇒ 模型可见内容非空」）；画布/回喂/故事板/会话相邻用例 189+189 passed。
+- **口径**：只搬 dsh 的不变量（工具自述渲染、成功不得无可见内容、失败必可见），
+  不引入 Cordis/ContentBlock/PTC 等框架层。
+
+### 2026-11-07 · 画布上游增量同步工具（用户要求：更新上游不必全量拉取）
+
+- **新增** `scripts/sync_canvas_upstream.py`：双侧 sha256 基线（`vendors/infinite-canvas/.canvas-sync.json`，入库）逐文件判定 add / update / delete / keep / same / conflict / excluded，只复制或删除判定变化的文件，**不做整目录覆盖**；锁文件与构建缓存不参与同步。
+- **保留本地 patch**：6 个登记 patch（`router.tsx` basename、`user-layout.tsx` headless、`canvas-theme.ts`、`globals.css`、`plugin-loader.ts`、`app-top-nav.tsx`）永不自动覆盖；上游同文件也改 → conflict。
+- **安全闸**：有冲突默认整体中止、不写任何文件（`--keep-going` 才应用无冲突部分）；冲突 diff 落 `<vendor>/.sync-conflicts/`（gitignore）；`--vendor` 演练时状态与冲突目录跟随该目录，不污染真实基线。
+- **演练验证**（假上游含 1 新增 / 1 修改 / 1 删除 / 1 冲突）：写入 3 个文件、patch 文件保留、diff 落临时目录、真实基线哈希零变化；同版本 `--check` 为零变化。
+- 用法与升级纪律写入 `README.md`「内置画布 / 上游更新」与 `AGENTS.md` 常用命令。
+
+### 2026-11-06 · 画布搬入与运行时收敛（用户批准 L0+L1+L2）
+
+- **背景**：画布长期以外部目录（`E:\09...`）跨域 iframe 嵌入——读不到内部状态、原生拖拽投递不进、需单独启动 canvas-agent(Node, 17371) 与 web dev server(3000) 两个进程，且两套 UI 风格。
+- **L0 搬入**：`vendors/infinite-canvas/`（MIT；保留 `web/src` + `VERSION`/`CHANGELOG.md`/`LICENSE`，排除 node_modules、部署配置与官方 docs）；独立构建产物 `static/canvas-app/`（base=`/canvas-app/`，单包 3.6MB）。不并入主包：主包首屏 400KB 硬门禁会被击穿。
+- **L1 同域**：FastAPI 直出 `/canvas-app/`（SPA 深链接回退 + 目录穿越拒绝）；iframe src 改同域相对路径；可达性口径改为"产物存在即可达"；画布侧 `LocalAgentPanel headless`（画布自带 agent UI 退场，SSE 执行器保留）；`globals.css` + `canvas-theme.ts` 色板对齐前端 `tokens.css`。
+- **L2 去 Node 进程**：新增 `adapters/canvas_agent_session.py` + `web/routes/canvas_agent.py`，本进程实现 canvas-agent 协议（SSE `tool_call`、`/canvas/state`、`/canvas/result`、`/canvas/activate`、`protocolVersion=6`）；adapter 的 `_call_tool`/`health` 改走进程内会话；`vendors/canvas-agent` 源码副本、启动脚本中的 17371/3000 启动段一并移除。
+- **安全**：接入令牌落 `data/canvas_agent_token`（运行时目录、已 gitignore，保证刷新画布页后仍可连）；非回环绑定不下发真实 token（沿用 `_bound_to_loopback` 闸）。
+- **口径**：`canvas_online` 仍表示"画布页已连本进程 agent"；`canvas_reachable` 在同域挂载时 = 产物存在。
+- **已知**：画布自身 `tsc` 预存 1 处 antd 类型报错（`model-script-editor.tsx`），非本批改动；vendored 代码不进本项目 tsc/eslint/覆盖率门禁（独立目录，治理豁免）。
+- **验证**：`python scripts/acceptance.py --quick` 全 PASS；SSE 端到端脚本（`canvas_apply_ops` / `canvas_get_state` / `canvas_get_selection` / `canvas_list_projects` 下发与回执）通过；画布构建 3.68MB 成功。
+
+#### 复查修正（同批，用户要求「仔细检查一遍」）
+
+- **缺陷 1（已修）**：`routes/canvas.py::list_canvases_for_picker` 中 `adapter` 仅在「未同域挂载」分支赋值——同域时 `adapter.is_online()` 触发 UnboundLocalError 被 `except` 吞掉，`canvas_online` 恒为 False、画布列表恒空。改为入口处统一取 adapter。
+- **缺陷 2（已修）**：`online_cached()` 仍读 `_health_cache`，而 `health()` 已不再写缓存 → planner 的「画布离线则裁剪画布工具」降级永久失效。改为读会话内存事实（新增 `ever_connected()` 区分「从未连过=None」与「连过又断=False」）。
+- **缺陷 3（已修）**：`get_app_info` / `check_version_drift` 仍探 17371 → 启动时做一次无效连接、版本漂移检测永远失败。改为本进程协议版本（同仓发布无外部漂移）。
+- **死代码清理**：删除 `client()` / `_get_json` / `_resolve_token` / `resolve_canvas_agent_token` / `_HEALTH_PROBE_TIMEOUT` / `_health_cache*` / `_agent_ready` / 版本记录文件读写；`DATA_DIR` 引用随之移除。
+- **测试迁移**：21 个按旧 HTTP 打桩（`httpx.MockTransport` / `_get_json`）的用例改为假会话注入（新增 `tests/fakes.py::FakeCanvasSession` 与 `backend._session_override` 接缝）；删除 6 个已退役功能用例（health 缓存 / 2s 快探超时）；`config` 下发断言与站点探测默认值同步；新增 `tests/unit/test_canvas_agent_session.py`（10 例：无连接、快照压缩、选区过滤、group/generate 翻译、直发工具、超时、断连、未知工具 fail-closed）。画布相关 **150 passed**。
+- **规则同步**：宪法 Rule 7 由「任何时候禁止修改画布」改写为「源码 vendored，改动限于登记的最小 patch 集」（§八 措辞、§十二 检查项、§十一 文件地图同步）；README「外部画布」段改写为内置画布；`docs/配置说明.md`、`.env.example`、`config.py` 注释同步（`CANVAS_AGENT_URL`/`INFINITE_CANVAS_URL` 降级为外部调试回退项且默认空）。
+- **死字段清理**：前端 `state.canvasUrl`（默认 `http://localhost:3000`）已无消费方，连同 `ui.ts` 赋值一并删除。
+- **验证**：`acceptance.py --quick` 全 PASS；主包 386.95 kB（<400 kB）；画布测试 150 passed；adapter→会话→SSE→回执全链路脚本通过（`list_canvases` / `is_online` / `online_cached`）；启动脚本新鲜度检测实测 `NEED=0 / MAIN=1`（画布产物最新、主包按需重建）。
+
+### 2026-11-06 · 画布打组能力接入 + 占位牌口径（用户批准：占位牌 + group 工具）
+
+- **现场（6666 / proj-1793964638-12a1cb9f）**：用户「帮我在画布里建四个分组」，模型改用
+  `storyboard_create_group` 在影视工作台建组。两层根因：①该轮画布探针离线，画布工具被裁
+  （会话推理原文 “Canvas tools are unavailable this round”）；②本项目从未封装画布打组能力，
+  且画布无「空分组」概念（`canvas_group_nodes` 只能把已有 ≥2 个节点包成组框）。
+- **能力接入**：`CanvasBackend` 端口 + infinite-canvas 实现新增 `group_nodes` / `ungroup_nodes`；
+  Tool 层新增 `canvas_group_nodes`（ids ≥2）/ `canvas_ungroup_nodes`（ids ≥1），均 medium、
+  可撤销；注册数 7 → 9，planner 离线裁剪集同步。契约转录更新至对端当前版本：
+  toolNames 34 → 36、opTypes 8 → 10（对端 schemas.ts:34-35 / 56-57），契约数量断言同步。
+- **占位牌（不新增工具）**：`prompts/planner/protocol.md` 新增「画布」段——画布与工作台是
+  两套产物面（用户说画布时不得用 storyboard_* 冒充）；目标区域无节点时先用
+  `canvas_batch_add_nodes` 建 text 标题牌（横向间距 ≥360），有 ≥2 节点后再打组。
+- **验证**：新增 9 例单测（工具 5 / 后端 4）；相关 pytest 158 passed；
+  `acceptance.py --quick` 全绿；`gen_api_types.py` 已重生成（新工具档位 expand/output）。
+
+### 2026-11-06 · 画布“加载失败”误报修复：在线口径分离 + 去负缓存 + 轮询自愈（用户裁决 A+B+C）
+
+- **根因**：`/canvas` 的失败覆盖层由 `/api/canvas/list` 的 `canvas_online` 驱动，而该标志 =
+  canvas-agent 的 `ok && hasCanvas`（“画布页是否已接入 agent”）。启动批 `/api/providers`
+  在 iframe 甚至还没赋 src 时就探了一次 `/health`，负结果按
+  `CANVAS_HEALTH_CACHE_SECONDS`（默认 30s）缓存；进画布时的单次探测（2.5s 宽限重探一次）
+  全程命中负缓存 → 画布明明已渲染却弹“画布加载失败”，点重试/等待后才恢复。
+- **口径分离**：`/api/canvas/list` 新增 `canvas_reachable`（画布站点可达：后端代探
+  `INFINITE_CANVAS_URL` 根路径，拿到任意 HTTP 应答即算可达）；`canvas_online` 保持
+  “画布页已连 agent”语义（读写画布/在线生图等能力可用性）。前端覆盖层只认
+  `canvas_reachable`，老后端缺字段时回落旧口径。
+- **去负缓存**：`InfiniteCanvasBackend.health()` 只缓存正结果（ok 且 hasCanvas），负结果
+  一律回源重探（画布页接入/重连窗口不再被 30s 负缓存放大）；`/health` 根路径的
+  `online_cached()` 仍返回最近一次探测结果（只读、不发请求）。
+- **轮询自愈**：进入画布改为 1s×12 轮探测，任一轮可达即自动收起覆盖层；连续两轮不可达
+  才提示（避免站点冷启动闪报）；路由卸载停掉在途轮次。
+- **重试真的重载**：跨源 iframe 访问 `contentWindow.location` 会抛 SecurityError（旧实现
+  点“重试”等于空转），改为重置 `iframe.src` 触发重新导航。
+- **验证**：`tests/unit/test_infinite_canvas_backend.py`（站点探测/负结果不缓存/正结果缓存）、
+  `tests/integration/test_canvas_drop_route.py`（列表三态契约）、
+  `src/web/stores/__tests__/canvas-probe.test.ts`（口径/自愈/中止）新增用例；
+  受影响 pytest 120 passed、stores vitest 204 passed、`acceptance --quick` 与 eslint 全绿。
+
+### 2026-11-06 · 音色位收窄落地 + 上传音色可试听 + ElevenLabs 音色列表（用户四问）
+
+- **音色位 ID 只归火山**：`data/api_providers.json` 里百炼 4 个模型（cosyvoice-v3.5-plus/flash、
+  qwen-audio-3.1-tts-plus/flash）与腾讯 minimax-voice-design 的显式参数残留 5 条被删除
+  （显式 params 覆盖默认 schema，绕过了 2026-10-30 的参数级供应商限定）；火山那条标签改为
+  「音色位 ID（火山专用）」/「控制台购买的音色位；未购买可留空」。
+- **按钮改名**：语音合成音色旁的「上传音频生成音色」→「上传音色」。
+- **上传音色可试听**：复刻接口本就返回 `preview_url`，前端原先只取 `voice_id` 丢弃预览；
+  现在回填后直接渲染试听播放器。
+- **音色列表（仅 ElevenLabs）**：适配器基类新增 `list_voices` 默认契约（未接平台明确报错，
+  不返回空列表）；`ElevenLabsAudioAdapter.list_voices` 走 `GET /v1/voices?page_size=100`，
+  取 `voice_id` / `name` / `preview_url`；新端点 `GET /api/audio/voices` 同步返回；
+  参数 schema 由 `_VOICE_LIST_ADAPTERS` 注入 `list_voices` 标记（与 `clone` 同机制），
+  前端只对声明了该标记的 voice_id 渲染「拉取音色」下拉与试听。
+- **边界（如实留痕）**：百炼 `voice-enrollment` 列表动作待真实 Key 实测；火山实测无音色列表
+  接口（只能控制台音色库）；OpenAI 兼容（硅基流动）无标准列表接口——三者都不显示入口。
+- **上传白名单对齐文案**：`ALLOWED_EXTS` 补 `.m4a` / `.aac`（界面提示与
+  `generation_audio._AUDIO_REF_EXTS` 早已含这两个扩展名，原先上传阶段直接拒绝）。
+- **顺带修复**：`clone_voice_via_provider` 补 `finally: adapter.close()`（每次上传复刻泄漏一个
+  httpx client）。
+- **契约补缺**：`cloneVoice` 请求体由内联手写类型改为消费生成物 `VoiceCloneRequest`
+  （此前该 schema 无任何前端消费方，契约桥接门禁在未提交的工作树里已是红的）。
+- **验证**：受影响的 pytest 四文件 94 passed；vitest 全量 1186 passed（契约桥接转绿）；
+  `acceptance --quick`（GATES + tsc）与 `eslint` 全绿；`npm run build` 通过。
+  全量 pytest 另有 2 项与本次无关的既有环境问题：Windows 符号链接遍历 `WinError 448`
+  （`test_resource_manifest_excludes_symlinks`）、`ToolManager` 注册的跨文件顺序依赖
+  （`test_generic_deny_invariants` 单跑 36/36 通过、全量跑失败）。
+
+### 2026-10-31 · 音效去参考音频 + 语音合成「上传音频生成音色」（用户裁决）
+
+- **音效不需要参考音频**：默认参数集移除 sfx 的 `refs` 行（用户裁决：参考音频只服务于
+  「用自己的音色」）。音色设计通道的参考音频行同步移除，避免两处重复入口。
+- **语音合成音色 ID 旁新增「上传音频生成音色」**：tts 的 voice_id 加 `clone` 标记；
+  上传（`/api/ai/upload`）→ 新端点 `POST /api/audio/voices` 同步复刻
+  （dashscope `create_voice` + `audio_data`）→ 自动回填 voice_id 并提示。
+- **后端**：`generation_audio.clone_voice_via_provider` —— 校验 target_model 支持 tts、
+  参考音频可解析；平台不支持复刻（ElevenLabs/火山）时由适配器明确报错，不静默降级；
+  同步返回 voice_id / preview_url / target_model（不进生成任务队列）。
+- **契约**：重新生成 `api.generated.ts`（新增 AudioGenRequest / VoiceCloneRequest）。
+- **边界**：复刻仍需平台开通（百炼 voice-enrollment 403 待控制台开通；ElevenLabs 需付费套餐；
+  火山需音色位）。
+- **验证**：pytest 73 passed（音频三文件）、vitest 36 passed（middle-panel）、
+  `acceptance --quick` 全绿、构建通过。
+- **配置覆盖根因（用户「弄了几次了还是没弄好」）**：上一批只改了 `DEFAULT_AUDIO_PARAMS`，
+  但 `data/api_providers.json` 里显式声明的 `params` 会整组覆盖默认集——音效仍带 `refs`、
+  百炼 tts 的 `voice_id` 没有 `clone`，于是界面既没删掉参考音频、也没出现上传入口。
+  根治：`audio_channels` 新增 `_CHANNEL_PARAM_DROPS`（按通道剔除 sfx 的 refs，旧配置带不回来）；
+  `clone` 改由 `_CLONE_ADAPTERS`（dashscope 已接复刻）注入、`_CLONE_MODEL_DROPS`（MiniMax）排除，
+  不再写在默认 schema；配置文件同步清掉 3 处 sfx refs。
+- **验证（补）**：新增 `test_declared_sfx_refs_dropped_and_clone_scoped_to_dashscope`；
+  pytest 74 passed（音频两文件）、vitest 13 passed（AudioParams）。
+
+### 2026-10-31 · 音色设计全模型 403 排障 + 音色不匹配提示（用户“模型都用不了”）
+
+- **现象**：参数栏能加载全部音色设计模型，但生成全部失败。
+- **取证**：`logs/agent-20261031.log` 16:36 连续 5 次 `音色设计 HTTP 403 AccessDenied.Unpurchased`
+  —— 音色设计所有模型共用百炼 `voice-enrollment` 服务，服务未开通/免费额度用完且
+  「免费额度用完即停」开着 → 全部模型一起失败（非模型/前端问题）。
+- **另测**：语音合成通道本身正常 —— `qwen-audio-3.1-tts-plus` + `longanhuan_v3.1` 实测 200；
+  `cosyvoice-v3.5-plus` + `longxiaochun` 报 400（Engine 418，音色与模型版本不匹配）。
+- **修正**：tts voice_id 的 note 示例由 `longxiaochun` 改为实测可用的 `longanhuan_v3.1`
+  （上批示例对 v3.5 有误导）；`audio_error_hints` 增 message 片段命中，Engine 418 →
+  「音色 ID 与当前模型版本不匹配…」，dashscope 适配器把上游 message 一并传入。
+- **验证**：pytest 79 passed（三个音频测试文件）、`acceptance --quick` 全绿、构建通过。
+- **用户动作**：百炼控制台 → 模型广场 → 声音复刻/声音设计（voice-enrollment）→ 关闭
+  「免费额度用完即停」；仍 403 则开通/申请该服务。
+
+### 2026-10-30 · 音色设计补 ElevenLabs + 上传音频复刻 + 短文本收窄（用户四问）
+
+- **立项（用户四问）**：①音色 ID 输入框过长；②音色设计只剩两个厂商；③参数栏有音色输入要能
+  上传音色；④为何有四条通道，模型是不是不行。
+- **音色设计厂商补全**：`infer_audio_capabilities` 认 `_ttv_` / `text-to-voice`（ElevenLabs
+  文字设计音色专用模型）；`data/api_providers.json` 的 elevenlabs 增 `eleven_multilingual_ttv_v2`
+  —— 音色设计由 2 家变 3 家（百炼 / ElevenLabs / 火山）。硅基流动只有 OpenAI 兼容 TTS、
+  腾讯 TokenHub 音频端点未取到，暂不列（不臆造）。
+- **上传音色（声音复刻）**：音色设计 schema 增「参考音频」参数（仅百炼下发），参数栏可直接上传
+  音频（复用 `/api/ai/upload`）；有参考音频时 `generation_audio` 以 `audio_data` 下发，DashScope
+  `create_voice` 走复刻（voice_prompt 与 audio_data 二选一）；ElevenLabs/火山复刻未接，上传后
+  明确报「暂未接入」，不静默降级。音色描述 required 改为 False（复刻时可不填），后端校验二者
+  至少一项。
+- **短文本收窄**：音色 ID 文本框 300px → 180px（field-sizing 仍随内容）。
+- **通道矩阵（澄清）**：四条通道均已接（音色设计：百炼/ElevenLabs/火山；语音合成：百炼/ElevenLabs/
+  硅基流动/火山；背景音乐：百炼 Fun-Music；音效：百炼/ElevenLabs/火山）。背景音乐单厂商是平台
+  能力差异（ElevenLabs 无音乐接口、火山音乐签名接口未接、腾讯未接），非遗漏。
+- **验证**：后端 +3 例（ttv 推导 / audio_data payload / 复刻传参与二选一校验）；前端 +1 例（参考音频
+  上传追加）；pytest 182 passed、vitest 1184 passed、`acceptance --quick` 全绿、构建通过（UI 待目测）。
+- **待实测**：百炼声音复刻需真实 Key 验证（audio_data，10-60s 音频）；ElevenLabs `voices/add` 未接。
+
+### 2026-10-30 · 音频参数栏长文本 / 音色位 / 音色说明（用户三问）
+
+- **立项（用户三问）**：①音色设计的试听文本是否必填、输入框只有一个小格子；
+  ②音色位 ID 为什么在音色设计里出现；③语音合成音色 ID 怎么填、能否自传；
+  ④背景音乐歌词输入框过窄。
+- **长文本多行**：参数 schema 新增 `multiline`（`preview_text` / `lyrics` 标记），前端
+  `ParamField` 渲染为独占整行的 textarea（可纵向拉高），并显示字数范围；短文本
+  （音色 ID）改用 140-300px 文本框，不再是 48px 数字框。
+- **音色位 ID 收窄**：默认 schema 的 `voice_id` 加参数级 `providers: ["volcengine-speech"]`，
+  只有火山豆包语音（控制台购买音色位才能设计）展示；百炼等平台不再出现。
+  `audio_params_for_entry` 按供应商适配器过滤（未知适配器不过滤，旧配置不误删）。
+- **语音合成音色说明**：voice_id 的 placeholder 改为「音色设计产出的 ID，或平台系统
+  音色名」，并新增 note（百炼 voice_id/系统音色、硅基流动 model:voice、ElevenLabs Voice ID）。
+- **边界（如实留痕）**：上传参考音频做声音复刻（百炼 voice-enrollment audio_data /
+  ElevenLabs voices/add）尚未接入，需先拿到可用接口实测；当前只能填已有音色 ID/系统音色。
+- **验证**：`test_param_provider_scope_and_multiline`（后端）+ 2 例前端（textarea/note）；
+  pytest 177 passed、vitest 全量 1183 passed、`acceptance --quick` 全绿、构建通过（UI 待目测）。
+
+### 2026-10-30 · 音频厂商下拉口径收敛 + 只出规划按钮移除（用户三问）
+
+- **立项（用户三问）**：①预览框选好音频厂商后，一选模型「音频 API」就跳回阿里百炼；
+  ②音频厂商下拉仍有「（未接音频）」（腾讯云），要求与 API 设置同口径；③「只出规划」按钮多余。
+- **根因（取证）**：
+  - `ParamSelect` 的选项由 `<For>` 按引用 diff，调用方每次 map 出新对象 ⇒ option 节点全量重建，
+    原生 select 丢选中项回落到首项；而 `props.value` 未变时 Solid 不再写 value ⇒ 显示首项、状态是另一项。
+  - `ProviderModelSelects` 的 `models` 传的是**当前**供应商的列表快照，`changeProvider` 拿它取
+    「新供应商首模型」，取到的其实是旧供应商的 ⇒ 写进跨厂商组合，再靠收敛 effect 兜底。
+- **修复**：`ParamSelect` 选项落定后按状态对齐选中值（queueMicrotask）；`ProviderModelSelects`
+  改收 `modelsFor(providerId)` 函数并按 value 缓存 option 对象；`AudioParams.providers` 不再
+  包对象；新增 `lib/providers.audioProvidersFor(channel)`（已接适配器 + 该通道有模型）作为
+  厂商列表唯一口径，参数栏 / 通道收敛 / 无卡建卡 / 草稿校正全部改用它。
+- **未接音频处置**：未接适配器的厂商不再出现在音频 API 下拉（原先只是加后缀，选了提交必报错）；
+  API 设置页「音频模型」卡片同步显示适配器状态（未接入 = 仅登记，参数栏不列出）。
+  腾讯 TokenHub 音频端点仍未取到（见 2026-10-28 条），接入后自动进下拉。
+- **移除「只出规划」**：AudioParams 参数栏只留生成按钮（`generateAudioPlan` 保留实现，当前无 UI 入口）。
+- **验证**：`AudioParams.test.tsx` 新增「未接厂商不列出」「切厂商后选模型不回跳」「按钮唯一」3 例；
+  vitest 1180 passed / tsc / eslint / `acceptance --quick` 全绿；`npm run build` 通过（UI 待用户目测）。
+
+### 2026-10-30 · 保存清空能力清单的根治 + 模型/供应商不变式（用户四问）
+
+- **立项（用户四问）**：①怎么会有“未接音频”字样；②百炼音色设计这么多模型怎么还要开通；
+  ③选其他厂商模型时厂商会跳回阿里百炼；④火山音色设计参数栏跟别家不一样。
+- **根因（取证）**：设置页保存时前端把 state 整条回传，而表单不展示
+  `audio_models_meta` / `audio_request_mode` / `audio_voice_join_model`，于是每次保存都清空
+  （实测：5 个供应商 meta 全 0、mode 全 None）。后果：
+  - 硅基流动/火山的适配器识别丢失 → 显示“（未接音频）”；
+  - 前端 `audioModelsFor` 在 meta 缺失时回落到整个 `audio_models`，不再按通道过滤，
+    导致语音合成通道也列出 `voice-design`，模型与通道错配；
+  - 模型与供应商字段失去绑定 → 出现“API=百炼 却选中 eleven_*”。
+- **根治（保存自愈）**：`routes/providers.normalize_provider_audio` —— PUT 落盘前按
+  `audio_models` 重新推导 `audio_models_meta` 与 `audio_request_mode`，**不信任前端回传**。
+  一次性迁移已补齐 5 个供应商（百炼 9 / 腾讯 15 / 硅基 7 / elevenlabs 10 / 火山 2 条）。
+- **域名兜底补全**：`_ADAPTER_BY_HOST` 增 `siliconflow.cn → openai-speech`；
+  `_build_adapter` 的 openai-speech 分支同样按域名兜底，并把硅基流动
+  `audio_voice_join_model`（音色拼成 `model:voice`）也改成域名判定 —— 三个字段都不再依赖配置。
+- **能力推导修正**：`voice-design` 类名字只给 `voice_design`（合成需另一个 speech 模型，
+  原先误给 tts）；`seed-audio` 给 `sfx+tts`（实测纯文本出音效、带 speaker 出语音）。
+- **前端不变式**：`ProviderModelSelects` 增 `createEffect`（仅音频）—— 当前模型必须属于
+  「当前供应商 × 当前通道」列表，否则自动收敛到首项并写回。即使配置再被覆盖，
+  也不会出现“API=百炼 却选中 eleven_*”这类组合。
+- **验证**：新增 `test_save_normalizes_lost_audio_meta`（含硅基流动 mode）；
+  `test_audio_channels.py` 48 passed；`acceptance` 20/20。
+
+### 2026-10-30 · 音频错误码→可操作中文提示（用户开源两模型受阻）
+
+- **立项（用户反馈）**：百炼搜不到 `fun-music`、`voice-enrollment` 页没有开通按钮，
+  且报错只有 `AccessDenied.Unpurchased` / `AccessDenied`，看不懂该做什么。
+- **查证结论（官方文档）**：
+  1. `Fun-Music-v1` 处于**邀测阶段**（文档首行 `Important 该模型目前处于邀测阶段`），
+     模型广场列表搜不到；官方原文：「在模型广场 fun-music-v1 落地页点击右上角「立即申请」，
+     约半个工作日内审批完毕」。
+  2. `voice-enrollment`（声音复刻及声音设计）**无需单独开通**，详情页只有「获取 API Key」；
+     卡住的是「免费额度用完即停」开关开着 + 免费额度 0/0，页面上红字已提示
+     「如需付费使用，请关闭该功能」→ 关掉开关即可。
+- **新增 `adapters/audio_error_hints.py`**：错误码 → 可操作提示的单一事实源。
+  只收录「需要用户去控制台做动作」的码（`AccessDenied.Unpurchased` / `AccessDenied` /
+  `Endpoint.AccessDenied`），每条必须带下一步动作；未收录的码返回空串、
+  继续展示原始 code+message（不掩盖细节）。`dashscope_audio._http_error` 与
+  错误信封两处均接入（带 JSON 解析容错，非 JSON body 不抛新错）。
+- **实测**：`fun-music-v1` → 「音乐生成失败（AccessDenied）：该模型未开通…邀测模型需点
+  「立即申请」」；`cosyvoice` 音色设计 → 「…或免费额度已用完且「免费额度用完即停」
+  仍开着…」。两条均从裸码变成可直接照做的中文。
+- **验证**：新增 `tests/unit/test_audio_error_hints.py`（6 例：精确优先于前缀 / 前缀回落 /
+  未收录不改写 / 非 JSON body 容错）；`acceptance` 20/20。
+
+### 2026-10-30 · 无 /models 平台回填预置模型（用户二问）
+
+- **立项（用户二问）**：①豆包语音「拉取模型」仍失败；②百炼音乐/音色设计在哪开通。
+- **豆包无 /models 是平台事实**（上批已实测 `/v1/models`、`/models`、`/api/v1/models`
+  均 404 HTML，`/api/v3/models` 404 `Endpoint "models" does not exist`）。本批不再只报错，
+  改为**回填预置清单**：`routes/providers._preset_models` 按配置的
+  image/chat/video/audio 分类直接返回（并把 `audio_models_meta` 里额外声明的模型并入
+  audio），响应增 `note` 字段说明清单来源；前端 `use-model-fetch` 以 info toast 展示 note。
+  没有预置清单的平台仍走原「请手动添加」提示。
+- **收益**：豆包语音点一次「拉取模型」就能拿到 `voice-design` / `seed-audio-1.0`
+  并默认勾选（已在配置里的），不再卡在 404。
+- **不含平台硬编码**：判断条件是「该供应商配置里有模型 + /models 返回 404」，
+  任何无 /models 的平台自动受益。
+- **百炼开通路径（文档核实）**：控制台右上角选「华北2（北京）」→「模型广场」→
+  搜索模型名 → 模型详情页「去开通」。`fun-music-*` / `voice-enrollment` 均为按量付费模型，
+  未开通即报 `AccessDenied` / `AccessDenied.Unpurchased`。
+- **验证**：新增 `test_fetch_models_route_404_fills_preset`（含 meta 额外模型并入）；
+  `test_probe_adapter.py` 22 passed；`acceptance` 20/20。
+
+### 2026-10-29 · 百炼域名纠偏 + 豆包 base_url 容错 + 配置被保存覆盖的健壮性（用户二问）
+
+- **立项（用户二问）**：①豆包语音 URL 太多不知道填哪个、一直拉不到模型；②百炼换 Key 且不欠费。
+- **百炼实测（用户真实新 Key）**：workspace 专属域名
+  `llm-xxxx.cn-beijing.maas.aliyuncs.com` 对新 Key 全线 **403 `Endpoint.AccessDenied`**
+  （`Workspace endpoint access denied`，不是欠费）；换通用域名 `https://dashscope.aliyuncs.com` 后：
+  合成 `qwen-audio-3.1-tts-plus` **200 出 wav**、音效 `qwen-audio-3.1-tts-next` **200 出 wav**；
+  音乐 `fun-music-*` **403 AccessDenied**、音色设计 `voice-enrollment`
+  **403 AccessDenied.Unpurchased**（这两条仍需控制台开通模型）。配置 base_url 改为通用域名。
+- **火山实测（用户真实 Key）**：`/api/v3/tts/create` 音效 **出 2.5s mp3 落盘**；
+  合成（`speaker=zh_female_shuangkuaisisi_moon_bigtts`）**出 3.28s mp3**；
+  音色设计报 `500 resource ID is mismatched with speaker related resource`
+  （需先在控制台购买「音色位」speaker_id）。
+- **豆包没有模型列表接口（实测）**：`/v1/models`、`/models`、`/api/v1/models` 均 404 HTML，
+  `/api/v3/models` 404 `Endpoint "models" does not exist`。它的「模型」是音色 ID，
+  只能看控制台「音色库」；「拉取模型」按钮对它无意义。
+- **base_url 容错**：豆包官方每个功能一个端点，用户把
+  `https://openspeech.bytedance.com/api/v3/tts/voice_design` 整段粘进 base_url 导致 404；
+  适配器改为剥到 host（`/api/` 之前全丢弃）。
+- **配置被保存覆盖的真问题**：用户在设置页保存时把当时的 state 整条回传，
+  覆盖了配置文件里表单未展示的字段（`audio_request_mode` / `audio_models_meta` / `auth_header`）——
+  适配器选择因此丢失。修法 = **域名兜底**：`_build_adapter` 与 `audio_adapter_kind`
+  增 `_ADAPTER_BY_HOST`（elevenlabs.io / openspeech.bytedance.com / dashscope 域名），
+  字段丢了也能认出适配器。
+- **验证**：新增 2 例回归（域名兜底 / base_url 任意端点剥离）；定点 pytest 87 passed；`acceptance` 20/20。
+
+### 2026-10-29 · ElevenLabs + 火山豆包语音 V3 适配器（用户裁决“要做”）
+
+- **立项（用户四问）**：①豆包语音新版控制台找不到「创建应用/APPID」；②控制台只有 API Key；
+  ③ElevenLabs 权限已更新；④要求做 ElevenLabs 适配器。
+- **取证纪错（上批实现有误）**：豆包语音**新版控制台**用 `X-Api-Key` 单头 + `/api/v3` 接口，
+  旧版才是 AppID+AccessToken（`X-Api-App-Key`+`X-Api-Access-Key`）。本批两套都支持，默认走新版；
+  火山方舟（Ark）与豆包语音是两个产品，方舟 138 个模型里音频 0 个。
+- **火山 V3 重写（`adapters/volcengine_speech.py`）**：
+  音色设计 `POST /api/v3/tts/voice_design`（`prompt.text_prompt` ≤200 字、`text` 试听 ≤300 字、
+  可选 `speaker_id` 音色位）→ `speaker_id` + `demo_audio`（1h 有效，适配器下载成字节，
+  剥 query 判断真实格式）；音频生成 `POST /api/v3/tts/create`（`model=seed-audio-1.0`）：
+  音效=纯 `text_prompt`、合成=加 `speaker`；返回 `audio` base64 或 `url`；
+  `speech_rate=(speed-1)*100` 映射语速；`code!=0` 错误信封与超长字段提前拦。
+- **ElevenLabs 新增（`adapters/elevenlabs_audio.py`）**：`xi-api-key` 鉴权、`base_url` 归一到 `/v1`；
+  合成 `POST /v1/text-to-speech/{voice_id}`、音效 `POST /v1/sound-generation`；
+  音色设计 `POST /v1/text-to-voice/design`（`text` 限 100-1000 字，短文本走 `auto_generate_text`）
+  → 再 `POST /v1/text-to-voice` 建永久音色（失败不阻断，回落临时 id）；平台无 wav，
+  请求 wav 降级 mp3 并**回报真实格式**。
+- **落盘格式 bug**：`generation_audio` 原用「用户选择格式」落盘，适配器降级时会写出扩展名与
+  内容不符的文件；改为优先 `result.audio_format` / `designed.response_format`。
+- **校验下沉**：音色描述/试听文本的精确长度限制从分发层移到各适配器（百炼 15-200、火山 200/300、
+  ElevenLabs 100-1000），分发层只校非空；`BaseAudioAdapter.design_voice` 增 `speaker_id`；
+  默认参数集增「音色位 ID（可选）」并放宽上限到 1000。
+- **协议白名单**：`VALID_PROTOCOLS` 含 `volcengine-speech`，`_select_model_class` 该协议走
+  `ProviderBase`（非 OpenAI 兼容，用 Literal 白名单校验会误报）。
+- **配置**：`custom-api-11` 增 `audio_request_mode=elevenlabs` + 5 个模型能力（含
+  `eleven-sound-effects` 音效占位）；`volcengine-speech` 改名「填 API Key」、模型改为
+  `voice-design`/`seed-audio-1.0`（原先把音色 ID 当模型是错的）。
+- **实测（用户真实 Key）**：ElevenLabs 走项目 `generate_audio_via_provider` 端到端落盘——
+  TTS **53KB mp3**、音效 **17KB mp3**；音色设计 **403 `feature_not_available`**
+  （官方原文：API 建音色仅付费套餐可用，已写进错误文案）。火山未实测（用户 Key 未入库）。
+- **验证**：新增 `tests/unit/test_elevenlabs_audio_adapter.py`、重写
+  `tests/unit/test_volcengine_speech_adapter.py`；定点 pytest 96 passed；`acceptance` 20/20。
+- **未做**：ElevenLabs/火山的音乐通道（平台无此接口，调用即明确报错）。
+
+### 2026-10-29 · 拉取层的「鉴权头 + 响应形状 + 纯音频平台」三处泛化（用户三问）
+
+- **立项（用户三问）**：火山豆包语音找不到 AppID/Token、“curl 是什么/在哪找”、
+  ElevenLabs 拉不到模型。前两问是文档/操作路径问题，第三问查出**两处真 bug**。
+- **实测取证（用户真实 Key）**：ElevenLabs `GET /v1/models` 用 `xi-api-key` 头 →
+  **200，11 个模型**（eleven_v4/turbo_v2_5/…）；同一 Key 用 `Authorization: Bearer` →
+  **401**。`/v1/voices` → 401 `missing_permissions: voices_read`（该 Key 是受限 Key）。
+- **bug 1（鉴权头写死 Bearer）**：`adapters/probe_adapter.py` 新增
+  `build_auth_headers()`——供应商显式声明（`auth_header`/`auth_prefix`）> 已知平台映射
+  （`_AUTH_STYLE_BY_HOST`，现含 elevenlabs.io=xi-api-key/空前缀）> 默认 Bearer；
+  `ProviderBase` 增这两个字段；路由 `_auth_style()` 从配置读并透传（fetch-models / test-connection 两处）。
+- **bug 2（只认 OpenAI 响应形状）**：新增 `_extract_model_ids()`——兼容
+  `{data:[{id}]}`（OpenAI）、裸数组 `[{model_id}]`（ElevenLabs）、`{models:[…]}` 三种，
+  条目可为字符串，字段可为 id/model_id/model/name。修前 ElevenLabs 明明 200 却返回 0 个模型。
+- **识别兜底（纯音频平台）**：`classify_models(all_models, base_url="")` 新增可选 base_url；
+  命中 `_AUDIO_ONLY_HOSTS`（现含 elevenlabs.io）时，未命中任何关键词的模型从
+  chat 改归 audio——`eleven_v4` 无 tts/speech 特征，旧兜底会把它当对话模型。
+- **协议白名单**：`VALID_PROTOCOLS` 增 `volcengine-speech`（上批新增供应商的校验告警）。
+- **实测复核**：ElevenLabs 11 个全归 audio（能力 tts）；硅基流动 7 音频不变；
+  火山方舟 138 个 / 音频 **0**（方舟确实不提供音频，音频在豆包语音产品线）——
+  这解释了用户“火山拉不到音频模型”并非拉取故障。
+- **验证**：`test_probe_adapter.py` 增 4 例（鉴权头三态 / 三种响应形状 / 纯音频平台分类）；
+  定点 pytest **99 passed**；`python scripts/acceptance.py` **20/20 PASS**（exit 0）。
+- **未做（待用户确认）**：ElevenLabs 音频适配器（其 Key 缺 voices_read，无法实测 TTS）。
+
+### 2026-10-29 · 火山豆包语音供应商 + 适配器（用户裁决“那就做”）
+
+- **新增 `adapters/volcengine_speech.py`**：`POST https://openspeech.bytedance.com/api/v1/tts`；
+  Header `Authorization: Bearer;{token}`（**分号**）；body 四段
+  `app{appid,token,cluster}/user/audio{voice_type,encoding,speed_ratio}/request{reqid,text,operation}`；
+  返回 `code=3000` + `data` base64 → 解码落盘；`voice_type = voice_id or 模型名`；仅 TTS。
+- **凭据约定**：API Key 填 `appid|access_token[|cluster]`（或配置 `volc_appid` + Key），
+  不改设置页 UI；`ProviderBase` 增 `volc_appid/volc_cluster`。
+- **接入点**：`_build_adapter` / `audio_adapter_kind` 增加 `volcengine-speech`；
+  配置模板新增 **disabled** 的 `volcengine-speech`（含两个示例音色 + params）；
+  顺手修正 elevenlabs `base_url`（去掉误填的 `/models`）。
+- **TTS 语速口径**：界面 `rate` 参数对 TTS 映射为 `speed`（火山/OpenAI/MiniMax 共用）。
+- **边界（如实留痕）**：火山音乐（GenSongV4 签名 OpenAPI）与声音复刻未接；
+  ModelScope 音频不在其 OpenAI 兼容 API（需自部署/创空间）；腾讯 TokenHub 音频端点未取到。
+- **测试**：新增 `test_volcengine_speech_adapter.py`（8 例，凭据/请求体/base64/错误码）；
+  定点 pytest **95 passed**。
+
+### 2026-10-28 · 多厂商音频识别 / 拉取修复 / OpenAI 兼容 TTS（用户四问）
+
+- **立项（用户四问）**：ModelScope 拉不到音频、火山拉取 404、音频 API 只有百炼、
+  要求“加任何厂商都能识别模型 + 参数自动渲染”。
+- **实测（真实 Key）**：ModelScope `/v1/models` **37 个 / 0 音频**（API-Inference 不暴露音频）；
+  火山 Ark `/api/v3/models` **200 / 138**（此前代码误拼 `/api/v3/v1/models` 才 404）；
+  腾讯 TokenHub `/v1/models` **200 / 125、16 个音频**（`/audio/speech` 404，原生协议）；
+  硅基流动 `/v1/models` **200 / 98、7 音频**，`/v1/audio/speech` **200 出 mp3**。
+- **拉取修复（`adapters/probe_adapter.py`）**：`model_list_candidates` —— 版本段结尾
+  （`/v1`、`/api/v3`）不再补 `/v1`；主机名先 `/v1/models` 再回落 `/models`；
+  路由层 404 改为「该平台不提供 /models，请手动添加模型」提示。
+- **识别修复（`core/audio_channels.py`）**：ASR/SenseVoice/Whisper 剔除（不进任何生成通道）；
+  音乐关键词扩展（`minimax-music`/`mureka` 等）；显式 `voice-design` 命名；
+  CosyVoice2 仅 tts、CosyVoice v3+ 才 design+tts；`voice-clone` 归 tts。
+- **多厂商执行（`adapters/openai_audio.py`）**：OpenAI 兼容 `/audio/speech` 适配器
+  （`voice=model:voice` 可配）；`generation_audio._build_adapter` 按
+  `audio_request_mode`/host 选 dashscope/openai-speech，未接入平台明确报
+  「尚未接入音频适配器」；`/api/providers` 增加 `audio_adapter`，前端供应商下拉
+  标「（未接音频）」并按通道过滤。
+- **配置**：硅基流动（custom-api-10）`audio_request_mode=openai-speech`、
+  `audio_voice_join_model=true`；`ProviderBase` 同步两字段。
+- **实测链路**：用项目 `generate_audio_via_provider` 调硅基流动 CosyVoice2，
+  出 **45KB mp3** 并落盘（验证后删除探针产物）。
+- **未接入（如实留痕）**：腾讯 TokenHub 音频（`/v1/audio/speech` 与多个猜测路径均 404，
+  官方文档为 JS 渲染无法取到，需一份可用 curl/端点）；ModelScope 音频（其 OpenAI
+  兼容 API 不暴露音频）；火山 Ark 无音频模型（豆包语音是独立服务）。
+- **测试**：probe 候选/回退/版本段 + 分类新案例 + OpenAI 适配器 + 适配器选择，
+  定点 pytest **87 passed**。
+
+### 2026-10-28 · 音频参数自适应批（模型声明参数 → 底部栏动态渲染，用户裁决）
+
+- **立项（用户原话）**：「模型自己声明参数、底部栏自适应渲染」；市面音频模型的字段名/
+  必填性/传输形态差异大，固定一套输入框不可能全兼容。
+- **后端（`core/audio_channels.py`）**：`AUDIO_PARAM_TYPES`（text/bool/enum/number/refs）
+  + `DEFAULT_AUDIO_PARAMS`（四通道默认集）；`_norm_param_spec` / `declared_params` /
+  `audio_params_for_entry` / `audio_params_for`；`audio_models_meta_of` 每条增加 `params`
+  （显式声明优先，否则按能力合并默认，每条带 `channels`）。支持 list 与 `{key: spec}`
+  两种写法；非法声明（无 key / enum 无 values）丢弃。
+- **前端**：`types` 新增 `AudioParamSpec/AudioParamType`；`lib/audio-params.ts` 提供
+  参数名→草稿字段映射、取值（草稿→schema 默认）、`when` 显隐（仅 `key=value`）、
+  必填/长度/数字校验、`paramPatch`、`effectiveAudioParam`；`AudioParams.tsx` 改为
+  schema 驱动（`For` + `ParamField`），不再按通道写死 JSX；`audio-actions` 的校验与
+  请求改走 schema 生效值（含默认值）。同批修 `Boolean('false')===true` 的真值 bug。
+- **兼容**：新厂商只加 `audio_models_meta[].params` + adapter，UI 零改动；
+  ModelScope / 火山“拉不到模型”属列表接口差异，手动加模型名即可（能力按名字推导，
+  meta 可覆盖）。
+- **测试**：后端 4 例（默认参数/声明覆盖/非法丢弃/通道过滤）；前端 19 例
+  （schema 渲染/when/数字参数/校验/取值/写回）。
+- **未做**：API 配置页的 params 可视化编辑器（当前手写 meta 或走默认集）。
+
+### 2026-10-28 · 音频通道收窄为「音色设计 / 背景音乐」并打通真实生成（M1-M3，用户裁决）
+
+- **立项（用户原话）**：「本项目现在只用能设计音色的模型和能出背景音乐的模型就行了」；
+  四问取证后用户裁决「先做 M1~M3」——M1 音乐通道、M2 音色设计 + 合成、M3 音效。
+  现状取证：音频此前**只有规划**（`generate-actions.generateAudio` 走 `canvasLlm` 出文本），
+  `audio_channel` 零消费，`/generate/audio` 不存在；已接入的阿里百炼 `audio_models` 仅
+  MiniMax `speech-2.8-hd/turbo`（TTS + 声音复刻，不能文字设计音色、不出音乐）。
+- **通道词表单一事实源（`core/audio_channels.py`）**：四通道 `voice_design / tts / music / sfx`；
+  `infer_audio_capabilities`（模型名兜底）+ `audio_models_meta_of`（配置显式 `capabilities` 优先）
+  + `models_for_channel` / `model_supports_channel` 供路由校验与 `/api/providers` 下发共用；
+  前端只消费 `audio_models_meta`，不重算能力（P1）。
+- **后端**：
+  1. `adapters/dashscope_audio.py`：百炼原生音频适配器（`dashscope_root` 剥 `/compatible-mode/v1`），
+     覆盖声音设计 `voice-enrollment`、Fun-Music、`SpeechSynthesizer`（音效 + Qwen-Audio-TTS/CosyVoice 合成）、
+     `multimodal-generation`（仅 MiniMax speech）；失败抛 `AdapterError`（含 http_status）。
+     **2026-10-28 实测修正**：Qwen-Audio-TTS/CosyVoice 的非实时合成端点是
+     `/api/v1/services/audio/tts/SpeechSynthesizer`（与音效同路径），不是 `multimodal-generation`；
+     用旧端点会报 `InvalidParameter: url error`。修正后 `qwen-audio-3.1-tts-plus` +
+     系统音色 `longanhuan_v3.1` 实测 **200 + 音频 URL**；`qwen-audio-3.1-tts-next` 音效实测 **200**。
+  2. `web/generation_audio.py`：端点解析 + 通道/模型校验（不支持即报错，绝不静默换模型）+
+     经 `audio_channel` 有界并发 + 结果本地化（音色预览 base64 解码、音乐 24h OSS URL 下载落
+     `workspace/assets/`）；参考音频本地素材转 data URI，非音频扩展名剔除。
+  3. `routes/generate_audio.py`：`POST /generate/audio` + `GET /generate/audio/{task_id}`，
+     任务/SSE/生成日志闭环；`task_manager.writeback_if_complete` 新增 audioUrl 分支并回写 `voiceId`。
+  4. `config.py` 新增 `audio_gen_timeout`（默认 300s，音乐同步返回可能数分钟）。
+- **前端**：`ProviderKind` 增加 `audio`（`MODEL_FIELD` + `audioModelsFor` 按通道过滤）；
+  `ParamControls` 音频分支改走 audio 种类并按通道取模型；`AudioParams` 重做为
+  通道下拉 + 分通道参数（音色=试听文本/语言；音乐=歌词/纯音乐/性别；音效=声道/音量/语速；
+  公共=采样率/格式/AIGC 标识）+「生成音频」主按钮、「只出规划」次按钮；
+  `lib/audio-actions.ts` 提交链路（无卡时按 overrides 建承接卡）、
+  `pollAndPreviewAudio` 写回、事件总线 `kind=audio`、`TaskResult.audio_url/result.audio` 建模。
+- **配置**：`data/api_providers.json` 的 `custom-api-8 阿里百炼` 注册
+  `cosyvoice-v3.5-plus/flash`、`qwen-audio-3.1-tts-plus/flash`（voice_design+tts）、
+  `fun-music-v1/preview`（music）、`qwen-audio-3.1-tts-next`（sfx）、
+  存量 MiniMax `speech-2.8-hd/turbo`（tts），并显式写 `audio_models_meta`。
+- **边界（如实留痕）**：
+  1. Skill 包零改动（冻结 #16）：`text_to_instrumental` / `text_to_narration` 在平台层映射；
+  2. Fun-Music **无 duration 参数**，时长不可控，只能提示词约束 + 后期裁剪/循环；
+  3. 音色 `voice_id` 与创建时 `target_model` 强绑定，换模型作废；审核态 `DEPLOYING` 期间可试听、合成需 `OK`；
+  4. `qwen-audio-*-tts-next` 只开 `sfx`（其不接受 TTS 的 `voice` 字段，挂 tts 会被上游 400）；
+  5. 语料/字段白名单同步（`ALLOWED_DRAFT_FIELDS`），否则 Agent 建卡与改参会被静默丢弃。
+- **实测账号权限（2026-10-28，custom-api-8）**：音效 `qwen-audio-3.1-tts-next` **200 可用**；
+  合成 `qwen-audio-3.1-tts-plus`+`longanhuan_v3.1` **200 可用**；声音设计 `voice-enrollment`
+  返回 `403 AccessDenied.Unpurchased`（需在百炼控制台开通）；Fun-Music `403 AccessDenied`
+  （邀测未获准入）。音色名与模型不匹配时上游返回 `[cosyvoice:]Engine error [411]/return error code: 418`。
+- **验证**：新增 `tests/unit/test_audio_channels.py`（26）、`tests/unit/test_generation_audio.py`（12）、
+  `tests/unit/test_generate_events_route.py` 音频 3 例；前端 `AudioParams.test.tsx`（4）、
+  `audio-actions.test.ts`（4）；`python scripts/acceptance.py` **20/20 PASS**（GATES+SUITES+RATCHETS，exit 0）。
+  真实接口未实跑（本机未配百炼 Key），待用户配 Key 后目测。
+
+### 2026-10-27 · 组装导出打通批（用户裁决方案 A；画布 = infinite-canvas；成片直接落画布）
+
+- **立项（用户裁决）**：组装导出阶段此前只有阶段表/完成探针/成片审核节点，**无执行器**；
+  探针指向的 `Final_Assembly_Plan.md` 全平台没有任何生成引导 ⇒ 探针恒假、
+  确认档「成片」审核卡永不签发。用户裁决：先打通组装导出（方案 A），
+  画布用 `E:\09 Github上的实用工具\infinite-canvas-main`，导出后直接放到画布。
+- **实现（`tools/assembly_tools.py::video_assembler`）**：
+  1. 按故事板镜头顺序取 `videoUrl`，任一目标镜头缺视频即整体拒收（fail-closed，不回补、不带缺口组装）；
+     显式 `shot_ids` 可指定顺序与子集。
+  2. ffmpeg 逐段归一化（1280×720 / 30fps / AAC 48k 立体声；无原声补静音）后 concat；
+     可选整片 `bgm_url` 混音（音量系数）。
+  3. 成片落 `workspace/assets/`（URL `/workspace/assets/<file>`）；
+     《成片组装方案》经 `document_write` **唯一写入口**写 `Final_Assembly_Plan.md`
+     （assembly 探针与成片审核节点由此闭环）。
+  4. 成片作为 **video 节点**推画布：`CanvasBackend.add_video_node` +
+     `_to_infinite_node` 支持 video/audio（`metadata.content` = 绝对 URL），
+     节点类型映射表扩展（`canvas_schema`）。画布离线/推送失败不推翻成片，回执如实说明。
+  5. 回执带 `chat_inserts`（kind=video）→ 前端复用既有视频结果卡（零前端改动）。
+- **依赖**：`requirements.txt` 新增 `imageio-ffmpeg>=0.6`（自带跨平台 ffmpeg 二进制，
+  免系统安装）；解析顺序 `FFMPEG_PATH` → PATH 上的 ffmpeg → imageio-ffmpeg；
+  全部缺失时结构化失败并给出安装指引。
+- **引导**：`prompts/planner/protocol.md`「Skill 与工具」段声明组装导出由
+  `video_assembler` 执行；Skill `<video_assembler>` 章节里「由用户在工作台操作/
+  无对应工具调用」一类表述按本工具执行（未改任何 Skill 文件）。
+- **画布口径**：对端 canvas-agent 34 工具闭集**无合成/导出能力**（`canvas_export_snapshot`
+  只是布局快照）⇒ 合成归本项目进程内完成，画布只承担成片节点落位（Rule 7：不改画布）。
+- **熊布印记清理（用户裁决「全部删除」）**：活引用清零——
+  `adapters/infinite_canvas_backend.py` 快探注释、`tests/unit/test_canvas_tools.py` 坐标注释、
+  `docs/配置说明.md` 迁移说明标题、`scripts/check_legacy_orchestration.py` 两处脚本注释。
+  **保留**：`CHANGELOG.md` 任务#9 历史条目（历史留痕不改写纪律）与
+  `check_legacy_orchestration.py` 的 `XiongBu|XIONG_BU|xiong-bu` 防复活正则（回退安全网）。
+- **验证**：新增 `tests/unit/test_video_assembler.py` **9 passed**（收集顺序/缺视频拒收/
+  无 ffmpeg 结构化错误/成功落盘+方案文档+探针翻转/画布失败降级/子集组装提示/文件名防穿越）；
+  真实端到端通过（2 段 1s → 1.98s 成片落盘、方案文档写入、assembly 探针翻转）；
+  `tests/unit/test_infinite_canvas_backend.py` 增 video 节点映射与 `add_video_node` 用例。
+
+### 2026-10-27 · 图片比例空值显示批（用户裁决 A：参数栏空值如实显示「未设置」；2222 目测取证）
+
+- **立项（用户三问，2222 项目目测）**：为什么最开始沈砚、苏棠出图时底部参数栏的图片比例是
+  **1:1**、不是 16:9？为什么出出来的结果也不是 1:1？→ 取证结论 = **同一空值被三条链路读成
+  三个不同答案**（显示 1:1 / 建卡与批量执行 16:9 / 上游实出 1.79:1），非单一 bug（详见 `docs/未清偿债务清单.md` D-30）。
+- **取证（`proj-1792997177-d7879556`，2026-10-26 实跑）**：
+  - 卡上落库态：沈砚/苏棠两张形象卡 `aspectRatio=""`（子代理 trace `4400704144d8` step 6
+    主动 `storyboard_patch_draft {aspectRatio: ""}`，因为委派任务书写「画幅比例暂未确认，
+    `aspectRatio` 先留空」，而建卡默认值给的是 16:9）；场景卡才是 `"16:9"`。
+  - 时间线：14:51 建卡 → 15:13 两张形象图落盘 → **15:15 才写《制片规格》确认 16:9**
+    （Skill 阶段 2 出形象、阶段 3 才确认画幅，`data/skills/古风甜宠短剧/SKILL.md:31/35`）
+    ⇒ 出图时 16:9 尚未被确认，这也是「为什么不是 16:9」的根。
+  - 前端参数栏 `ImageParams.tsx` 旧值 `|| '1:1'` ⇒ 空值被伪装成「已选 1:1」。
+  - 实际执行走的是 Agent 批量轨（`image_generate target=all_keyElements`），
+    `document_tools.py` 对同一空值兜底 `|| "16:9"` ⇒ 请求 `2560x1440 (16:9, 2K)`
+    （`generation_tasks` 日志 `requested_size` 逐单可查）。
+  - 上游实出 `1376×768`（≈1.79:1，Gemini 反代原生尺寸）；**1K/2K 请求产出完全相同像素**
+    ⇒ `size` 在该链路上未生效（`/chat/completions` 回退只用软提示 `Aspect ratio: ...`，
+    且 `1:1` 时连软提示都不发；落盘原样存字节、无裁切）。
+- **用户裁决 A（本批执行面）**：先修**显示口径** —— 参数栏空值**如实显示「未设置」**，
+  不再伪装任何具体比例。执行期缺省口径的收敛（是否给唯一缺省 / 是否纳入
+  `stamp_draft_spec_preference` 补印 / 确认画幅后是否回填既有卡）属用户裁决面，
+  登记为债务 D-30 挂账，本批**零执行侧改动**。
+- **实现**：`src/web/components/middle-panel/params/ImageParams.tsx`
+  —— 新增空值档 `UNSET_RATIO_OPTION = { value: '', label: '未设置' }` 作为比例下拉首项，
+  选中值由 `d().aspectRatio || '1:1'` 改为 `d().aspectRatio || ''`；显式选任一具体比例
+  仍照常写回 `aspectRatio`（人工回填通道不关闭）。
+- **回归测试**：新增 `src/web/components/middle-panel/__tests__/ImageParams-unset-ratio.test.tsx`
+  （3 例：空值选中「未设置」且显示文案不含任何具体比例／已有 `16:9` 原样显示／
+  显式改选写回 `aspectRatio`）。红绿已验：改回旧 `|| '1:1'` 时第 1 例必红。
+- **文档落点**：`docs/前端体验规范.md` §二 新增「图片比例空值显示」条款 + §四 台账 #34；
+  `docs/未清偿债务清单.md` 新增 **D-30**（三套缺省口径 + 上游 size 无效事实 + 清偿要件）。
+- **未做（如实登记）**：①执行期兜底不改（batch 轨 `or "16:9"`、手动轨 `|| '1:1'` 两处，归 D-30）；
+  ②`ParamBase.tsx::saveDraftParams`（无调用方的死函数，内含 `|| '1:1'`）与
+  `board-edit.ts` 本地建卡缺省（`1:1` / `16:9` 两处）不动，同归 D-30 处置（删除死函数属独立裁决）；
+  ③2222 存量卡不回填（用户裁决 A 范围外，回填口径见 D-30 清偿要件③）。
+
+### 2026-10-26 · 再生不覆盖原媒体批（用户裁决：已有媒体只能另建卡生成）
+
+- **立项（用户裁决）**：关键元素 / 分镜 / 音频**已经生成**的情况下，在 Agent 聊天框里
+  要求重新生成，默认**不能覆盖原有的媒体文件**，只能再建一张卡生成。
+- **用户口径（三问三答）**：① 判据 = **该卡已有同种媒体**（`imgUrl` / `videoUrl` /
+  `audioUrl` 各自独立判定，给图片卡生成视频仍写原卡）；② 范围 = **仅 Agent 聊天框**
+  （前端手点的生成按钮不在此列，P2：代码校验不拦用户意志）；③ 批量再生遇已有媒体的卡
+  = **逐张新建承载卡再生成**（不跳过、不整批拒收）。
+- **唯一实现（G4：两条写媒体路径同引）**：`state/storyboard_ops.py` 新增再生隔离四件套——
+  `MEDIA_URL_FIELDS`（媒体字段↔种类映射）、`draft_media_url`（同种媒体判据）、
+  `media_overwrite_kind`（patch 是否覆盖已有同种媒体；同值重写不算）、
+  `duplicate_draft_for_regen` / `regen_carrier`（建承载卡：继承提示词/描述/制作参数/
+  **逐卡渠道**/参考素材，清空媒体与绑定态，label 加「（再生）」后缀便于左栏分辨）。
+- **接线**：
+  1. `tools/document_tools.py::ImageGenerateTool._execute_batch`：提交前对每张目标卡
+     调 `ops.regen_carrier`，本次结果落到承载卡；回执新增 `regen_draft_ids` + detail
+     说明「原卡与旧媒体保持原样」（§2.5 平台改写必须模型可见）。
+  2. `tools/storyboard_tools.py::StoryboardPatchDraftTool`：视频与音频的**落卡通道**
+     （`generate_video` 只回地址，媒体由模型 patch 写入）。写同种媒体且卡上已有 ⇒
+     媒体写到新建承载卡、自动绑定新卡，回执 `draft_id` 即新卡并附 `regen_of` + detail；
+     提示词/参数类 patch 不受影响，照常写原卡。
+  3. 模型可见契约：`image_generate` / `generate_video` 工具描述与
+     `_DRAFT_FIELDS_HINT`（`storyboard_patch_draft` 的 patch 字段说明）写明此行为——
+     否则模型会按原 `draft_id` 读回旧媒体（假前提）。
+- **不动的面**：`task_manager.writeback_if_complete`（回写目标已是承载卡，若在此再切卡
+  会重复建卡）；`generate_video` 本身（只回地址、不写卡）；用户手编的
+  `REST /storyboard/drafts/{id}`（P2）。
+- **验证**：新增 `tests/unit/test_regen_no_overwrite.py` **17 passed**（判定语义 9 条 +
+  承载卡继承 2 条 + patch 通道 4 条 + 生图批量轨 2 条）；受影响模块定点回归
+  （regen / bound_media / storyboard_ops / storyboard_tools / tool_input_hardening /
+  1111_image_model_resolution / event_cards / hybrid_boundaries）**220 passed**；
+  相邻套件（skill_smoke_harness / gate_messages_coverage / batch_rollback_retirement /
+  tool_risk_gate / subagent_delegation）**105 passed**。
+- **边界**：存量项目零回归（无媒体的卡照旧原地写）；UI 面（新卡出现在左栏）待构建后
+  用户目测确认（宪法 §3.1）。
+
+
+- **立项（用户三条裁决）**：①出媒体时只有中间预览框有读秒，左栏卡片要同款转圈；
+  ②音频/关键元素 desc 要像分镜一样可展开收缩；③分组多图时确认出图后 agent 绑定该图
+  （绿勾 + 细黑边框、右键可手动绑定/取消），音频绑定后变小，分镜/音频同逻辑，
+  只有绑定媒体可参与后续操作。
+- **用户口径（三问三答）**：绑定时机 = **出图成功自动绑**；**同组同类型唯一**
+  （绑新卡自动解绑旧卡）；绑定音频**仅在图文组内**缩为小卡（纯音频组保持原尺寸）。
+- **前端**：
+  1. `GenProgress` 增 `compact` 档（环+秒数、无标签）；`DraftCard` 生成中且无当前媒体时
+     覆层渲染同源读秒环（已有媒体让位，与预览框同规则）；`GroupCard` 传 `groupHasVisual`。
+  2. `GroupDescEditor`（关键元素/音频）与分镜同口径：默认折叠两行、点正文/「展开收起」
+     切换（250ms 防双击抖动）、双击编辑、拖选文字不触发展开、空 desc 只显占位符。
+  3. `DraftCard` 绑定绿勾（`--color-success` + 1px 黑边）+ 右键「绑定为分组媒体/取消绑定」
+     （有媒体才出现）；`board-edit.bindDraftLocal` 同组同媒体类型唯一；图文组内绑定音频
+     复用 `--voice` 小卡形态。
+  4. 出片成功自动绑定三路同调 `bindDraftLocal`：`generation-events`（Agent/批量 SSE）、
+     `generate-polling`（手动轮询）、`generate-actions`（同步返回）。
+- **后端**：
+  1. `DraftRecord.bound` + `DRAFT_DEFAULT_FIELDS.bound` + `ALLOWED_DRAFT_FIELDS`
+     （模型可经 patch 改绑，`_DRAFT_FIELDS_HINT` 同步绑定语义）。
+  2. `ops.enforce_single_bound(group, draft)`（同组同类型唯一）；
+     `task_manager.writeback_if_complete` 出片成功自动绑定；`storyboard_patch_draft` /
+     `storyboard_add_draft` / 建组内联卡三写口同引。
+  3. 后续操作只认绑定：`resolve_shot_refs`（图像）/`resolve_shot_audio_refs`（音频）
+     优先取绑定卡；`build_storyboard_media_map` 对「已有绑定卡的种类」只登记绑定卡；
+     无绑定卡时维持存量口径（存量项目零回归）。
+- **验证**：pytest 新增 `tests/unit/test_bound_media_binding.py` 7 passed；refs 相关既有
+  109 passed；vitest 新增三文件 42 passed + 既有 DraftCard/GroupCard/LeftPanel/ShotDescEditor/
+  generation-events/generate-polling 54 passed；`acceptance.py --quick` 15/15 PASS；
+  `npm run build` 通过（首屏 385.19 kB ≤ 400 kB）。
+- **边界**：绑定为卡级字段（不复用 `tag`）；存量数据无 `bound` → 行为不变；
+  UI 面须构建后经用户目测确认（宪法 §3.1）。
+
+### 2026-10-26 · Skill 文风对齐存量（用户裁决：禁平台字段名/字段表，提示词不用代码块，学现有散文）
+
+- **立项（用户实跑反馈）**：新生成的 `retro-cartoon-film` 仍出现
+  `shot_id`/`beat`/`duration`/`shot_size`/`camera`/`subject_action`/
+  `expression`/`props`/`background`/`gag`/`transition`/`on_screen_text`/
+  `audio_cue`/`character_id`/`scene_id`/`prop_id`/`assets`/`shots`/
+  `music_id`/`sfx_id`/`vocal_id` 等平台内部符号，以及「模板 A/B/C/D」全代码块
+  提示词；用户要求对照库里已有 Skill 的散文写法。
+- **改动**：
+  1. `prompts/shared/skill_authoring.md`：输出格式新增「散文写作 / 禁字段表 /
+     提示词用正文或 > 引用块」；文档契约新增禁用平台字段名清单与中文业务词
+     替换表；新增「文风参照」（含「AI-短剧一站式生成」实际分析段）；
+     `script_analyze`/`storyboard_designer` 的“字段”措辞改为“内容”。
+  2. `web/routes/plugins.py` 优化提示词同步：禁字段名/字段表、提示词不用
+     代码块、原有字段表改写为「第 1 镜：……」段落；优化模式只对文风类问题
+     触发一次自修复（不因既有结构调整而重写）。
+  3. `web/skill_authoring.py` 新增 `_style_issues` 机械检查：内部 snake_case
+     字段名、字段表表头、`write_media_prompt` 代码块（仅创作模式）→ 打回
+     并回喂自修复。
+  4. `src/web/lib/skill-template.ts` 空白模板同步去掉“调用哪个工具/
+     workflow_pause”措辞。
+- **边界**：存量 16 份与用户已保存的 `retro-cartoon-film` 正文不改；打开
+  优化助手即可用新提示词清理该稿（字段表/代码块会自动触发一次修复）。
+- **验证**：定点 pytest 40 passed；`check_prompt_literals` / `category_keys` PASS；
+  `acceptance` 全量 19/19 PASS；`npm run build` 通过（首屏 383.99 kB ≤ 400 kB）。
+
+### 2026-10-26 · Skill 文档去工具名（用户裁决：自然语言流程 + 只列章节名）
+
+- **立项（用户实跑反馈）**：生成文档里出现 `todo_write`、`run_subagent`、
+  `script_analysis_report`、`storyboard_create_group`、`canvas_list`、
+  `web_search` 等一大串工具名，可读性差。用户裁决：「这些工具名根本没有必要；
+  写清楚了，模型会自己用工具」「只需要列章节名就可以」。
+- **改动**：
+  1. `prompts/shared/skill_authoring.md`：删「真实工具清单 / `{{tool_catalog}}`」
+     与「工具名只能从清单选」；输出格式明确「文档只保留六个章节名与各章节
+     可执行说明，不附工具清单、不罗列具体工具名」；暂停改为「平台的暂停确认
+     机制」，不再点名 `workflow_pause`；REPAIR 同步。
+  2. `web/skill_authoring.py`：删 `build_tool_catalog` / `_one_line` /
+     `ToolManager` 依赖；`build_create_system` 不再注入目录，仅六章节契约。
+  3. `web/routes/plugins.py`：优化助手提示词删 `{tool_names}` 白名单与
+     `ToolManager` 注册表注入，改自然语言流程；原文档已有工具清单时改写删除；
+     `_assistant_system()` 退化为静态模板返回。
+  4. 测试：`test_skill_authoring.py` 删除工具目录用例，新增「提示词不含
+     工具名/不注入目录」；`test_skill_assistant_route.py` 的注册表白名单
+     用例改为「助手提示词不含工具名」；`GOOD` 草稿改自然语言。
+  5. `scripts/check_prompt_literals.py` / `docs/未清偿债务清单.md`：同步
+     `_ASSISTANT_SYSTEM_TMPL` 已无 `{tool_names}` 参数的事实。
+- **边界**：`data/skills` 存量 16 份**一行未改**（存量正文仍可含工具名，
+  运行时照常可用）；本次只约束 AI 新写/优化的产出。
+- **顺带修存量红**：用户实跑保存了新 Skill（`slapstick-chase-cartoon`）后，
+  `test_stock_pack_catalog_byte_snapshot` 把 17 包误判为漂移；改为只比对
+  16 包存量基线（按 golden 名单过滤新增条目），新增包仍须可加载。
+- **验证**：定点 pytest 38 passed；`check_prompt_literals` PASS；
+  `acceptance` 全量 19/19 PASS；`npm run build` 通过（首屏 383.99 kB ≤ 400 kB）。
+
+### 2026-10-26 · Skill 助手四问题修复（推理配置对齐 / 思考跟底 / 文档实时进预览 / 嵌套围栏截尾）
+
+- **立项（用户实跑反馈）**：①右栏模型选择没有主对话的思考开关/推理档位；②思考流不跟底，
+  旧文字不向上滑；③正文整篇刷在聊天框；④实跑预览只剩「前言 + 组装导出」。
+- **④的根因（已复现）**：文档在 `<write_media_prompt>` 内使用 ``` 示例围栏时，
+  旧 `_extract_skill_block` 的围栏正则不限语言、倒序取「最后一个像 Skill 的块」，
+  恰好截到 `</write_media_prompt>` + `<video_assembler>` 尾部片段；预览解析后
+  就是「前言 + 组装导出」。修复：新增 `web/skill_doc_stream.py`，哨兵
+  `<<<SKILL_DOC>>>`/`<<<END_SKILL_DOC>>>` 定界优先；未遵循时按六章节命中数评分
+  选候选（平票取新版），开标签齐全但闭标签缺失/章节更全时向最后一个围栏扩展；
+  围栏正则改为行首锚定。
+- **改动**：
+  1. `web/skill_doc_stream.py`（新）：流式 chat/doc 切分（`DocStreamSplitter`，
+     结束哨兵 holdback + 收尾 flush）、终态提取、章节闭合度评分。
+  2. `web/routes/plugins.py`：流式新增 `doc_delta` 帧（文档正文只进预览）；
+     done.reply = 模型短说明 + 确定性摘要（名称/章节数/自检结果/保存引导）；
+     流式/非流式/自修复统一 `thinking_level=""`，让 `chat_models_meta` 的
+     「思考开关/推理档位」真正生效（此前传 None 只走 env）。
+  3. `prompts/shared/skill_authoring.md`：CREATE_SYSTEM / REPAIR 改哨兵输出契约
+     （整篇不再包围栏，文档内部示例围栏不受限）。
+  4. 前端：`SkillAssistantPanel` 模型胶囊换 `ModelThinkingPill`（与主对话同源）；
+     `SkillReasoning` live 定高 + 用户上翻暂停/回底恢复的跟底；`SkillLivePreview`
+     新增中间栏实时预览（覆盖层，不卸载编辑器）；`skill-studio` 增加 `doc` 流与
+     `assistantLiveDoc()`；生成期间禁用保存，失败/中断清空实时预览并提示。
+- **回归钉**：pytest 37 passed（嵌套围栏全文/最后一节内嵌围栏/哨兵/doc_delta
+  帧序/摘要/`thinking_level=""`）；vitest 41 passed（skill 相关 7 文件，含
+  doc_delta 累积与 done 清空、流断清空、实时预览章节/等待态）；`tsc --noEmit`
+  0 错；`eslint` 0 告警；`acceptance.py --quick` 15/15 PASS；`npm run build`
+  通过（首屏 383.99 kB ≤ 400 kB）。
+- **边界**：哨兵仅存在于模型输出与解析层，不展示给用户；模型不遵循时仍走
+  围栏/裸文档回落。生成中保存禁用，完成后草稿覆盖仍入撤销栈。
+- **顺带修复存量红**：`tests/fixtures/skill_sections_golden.json` 的
+  `AI-短剧一站式生成.planning` 条目仍是 7ca261e1 改 data/skills 前的旧指纹
+  （1710 字），全量 pytest 必红；本批按当前文档同步为 1713 字/新 opener，
+  只改该条目，不重排其余键。
+
+### 2026-10-23 · Skill 创作契约改为与存量同形（用户裁决 A：新写的 Skill 必须像库里的）
+
+- **立项（用户提问「为什么跟现在的 skill 差别那么大？」）**：1111 项目实跑的
+  `AI-短剧一站式生成` 是 `<planner>`…`<video_assembler>` 六个标签块、9,374 字；
+  而新建 Skill 的 AI 创作模式要求 `# 名称` + `> 调用规则` + 六个 `##` 标题、
+  全文 ≤2,500 字，并**明令禁止** `<tag>` 章节。**实测取证**：把 16 份存量 Skill
+  逐个丢进 `validate_skill_draft(create_mode=True)`，**16/16 全部不通过**，
+  问题清一色「缺 `# 名称`/缺 `> 调用规则`/缺六章节」——AI 按契约写得越标准，
+  产出就越不像库里已有的 Skill。两套写法互斥，解析层却都认（`SECTION_TAG_STAGES`
+  与 `_HEADING_STAGE_HINTS`），于是长期并存无人发现。
+- **用户裁决（2026-10-23）**：选 **A——让 AI 按老格式（tag 式）写**，与存量同形。
+- **改动（后端 3 + 提示词 1 + 前端 1 + 种子 1）**：
+  1. `web/skill_authoring.py`：`REQUIRED_SECTIONS` 由六个中文标题改为六个**章节
+     标签名**（`planner`/`script_analyze`/`storyboard_designer`/`media_generator`/
+     `write_media_prompt`/`video_assembler`）；自检改为按 tag 判定齐全/非空/顺序，
+     新增「标签独占行且成对」项（同行书写会被解析器静默丢段）；删除 `# 名称` 与
+     `> 调用规则` 两项要求（名称/描述唯一权威 = frontmatter，与 `_parse_doc` 一致）；
+     报错文案带中文标签名（`<planner>`（流程规划））。
+  2. `prompts/shared/skill_authoring.md`：`CREATE_SYSTEM` 重写为标签块契约
+     （明确「不用 `#` 标题 / 不用 `> 调用规则` / 不用 `##` 章节」、六块各写什么、
+     块内可用 Markdown），**取消 2,500 字上限**（改为「细节要写足，不要为了短而
+     省略」——正是该上限把提示词模板、失败修复表这类能直接套用的内容挤掉的）。
+  3. `web/routes/plugins.py`：`_extract_skill_block` 不再要求 `# `（改为
+     「有 frontmatter / 有 `<planner>` / 有 `# ` 三者之一」即认）；优化模式
+     提示词由「保留 # 标题与调用规则行」改为「保留原文档的章节写法，不要中途换
+     格式」；`/skills/format` 的整理模板同步改标签块形态。
+  4. `src/web/lib/skill-template.ts`：新建空白模板改六章节标签块（无 H1、无调用
+     规则行），与存量逐字同形。
+  5. `web/skill_docs.py::DEFAULT_SKILL_DOC`（默认种子文档）：同步改标签块形态。
+     **顺带修一处既有隐患**：旧种子是标题式，`check_skill_anchor_lint` 对它的判定
+     是 `missing <planner>`——任何空库首启生成的默认 Skill 都会让锚点闸红。
+- **回归钉**：`test_skill_authoring.py` 重写（GOOD 改标签块；新增「六章节 =
+  存量实际标签名」「存量 16 份按新契约结构项零问题」「未闭合标签 / 逆序」三例；
+  优化模式改为只断言结构项，不因写法差异误判）；`test_skill_assistant_route.py`
+  新增「tag 式无 H1 文档也能被提取」；前端 `skill-structure.test.ts`（模板六块
+  id/kind、章节 label/hint）、`SkillStudioView-assistant.test.tsx`（落盘内容含
+  `<planner>`…`</video_assembler>` 且无 H1 行）。
+- **验证**：定点 pytest **52 passed**（4 文件）；前端全量 **133 文件 / 1136 测试
+  全绿**；`tsc --noEmit` 0 错；`eslint` 0 告警；`check_prompt_literals` /
+  `skill_anchor_lint`（16 份全绿）/ `stage_face_consistency` PASS；
+  `run_eval_pipeline.py` exit 0；`npm run build` 通过（首屏 382.19 kB ≤ 400 kB）；
+  `acceptance.py --quick` **15/15 PASS（退出码 0）**。
+- **实测复检**：16 份存量按新契约自检——11 份零问题，另 5 份只剩**内容纪律**
+  类提示（写死 `24fps`/`4K`/`60fps` 参数、体量超 24,000 字建议预算），
+  **结构项（缺章节/顺序/闭合/frontmatter）零命中**。唯一例外 `新-Skill`
+  是历史遗留（裸键 `skill_name:` 头 + 源平台章节名 `multimodal_analyze_tool`/
+  `write_the_prompt`），属该文件自身的历史形态，测试中单列豁免。
+- **边界（如实留痕）**：存量 16 份 Skill **一行未改**（冻结 #16 继续有效）；
+  本批只统一「新写的」与「已有的」之间的契约，不改存量正文。
+- **环境注记**：本批验证期间 `.pytest_tmp` 再次出现 Windows 权限缺损（`run` 目录
+  拒绝删除），经 `diagnose-windows-sandbox-acl` 一条命令修复（报告
+  `.acl-reports/acl-report-27aa4d36*.jsonl`，回滚命令见其 ROLLBACK 行），与代码无关。
+  全量 pytest 现有 **42 红**，经 HEAD 干净 worktree 复跑确认为**既有环境问题**
+  （41 红 = D-22 的 `no_proxy` 含 `[::1]` ⇒ httpx `InvalidURL`；
+  1 红 = `test_s6_skill_sections_golden_pinned`，10-21 那次提交改了 Skill 正文却
+  未重采 `tests/fixtures/skill_sections_golden.json`，在未改动 HEAD 上同样红），
+  本批零新增。
+
+### 2026-10-22 · 草稿卡卡面零文字 + 有无媒体两态分形（用户裁决，2222 目测批）
+
+- **立项（用户 2222 项目目测第三问）**：「建卡后，卡面太多文字信息，太杂。把文字
+  信息删掉。而且图片生成和没有生成要区别分开。如果是图片就采用缩略图边缘一个
+  窄窄的边框。视频就采用首帧。音频卡没有音频时就类似于图4一个广播符号，有音频时
+  就是现在的符号。」
+- **现状取证（改前 `DraftCard.tsx`）**：空卡（未生成）同时渲染 `tag` 状态标签 +
+  `label` 名称 + `desc` 两行截断描述三块文字，卡面 116×64 里挤三层；有媒体时三块
+  整体隐藏；音频不分有无媒体一律「音符+波形」（音色卡半尺寸 `--voice` 是 09-17
+  裁决的既有形态，本批保留）。2222 落库实态（`proj-1792636648`）：12 个关键元素组
+  每组建「音色卡 + 设定图卡」两张，设定图全为 `imgUrl: ''` 空卡 ⇒ 截图里全是
+  「设定图 · 程心（三视图）/ 角色三视图设定图；对应视觉设定图…」三行字压在空底上。
+- **改动（前端 2 文件 + 测试）**：
+  1. `components/left-panel/DraftCard.tsx`：卡面**零文字**——`label`/`desc`/`tag`
+     三个渲染块整体摘除，信息载体改为整卡 `title`（名称 + 全角空格 + 描述）；
+     媒体按四态分支：图片=背景缩略图；视频=首帧 `<video>` + 左上类型角标；
+     音频未生成=`FiVolume2` 广播符号（`.is-empty`，无波形）、已生成=音符+波形；
+     图片/视频未生成=居中类型占位符号（`FiImage`/`FiVideo`）。
+  2. `styles/left-panel.css`：边框从 `2px solid transparent` 收为 `1px solid
+     var(--border-color)` 窄边，两态分形 `.draft-card--empty`（虚线，未生成）/
+     `.draft-card--filled`（实线，有媒体）；`.draft-card-desc` / `.draft-card-tag`
+     整族删除；`.draft-card-label` 仅保留给 `AssetCard`（未归类素材无分组上下文，
+     去掉名称无法辨认，非本裁决范围）。
+- **回归钉**：新增 `src/web/components/__tests__/DraftCard-media-states.test.tsx`
+  （12 条：四类卡零文字 + title 兜底、图片有/无两态、视频有/无两态、音频有/无
+  两态、音色卡半尺寸不退化）；`DraftCard-voice-compact.test.tsx` 收窄为只守
+  `--voice` 半尺寸形态（卡面文字口径归新文件，P1 不复述两处）。
+- **验证**：定点 23 passed（3 文件）；`tsc --noEmit` 0 错；`eslint` 0 告警；
+  `check_semantic_colors` PASS（色值 22≤22 / 字阶 10≤11 / 层级 0）；
+  `npm run build` 通过（首屏 381.86 kB ≤ 400 kB）；`acceptance.py --quick`
+  **15/15 PASS（退出码 0）**；`http://127.0.0.1:8080/` 已服务新产物
+  （`index-COcyIyaF.css`）。
+- **待用户目测**：卡面零文字后「哪张是音色、哪张是设定图」仅靠符号区分——
+  音色卡半尺寸 + 广播/音符，设定图卡满尺寸 + 图片符号，需 2222 项目实看确认
+  符号语义是否够读。
+- **自查补漏（同日第二轮，用户追问「有没有遗漏的」后逐项复查，5 处）**：
+  1. **视频卡两层打架（上一轮引入）**：`bgStyle` 允许「视频无 videoUrl 但
+     imgUrl 作首帧占位」，而占位符号判据用 `hasMedia`（视频只看 videoUrl）
+     ⇒ 带参考图未出视频的卡会**同时**显示底图与占位符号。改为单一判据
+     `hasVisual()`（图片底图 / 视频首帧 / 音频文件），底图与占位、边框实虚
+     全走它；死函数 `hasMedia` 删除。
+  2. **边框改到公共基类（上一轮引入）**：`border` 从 `transparent` 改为
+     `var(--border-color)` 落在 `.draft-card` 上，而 `.draft-card` 是
+     **DraftCard 与 AssetCard 共用基类** ⇒ 未归类素材卡被连带加框。改为基类
+     保持透明、窄边只由 `--filled` / `--empty` 两个修饰类提供。
+  3. **生成失败态失去出口（上一轮引入，最严重）**：`tag` 是空卡上唯一可见的
+     状态载体，删掉文字后 `生成失败` 与「还没生成」视觉完全一致。真实数据
+     计数：`Agent` 57 / `已生成` 14 / **`生成失败` 11** / `已确认` 8 / 其余各 1。
+     补第三态 `--failed`（危险色窄边 + 危险色占位符号，`--color-danger` 双主题
+     已有 token）+ 悬停 title 头部点明「生成失败」。
+  4. **读屏读到空按钮**：卡面零文字后 `role="button"` 的可访问名称原本靠卡面
+     文本，只剩 `title` 不够（title 是鼠标悬停通道）⇒ 补 `aria-label`
+     （名称 + 状态，空名称回落「未命名草稿」），title 与 aria-label 同源不同通道。
+  5. **过期豁免声明**：`left-panel.css` 的「文字可复制」豁免清单仍含
+     `.draft-card`（`user-select: text; cursor: text`），卡面已无文字，
+     留着会让整卡呈现文字光标、与「点卡预览」手势打架 ⇒ 从清单移除。
+  - **回归补钉**：`DraftCard-media-states.test.tsx` 12 → **21 条**（失败三态
+    含「失败+已出图并存」、视频带参考图不叠占位、aria-label 四例含空名称回落）；
+    全量前端 **133 文件 / 1136 测试全绿**；`tsc` 0 错；`eslint src/web/`
+    **0 error**（18 warning 均为存量，与本批无关）；`npm run build` 通过
+    （首屏 382.19 kB ≤ 400 kB）；`acceptance.py --quick` **15/15 PASS**；
+    `http://127.0.0.1:8080/` 已服务新产物 `index-CMZsP0Ji.css`。
 
 ### 2026-10-22 · 建组/建卡文案改事实表述：拆掉「邀请式」引导（用户裁决两轮收紧，1111 引导源取证续篇）
 

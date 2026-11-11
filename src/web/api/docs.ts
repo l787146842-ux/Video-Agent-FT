@@ -6,10 +6,42 @@ import { apiFetch, apiPut, apiPost, apiDelete, apiPostStream } from './client';
 import type {
   SkillDoc, SkillDocHistoryResponse, SkillDocsResponse, SkillDocSave, SkillDocVersion,
   SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest, SkillLoadFailure,
+  SkillRefDoc, SkillRefItem, SkillRefListResponse, SkillRefSave,
 } from '@/types/api.generated';
 
-/** Skill 文档/历史版本：以后端生成物为唯一来源（豁免清单已清偿） */
-export type { SkillDoc, SkillDocVersion, SkillLoadFailure };
+/** Skill 文档/历史版本/分册：以后端生成物为唯一来源（豁免清单已清偿） */
+export type {
+  SkillDoc, SkillDocVersion, SkillLoadFailure, SkillRefDoc, SkillRefItem,
+};
+
+/** 列出某 Skill 的全部分册（工作台分册入口） */
+export async function getSkillRefs(slug: string): Promise<SkillRefItem[]> {
+  const data = await apiFetch<SkillRefListResponse>(
+    `/api/skills/docs/${encodeURIComponent(slug)}/refs`,
+  );
+  return Array.isArray(data.refs) ? data.refs : [];
+}
+
+/** 读单个分册全文 */
+export async function getSkillRef(slug: string, name: string): Promise<SkillRefDoc> {
+  return apiFetch<SkillRefDoc>(
+    `/api/skills/docs/${encodeURIComponent(slug)}/refs/${encodeURIComponent(name)}`,
+  );
+}
+
+/** 新建或覆盖一个分册 */
+export function saveSkillRef(slug: string, name: string, content: string) {
+  const body: SkillRefSave = { content };
+  return apiPut<SkillRefDoc>(
+    `/api/skills/docs/${encodeURIComponent(slug)}/refs/${encodeURIComponent(name)}`,
+    body,
+  );
+}
+
+/** 删除一个分册 */
+export function deleteSkillRef(slug: string, name: string): Promise<{ ok: boolean }> {
+  return apiDelete(`/api/skills/docs/${encodeURIComponent(slug)}/refs/${encodeURIComponent(name)}`);
+}
 
 /** Skill 文档历史版本列表（新→旧，含全文） */
 export async function getSkillDocHistory(slug: string): Promise<SkillDocVersion[]> {

@@ -14,7 +14,7 @@
 
 **一个以 Skill 作为视频制作流程、据此控制视频生产的 Agent。**
 
-每套 Skill 是一份 Markdown 制作手册：开头两行说明名称与使用时机，正文用标题写「分几步走、每步产出什么、何时停下来问用户」，细节可拆 `references/` 分册按需读取。
+每套 Skill 是一份 Markdown 制作手册：开头两行说明名称与使用时机，正文用固定六节骨架写「目标与交付 / 项目结构 / 制片规格 / 创作流程 / 专业方法 / Reference 路由」，模板与细则拆到 `references/` 分册按需读取（形态对齐 Flova 新 skill）。
 Agent 按手册推进「故事 → 剧本 → 分镜 → 关键帧 → 视频 / 音频」全流程，
 素材与节点直接落到外部画布 [infinite-canvas](https://github.com/basketikun/infinite-canvas) 上。
 
@@ -22,17 +22,17 @@ Agent 按手册推进「故事 → 剧本 → 分镜 → 关键帧 → 视频 / 
 
 ## Skill 如何驱动流程
 
-一套 Skill = `data/skills/<名称>/SKILL.md`，由三部分组成：
+一套 Skill = `data/skills/<名称>/SKILL.md` + `references/` 分册，由三部分组成：
 
 | 部分 | 内容 | 作用 |
 |---|---|---|
 | frontmatter 声明 | `name` / `description` | 注册与拒载依据：声明不合格的包不进 Skill 目录、不可加载 |
-| 主文档 | 目标、制作流程、结构与方法 | **选中后整篇注入主代理**；超预算时注入开头与标题目录 |
-| `references/` 分册 | 媒体生成、提示词写法、剪辑交付等细节 | 正文给路径，用到才 `read_skill`，不提前占上下文 |
+| 主文档 | 六节骨架：目标与交付、项目结构、制片规格、创作流程、专业方法、Reference 路由 | **选中后整篇注入主代理**；超预算时注入开头 + 标题目录 + 分册清单 |
+| `references/` 分册 | `媒体生成.md` / `提示词写作.md` / `剪辑交付.md`（可按包追加专属分册） | 正文给路径，用到才 `read_skill`，不提前占上下文；工作台可查看编辑 |
 
 运行时的一条链：
 
-1. **选中 Skill** —— 主代理拿到主文档全文（超预算给开头与标题目录），分册不自动进场。
+1. **选中 Skill** —— 主代理拿到主文档全文（超预算给开头 + 标题目录 + 分册清单），分册不自动进场。
 2. **推进到某阶段** —— 主代理把该阶段整段委派出去；子代理拿到同一份主文档全文，
    并可自行 `read_skill` 读分册。`stage` 只用于归组、建卡限定与遥测，不按阶段切章节。
 3. **主代理是纯编排角色** —— 各专业阶段的写入工具对它结构性不可见，只能经委派触达；
@@ -78,26 +78,43 @@ Skill 是产品数据源而非代码：用户可在工作台直接编辑、保�
   </tr>
 </table>
 
-## 外部画布（infinite-canvas）
+## 内置画布（infinite-canvas）
 
-画布是本项目**使用的外部项目**，代码不在本仓库内、独立迭代：
-<https://github.com/basketikun/infinite-canvas>
+画布（[infinite-canvas](https://github.com/basketikun/infinite-canvas)，MIT）已搬入
+`vendors/infinite-canvas/`，构建为独立产物 `static/canvas-app/`，由本服务在 `/canvas-app/`
+同域直出（`python scripts/build_canvas.py` 或 `npm run build:canvas`）。**不再需要另起 Node 进程**。
 
-它由四部分组成，本项目只用其中前两个公开面：
-
-| 画布模块 | 是什么 | 本项目怎么用 |
+| 组成 | 是什么 | 本项目怎么用 |
 |---|---|---|
-| `web/` | 画布站点本体（React 19 + Vite 7，端口 **3000**） | iframe 嵌入，靠 hash 引导 `#agentUrl` / `#agentToken` 接入 |
-| `canvas-agent/` | 本地 Agent 桥（npm 包，端口 **17371**） | **唯一集成通道**：`POST /api/tools` 调工具，`GET /health` `/config` 探活与版本 |
-| `plugins/` | 节点插件 SDK + Codex app 插件 | 预留扩展点，当前未启用 |
-| `docs/` | 文档站（Fumadocs） | 未使用 |
+| `vendors/infinite-canvas/web/` | 画布站点（React 19 + Vite 7） | 同域 iframe 嵌入，hash 引导 `#agentUrl` / `#agentToken` |
+| `src/video_agent/web/routes/canvas_agent.py` | 本进程 agent 协议（原 canvas-agent 的替代） | SSE `tool_call` + `/canvas/state` + `/canvas/result` |
+| `src/video_agent/adapters/canvas_agent_session.py` | 会话与工具翻译 | 高层工具 → `canvas_apply_ops`，等浏览器回执 |
 
-**集成铁律（宪法 Rule 7）**：任何时候禁止修改或 fork 画布的任何文件，只依赖上述公开面；
-画布内生成的图存于其浏览器端，服务端无法回读原图。确需画布侧新能力时按需求对齐，不做单边侵入——
-完整约束见 [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md)。
+**集成纪律（宪法 Rule 7）**：画布改动只允许登记在案的最小 patch 集（`LocalAgentPanel headless`、
+basename、配色、`BASE_URL` 资源路径），完整清单见 `CHANGELOG.md`；画布数据仍在浏览器 IndexedDB，
+服务端只经协议读写节点，无法直读原图/素材库；上游更新按最小 patch 集 rebase。
 
 本项目侧全部画布代码收敛在 `src/video_agent/adapters/`：`infinite_canvas_backend.py`（实现）、
-`canvas_adapter.py`（工厂）、`canvas_port.py`（端口）、`canvas_schema.py`（契约映射与工具白名单）。
+`canvas_adapter.py`（工厂）、`canvas_port.py`（端口）、`canvas_schema.py`（契约映射与工具白名单）、
+`canvas_agent_session.py`（进程内会话）。
+
+### 上游更新（增量同步，不必全量拉取）
+
+```bash
+# 1. 只看新上游改了什么（不动文件）
+python scripts/sync_canvas_upstream.py --check --upstream <新版本目录>
+# 2. 增量应用（只写变化的文件；有冲突默认整体中止）
+python scripts/sync_canvas_upstream.py --apply --upstream <新版本目录>
+# 3. 重建画布产物
+python scripts/build_canvas.py
+```
+
+- 基线 `vendors/infinite-canvas/.canvas-sync.json` 记录每个文件的上游/本地 sha256：上游没变的文件
+  一律不动，因此 6 个本地 patch（headless / basename / 配色 / BASE_URL）不会被覆盖。
+- 上游改了 patch 同文件 → 报冲突不写文件，diff 落到 `vendors/infinite-canvas/.sync-conflicts/`；
+  按 `CHANGELOG.md` 的 patch 清单人工重做后，用 `--init-baseline --force` 收口。
+- `package.json` 有变时会提示重装依赖；锁文件与构建缓存不参与同步。
+- 首次接手/重建基线：`--init-baseline <纯净上游目录> --version <版本号>`。
 
 ## 快速开始
 

@@ -236,11 +236,12 @@ async def test_stage_delegation_injects_full_main_doc(svc, fakestop_off):
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
     assert "本次委派阶段：媒体生成" in task_text
-    # 通用口径：主文档全文注入，媒体生成/提示词写法两章都在场
-    assert "内切镜时长估算" in task_text, "提示词写法章节未注入"
-    assert "四大要素" in task_text
-    assert "景别与时长标注" in task_text
-    assert "## 五、媒体生成" in task_text and "## 六、提示词写法" in task_text
+    # Flova 六节骨架（2026-11-11）：主文档全文注入；「提示词写法/媒体生成」的
+    # 长细节已下沉 references/ 分册，子代理据主文档的路由段自行 read_skill。
+    assert "内切镜时长估算" in task_text, "主文档提示词路由未注入"
+    assert "## 六、Reference 路由" in task_text
+    assert "references/媒体生成.md" in task_text
+    assert "references/提示词写作.md" in task_text
     assert "<media_generator>" not in task_text
     assert "章节内容截断" not in task_text
 
@@ -295,9 +296,9 @@ async def test_stage_delegation_storyboard_design(svc, fakestop_off):
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
     assert "本次委派阶段：故事板设计" in task_text
-    # 通用口径：主文档全文注入，故事板设计章节在场
-    assert "分镜语法三件套" in task_text, "故事板设计章节未注入"
-    assert "## 四、故事板设计" in task_text
+    # Flova 六节骨架（2026-11-11）：故事板设计干货在第五节，结构骨架在第二节。
+    assert "分镜语法三件套" in task_text, "故事板设计干货未注入"
+    assert "## 二、项目结构规划" in task_text
     assert "章节内容截断" not in task_text
 
 

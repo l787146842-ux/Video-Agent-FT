@@ -155,7 +155,9 @@ def test_merged_stage_injection_deduplicates_one_to_many_chapters():
     from src.video_agent.skill_runtime.registry import CAPABILITY_TOOL_STAGES
 
     injected = reg.tool_sections("AI-短剧一站式生成", "storyboard_design")
-    probe = "单 shot 内切镜数量建议"
+    # 探针取「二、项目结构规划」正文里的独有短语（Flova 六节骨架下该节一对多
+    # 覆盖 storyboard_ke/shot/audio 三键）。
+    probe = "每个 shot 是对应序列下的一个分组"
     assert injected.count(probe) == 1, (
         f"合并阶段的同一段正文被注入 {injected.count(probe)} 次（应 1 次）——"
         "一对多映射的复制语义泄漏进了注入层")
@@ -169,14 +171,14 @@ def test_merged_stage_injection_deduplicates_one_to_many_chapters():
 
 
 def test_registry_full_content_contains_all_generic_sections():
-    """通用口径：注册内容是完整主文档，各章标题齐全，且无旧标签。"""
+    """通用口径：注册内容是完整主文档，六节标题齐全，且无旧标签。"""
     from src.video_agent.skill_runtime import registry as reg
 
     entry = reg.resolve_entry("AI-短剧一站式生成")
     assert entry is not None
-    for mark in ("## 二、制作流程", "## 三、剧本分析", "## 四、故事板设计",
-                 "## 五、媒体生成", "## 六、提示词写法", "## 七、组装导出"):
-        assert mark in entry.content
+    for mark in ("## 一、目标、输入与交付", "## 二、项目结构规划", "## 三、制片规格",
+                 "## 四、创作流程规划", "## 五、专业创作方法", "## 六、Reference 路由"):
+        assert mark in entry.content, f"缺少六节骨架标题：{mark}"
     assert "<planner>" not in entry.content
 
 

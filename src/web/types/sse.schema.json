@@ -2234,10 +2234,13 @@
   "tool_detail_tiers": {
     "canvas_add_node": "expand",
     "canvas_batch_add_nodes": "expand",
+    "canvas_create_container": "expand",
     "canvas_delete_node": "output",
+    "canvas_group_nodes": "expand",
     "canvas_list": "output",
     "canvas_list_assets": "output",
     "canvas_read_nodes": "output",
+    "canvas_ungroup_nodes": "output",
     "canvas_update_node": "expand",
     "document_write": "expand",
     "generate_video": "expand",
@@ -2261,6 +2264,7 @@
     "storyboard_media_to_chat": "output",
     "storyboard_patch_draft": "expand",
     "storyboard_patch_group": "expand",
+    "video_assembler": "expand",
     "view_storyboard_media": "output",
     "workflow_pause": "expand"
   },
@@ -2271,10 +2275,13 @@
   "tool_approval_tiers": {
     "canvas_add_node": "none",
     "canvas_batch_add_nodes": "none",
+    "canvas_create_container": "none",
     "canvas_delete_node": "none",
+    "canvas_group_nodes": "none",
     "canvas_list": "none",
     "canvas_list_assets": "none",
     "canvas_read_nodes": "none",
+    "canvas_ungroup_nodes": "none",
     "canvas_update_node": "none",
     "document_write": "none",
     "generate_video": "confirm",
@@ -2298,6 +2305,7 @@
     "storyboard_media_to_chat": "none",
     "storyboard_patch_draft": "none",
     "storyboard_patch_group": "none",
+    "video_assembler": "none",
     "view_storyboard_media": "none",
     "workflow_pause": "none"
   },

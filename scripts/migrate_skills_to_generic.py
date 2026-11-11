@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
-"""一次性迁移：Flova 标签章节 → 通用 Markdown 标题式 Skill。
+"""【已退役 · 仅供考古】一次性迁移：Flova 标签章节 → 通用 Markdown 标题式 Skill。
 
-用法：
+⚠ 2026-11-11 起**不要再用本脚本处理存量 Skill**：它把「体量 ≥ 15000 字符才拆
+references/」写成了硬编码阈值，这正是「16 包里只有 3 个拆出分册、且那 3 个包的
+分册指针全部落在注入预算之外」的根因。现行形态是 Flova 六节骨架 + **每个包
+统一三本分册**（媒体生成/提示词写作/剪辑交付），由创作助手契约与
+`lint_skill_content` 的注入预算校验共同维持，见 `ARCHITECTURE_RULES.md` §2.8。
+
+用法（仅历史参考）：
     python scripts/migrate_skills_to_generic.py --dry-run
     python scripts/migrate_skills_to_generic.py --apply
     python scripts/migrate_skills_to_generic.py --only "AI-短剧一站式生成" --apply
@@ -11,12 +17,11 @@
 - `→ **tag**` 箭头（旧 Flova 的章节指针）删除，不保留任何标签语义；
 - 只保留通用 frontmatter（name/description/version/source/metadata/license/x-*），
   flow/pause/scripts/resources/schema_version 丢弃；
-- 体量 ≥ 15000 字符的主文档，把「媒体生成」「提示词写法」拆到 references/，
-  正文留路径指针；
+- ~~体量 ≥ 15000 字符的主文档，把「媒体生成」「提示词写法」拆到 references/~~（已废）；
 - apply 前必须存在 data/skills_backup_20261111（整体备份）。
 
-状态：2026-11-11 已完成 16 份全量迁移；本脚本保留为后续同类 skill 的维护工具，
-不随批归档。
+状态：2026-11-11 标签迁移已完成（16 份）；同日后续批已把全部 16 包重写为
+Flova 六节骨架并统一拆出三本分册，本脚本的拆分规则随之作废，仅留作历史记录。
 """
 from __future__ import annotations
 

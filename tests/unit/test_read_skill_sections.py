@@ -1,4 +1,4 @@
-"""read_skill 续读语义（任务#36 B5）：全文按需读 + section/start 章节续读。"""
+"""read_skill 续读语义：全文/标题章节/start 续读 + 三段式返回。"""
 import pytest
 
 import src.video_agent.web.skill_docs as sd
@@ -18,15 +18,22 @@ def skills_dir(tmp_path, monkeypatch):
     registry.reset_registry()
 
 
+def _body(out: str) -> str:
+    """取三段式里的 <skill_content> 正文（不含包装与续读提示）。"""
+    text = out.split("<skill_content", 1)[1]
+    text = text.split(">", 1)[1]
+    body = text.split("</skill_content>", 1)[0]
+    return body.split("\n……")[0].strip("\n")
+
+
 def _save_long_skill():
     filler = "章节正文填充。" * 50
-    # frontmatter 必填键（name/description）：注册期要求，可注册才可加载（M2 门户）
     sd.save_skill_doc(
         "续读演示",
         "---\nname: 续读演示\ndescription: 测试桩\n---\n"
-        "# 续读演示\n> 调用规则：测试\n"
-        f"<planner>\n流程总纲 SEC_PLANNER_BODY\n{filler}</planner>\n"
-        f"<storyboard_key_elements>\n关键元素规范 SEC_KE_BODY\n{filler}</storyboard_key_elements>\n",
+        "# 续读演示\n\n"
+        f"## 制作流程\n流程总纲 SEC_PLANNER_BODY\n{filler}\n\n"
+        f"## 关键元素\n关键元素规范 SEC_KE_BODY\n{filler}\n",
     )
 
 
@@ -37,15 +44,17 @@ async def test_read_skill_full_text_default(skills_dir):
     assert res.success
     assert "SEC_PLANNER_BODY" in res.data["content"]
     assert "SEC_KE_BODY" in res.data["content"]
+    assert "<skill_content" in res.data["content"]
+    assert "<skill_instructions>" in res.data["content"]
 
 
 @pytest.mark.asyncio
 async def test_read_skill_section_returns_only_that_section(skills_dir):
     _save_long_skill()
     res = await ReadSkillTool().aexecute(
-        ReadSkillInput(name="续读演示", section="storyboard_key_elements"))
+        ReadSkillInput(name="续读演示", section="关键元素"))
     assert res.success
-    assert res.data["section"] == "storyboard_key_elements"
+    assert res.data["section"] == "关键元素"
     assert "SEC_KE_BODY" in res.data["content"]
     assert "SEC_PLANNER_BODY" not in res.data["content"]
 
@@ -56,7 +65,7 @@ async def test_read_skill_section_fuzzy_title(skills_dir):
     sd.save_skill_doc(
         "英文章节",
         "---\nname: 英文章节\ndescription: 测试桩\n---\n"
-        "# 英文章节\n> 调用规则：测试\n<Write_The_Prompt>\nMARK_EN\n</Write_The_Prompt>\n",
+        "# 英文章节\n\n## Write_The_Prompt\nMARK_EN\n",
     )
     res = await ReadSkillTool().aexecute(
         ReadSkillInput(name="英文章节", section="write_the_prompt"))
@@ -69,7 +78,7 @@ async def test_read_skill_unknown_section_lists_available(skills_dir):
     res = await ReadSkillTool().aexecute(
         ReadSkillInput(name="续读演示", section="不存在章节"))
     assert not res.success
-    assert "planner" in res.error and "storyboard_key_elements" in res.error
+    assert "制作流程" in res.error and "关键元素" in res.error
 
 
 @pytest.mark.asyncio
@@ -78,7 +87,6 @@ async def test_read_skill_start_continuation(skills_dir):
     _save_long_skill()
     tool = ReadSkillTool()
     _, full = sd.resolve_skill_content("续读演示")
-    # 用一个很小的窗口模拟超长分段（直接改 settings 上限）
     from src.video_agent.config import settings
 
     old = settings.max_doc_chars
@@ -88,8 +96,7 @@ async def test_read_skill_start_continuation(skills_dir):
         assert r1.success and "start=100" in r1.data["content"]
         r2 = await tool.aexecute(ReadSkillInput(name="续读演示", start=100))
         assert r2.success
-        got = r1.data["content"].split("\n……")[0] + r2.data["content"].split("\n……")[0]
-        # 两段拼接覆盖全文前 200 字（续读提示不算正文）
+        got = _body(r1.data["content"]) + _body(r2.data["content"])
         assert got.rstrip() == full[:len(got.rstrip())]
         # 读到末尾后再续读 → 明确报读完
         r3 = await tool.aexecute(ReadSkillInput(name="续读演示", start=len(full)))

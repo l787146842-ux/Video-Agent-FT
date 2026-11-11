@@ -49,6 +49,11 @@ from src.video_agent.web.skill_docs import (
     save_skill_doc,
     delete_skill_doc,
     lint_skill_content,
+    # 分册（references/）读写：工作台可见可编辑
+    list_skill_refs,
+    get_skill_ref,
+    save_skill_ref,
+    delete_skill_ref,
 )
 
 router = APIRouter()
@@ -220,6 +225,82 @@ async def delete_one_skill_doc(slug: str):
             str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
         ) from e
     return {"ok": True}
+
+
+# ---------- 分册（references/）读写：工作台可见可编辑（2026-11-11 裁决） ----------
+
+
+class SkillRefItem(BaseModel):
+    """分册列表项：文件名 + 字数 + 一级标题（无标题为空串）"""
+    name: str
+    chars: int = 0
+    title: str = ""
+
+
+class SkillRefListResponse(BaseModel):
+    refs: List[SkillRefItem] = []
+
+
+class SkillRefDoc(BaseModel):
+    """分册全文（读写同形）"""
+    slug: str
+    name: str
+    content: str = ""
+
+
+class SkillRefSave(BaseModel):
+    content: str
+
+
+@router.get("/skills/docs/{slug}/refs", response_model=SkillRefListResponse)
+async def list_one_skill_refs(slug: str):
+    """列出某 Skill 的全部分册（工作台左/中栏展示入口）。"""
+    try:
+        return {"refs": list_skill_refs(slug)}
+    except ValueError as e:
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
+
+
+@router.get("/skills/docs/{slug}/refs/{name}", response_model=SkillRefDoc)
+async def get_one_skill_ref(slug: str, name: str):
+    """读单个分册全文（查看/编辑前拉取）。"""
+    try:
+        ref = get_skill_ref(slug, name)
+    except ValueError as e:
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
+    if not ref:
+        raise VideoAgentError(
+            f"分册 '{name}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
+    return ref
+
+
+@router.put("/skills/docs/{slug}/refs/{name}", response_model=SkillRefDoc)
+async def put_one_skill_ref(slug: str, name: str, body: SkillRefSave):
+    """新建或覆盖一个分册；保存后注册表按新资源清单刷新。"""
+    try:
+        return save_skill_ref(slug, name, body.content)
+    except ValueError as e:
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
+
+
+@router.delete("/skills/docs/{slug}/refs/{name}")
+async def delete_one_skill_ref(slug: str, name: str):
+    """删除一个分册。"""
+    try:
+        delete_skill_ref(slug, name)
+    except ValueError as e:
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
+    return {"ok": True}
+
 
 
 class SkillFormatRequest(BaseModel):

@@ -55,6 +55,12 @@ _HISTORY_MAX = 10
 
 # 标题关键字 → 阶段兜底映射（按顺序首个命中生效：
 # 精确子标题优先于笼统的「故事板设计」；值支持一对多，同一对多语义）
+#
+# 2026-11-11 Flova 六节骨架对齐：主文档改用「目标与交付 / 项目结构规划 /
+# 制片规格 / 创作流程规划 / 专业创作方法 / Reference 路由」后，旧的
+# 阶段标题词（故事板设计/媒体生成/提示词写法/组装导出）在主文档里不再出现，
+# 探针会全部落空（实测只剩 planning），连带打断 available_tools、音频闸与
+# 委派工具面。故把六节标题及其语义等价词纳入映射：骨架标题即阶段声明。
 _HEADING_STAGE_HINTS: List[Tuple[Tuple[str, ...], Union[str, Tuple[str, ...]]]] = [
     (("提示词写法", "提示词规范", "提示词", "prompt 编写", "prompt编写"), "prompt_draft"),
     (("关键元素", "角色设定", "场景设定"), "storyboard_ke"),
@@ -65,14 +71,26 @@ _HEADING_STAGE_HINTS: List[Tuple[Tuple[str, ...], Union[str, Tuple[str, ...]]]] 
     (("组装", "剪辑", "导出"), "assembly"),
     (("流程规划", "阶段逻辑", "依赖关系", "素材分析", "剧本分析",
       "制作流程", "创作流程", "工作流程", "流程"), "planning"),
+    # ---- Flova 六节骨架（2026-11-11）----
+    # 「项目结构规划」= 建关键元素/分镜/音频的骨架，故一对多覆盖三拆能力。
+    (("项目结构", "结构规划"), ("storyboard_ke", "storyboard_shot", "storyboard_audio")),
+    # 「专业创作方法」= 拆解规则与生成方法的正文，喂 generation + prompt_draft。
+    (("专业创作方法", "创作方法"), ("generation", "prompt_draft")),
+    # 「Reference 路由」= 指向媒体生成/提示词/剪辑分册的路由段。
+    # 组装/导出在 Flova 骨架里下沉到「剪辑交付」分册，主文档只在路由段点名，
+    # 故路由段同时承担 assembly 能力声明（否则 video_assembler 探针落空）。
+    (("reference 路由", "reference路由", "分册路由"), ("generation", "assembly")),
+    (("目标、输入与交付", "目标与交付", "目标/输入/交付"), "planning"),
 ]
 
-
 def _stage_from_heading(heading: str) -> Union[str, Tuple[str, ...]]:
-    """标题关键字 → 阶段（可为 tuple 一对多）；未命中返回空串"""
-    h = (heading or "").strip()
+    """标题关键字 → 阶段（可为 tuple 一对多）；未命中返回空串。
+
+    大小写不敏感（Flova 骨架标题含英文「Reference 路由」，关键字表用小写）。
+    """
+    h = (heading or "").strip().casefold()
     for hints, stage in _HEADING_STAGE_HINTS:
-        if any(k in h for k in hints):
+        if any(k.casefold() in h for k in hints):
             return stage
     return ""
 
@@ -429,6 +447,94 @@ def delete_skill_doc(slug: str) -> None:
         logger.warning(f"[SkillDocs] Skill 执行器注销失败 {slug}: {e}")
 
 
+# ---------- 分册（references/）读写：工作台可见可编辑（2026-11-11 裁决） ----------
+# 分册承载模板类长细节，主文档只留路由。此前 references/ 只对 read_skill 开放，
+# 工作台完全看不到——用户无法查看/编辑/新增分册，等于分册不可维护。
+
+# 分册文件名：允许中文/英文/数字/下划线/连字符/点，禁止路径分隔与上跳
+_REF_NAME_RE = re.compile(r"^[\w一-鿿.\-]{1,80}\.md$")
+
+
+def _validate_ref_name(name: str) -> str:
+    """分册文件名校验（只允许 references/ 下平铺的 .md，禁止子目录与上跳）。"""
+    name = (name or "").strip()
+    if "/" in name or "\\" in name or name in (".", ".."):
+        raise ValueError(f"非法分册名: {name!r}")
+    if not _REF_NAME_RE.match(name):
+        raise ValueError(
+            f"非法分册名: {name!r}（只允许 references/ 下平铺的 .md 文件）")
+    return name
+
+
+def skill_refs_dir(slug: str) -> Path:
+    """某 Skill 的分册目录（references/）；不保证存在。"""
+    return SKILL_DOCS_DIR / _validate_slug(slug) / "references"
+
+
+def list_skill_refs(slug: str) -> List[Dict[str, Any]]:
+    """列出某 Skill 的全部分册：[{name, chars, title}]，按文件名排序。
+
+    只读列出，不创建目录；无 references/ 返回空表（零分册合法）。
+    """
+    d = skill_refs_dir(slug)
+    if not d.is_dir():
+        return []
+    out: List[Dict[str, Any]] = []
+    for p in sorted(d.iterdir(), key=lambda x: x.name):
+        if not p.is_file() or p.suffix.lower() != ".md":
+            continue
+        try:
+            text = p.read_text(encoding="utf-8-sig")
+        except OSError as e:
+            logger.warning(f"[SkillDocs] 分册读取失败 {p}: {e}")
+            continue
+        title = ""
+        for line in text.splitlines():
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+        out.append({"name": p.name, "chars": len(text), "title": title})
+    return out
+
+
+def get_skill_ref(slug: str, name: str) -> Optional[Dict[str, Any]]:
+    """读单个分册全文；不存在返回 None。"""
+    p = skill_refs_dir(slug) / _validate_ref_name(name)
+    if not p.is_file():
+        return None
+    return {"slug": _validate_slug(slug), "name": p.name,
+            "content": p.read_text(encoding="utf-8-sig")}
+
+
+def save_skill_ref(slug: str, name: str, content: str) -> Dict[str, Any]:
+    """新建或覆盖一个分册；内容不能为空。保存后刷新注册表（资源清单变化）。"""
+    slug = _validate_slug(slug)
+    name = _validate_ref_name(name)
+    if not (content or "").strip():
+        raise ValueError("分册内容不能为空")
+    if skill_doc_path(slug) is None:
+        raise ValueError(f"Skill 文档 '{slug}' 不存在（分册必须挂在已存在的 Skill 下）")
+    d = skill_refs_dir(slug)
+    d.mkdir(parents=True, exist_ok=True)
+    target = d / name
+    atomic_write_text(target, content)
+    logger.info(f"[SkillDocs] 已保存分册: {slug}/references/{name}")
+    _refresh_runtime_registry()
+    return {"slug": slug, "name": name, "content": content}
+
+
+def delete_skill_ref(slug: str, name: str) -> None:
+    """删除一个分册；不存在抛 ValueError。主文档仍引用该路径时由 lint 提示。"""
+    slug = _validate_slug(slug)
+    p = skill_refs_dir(slug) / _validate_ref_name(name)
+    if not p.is_file():
+        raise ValueError(f"分册 '{name}' 不存在")
+    p.unlink()
+    logger.info(f"[SkillDocs] 已删除分册: {slug}/references/{name}")
+    _refresh_runtime_registry()
+
+
+
 # Skill 暂停点显式声明解析已下沉 skill_runtime.registry，本文件经顶部 import re-export。
 
 # Skill 平台行为统一声明块正则（仅用于 lint 提示「文档内 manifest 块不再消费」）
@@ -443,6 +549,11 @@ _MODEL_PARAM_LINT_RE = re.compile(
     r"Runway|Vidu|Sora|Veo|Pika|Hailuo|海螺|万相|通义|1K|2K|4K|"
     r"480p|720p|1080p|4K高清|60fps|24fps)"
 )
+
+
+# 正文里的分册指针（references/…）：lint 用来核对指针是否落在注入头部窗口内。
+# 与 prompt_builder._REF_PATH_RE 同口径（注入面提取清单 / 编辑期校验共用规则）。
+_REF_CITE_RE = re.compile(r"references/[A-Za-z0-9_./\-\u4e00-\u9fff]+")
 
 
 def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
@@ -500,24 +611,46 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
             + " 等）：已作废——出图/出视频渠道、分辨率、时长以「全局设置」为唯一权威源，"
             "运行时不会采用本文档中的这些参数"
         )
-    # 对标外部产品 固定组成：体量预算预警（legacy 全文注入截断阈值前 20%）
-    _budget_warn = int(settings.max_doc_chars * 0.8)
-    if len(content) > _budget_warn:
+    # 注入预算口径（2026-11-11 用户裁决：按 Flova 新 skill 形态，主文档薄 +
+    # 分册承载细节）：机械校验「主文档会不会被截断」与「分册指针会不会失联」。
+    # 旧口径用 max_doc_chars*0.8（30000 的 80%），与选中注入预算 12000 不是同一个数，
+    # 导致超预算文档不告警——单位写错，已废。
+    max_chars = int(getattr(settings, "skill_selected_inject_max_chars", 0) or 0)
+    head_chars = int(getattr(settings, "skill_selected_inject_head_chars", 0) or 0)
+    if head_chars <= 0 or head_chars > max_chars:
+        head_chars = max(1, max_chars // 2) if max_chars else 0
+    if max_chars > 0 and len(content) > max_chars:
         warnings.append(
-            f"文档体量 {len(content)} 字符超过建议预算 {_budget_warn}（全文注入截断阈值 "
-            f"{settings.max_doc_chars} 的 80%）：超长将按阶段截断，建议精简或拆分章节"
+            f"主文档正文 {len(content)} 字超过选中注入预算 {max_chars}：选中时会被截断"
+            f"（只注入前 {head_chars} 字 + 标题目录），建议把模板类细节拆到 references/ 分册，"
+            "主文档保留目标/结构/流程/方法与分册路由"
         )
+        # 截断会让指针失联：分册写了一堆但主文档里「去读它」的那句话在窗口外，
+        # 模型就不知道分册存在（2026-11-11 实测 3 个大包全部中招）。
+        ref_offsets = [
+            m.start() for m in _REF_CITE_RE.finditer(content)
+        ]
+        buried = [o for o in ref_offsets if o >= head_chars]
+        if buried and ref_offsets:
+            warnings.append(
+                f"有 {len(buried)} 处 references/ 分册指针落在注入头部 {head_chars} 字之后"
+                "（最远第 "
+                f"{max(buried)} 字）：截断后模型看不到这些指针，等于分册不可发现。"
+                "请把「六、Reference 路由」这类分册路由段前置到主文档前部"
+            )
     # 章节完整性对照 外部标杆 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
     warnings.extend(_lint_composition(content, sections, bool(available)))
     return {"available_tools": available, "warnings": warnings}
 
 
-# 外部标杆 组成核心段（自由型 Skill 无流程章节时不检查）：阶段键 + 正文关键词兜底
+# 外部标杆 组成核心段（自由型 Skill 无流程章节时不检查）：阶段键 + 正文关键词兜底。
+# 关键词同时覆盖 Flova 六节骨架的标题措辞（2026-11-11 裁决）：结构规划 / 专业创作方法。
 _COMPOSITION_CORE_PARTS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
     ("故事板设计", ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
-     ("故事板", "分镜", "关键元素")),
+     ("故事板", "分镜", "关键元素", "结构规划")),
     ("媒体生成", ("generation",), ("生成", "参考图", "设定图")),
-    ("提示词写法", ("prompt_draft",), ("提示词写法", "提示词规范", "Prompt")),
+    ("提示词写法", ("prompt_draft",), ("提示词写法", "提示词规范", "Prompt",
+                                     "提示词写作", "提示词路由")),
 )
 
 

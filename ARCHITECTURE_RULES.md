@@ -60,10 +60,12 @@
 - **协议单轨**：平台协议唯一 = `prompts/planner/protocol.md`（文本动作协议已退役删除、禁止复活，决策史见 git tag `adr-archive-20260901`）；协议正文**单文件内联**，prompts/ 无 `{{include}}` 拼装机制；`prompts/shared/` 存条件注入模板，由 `load_prompt_section()` 按注入条件成段加载，**禁止**把条件模板复制进协议正文
 - 纪律条款外置为独立 md（如 `planner/skill_runtime.md`、`planner/adjust.md`），不得内联代码
 
-### Rule 7: 画布边界 — 任何时候都禁止修改（fork/改源码均禁止）
-- 画布（infinite-canvas）是**独立迭代项目**，代码不在本仓库，**任何时候禁止修改或 fork 其任何文件**
-- 仅依赖三个公开面：① Canvas Agent HTTP 协议（`/api/tools` 工具调用 + `/health`，封装于 `adapters/infinite_canvas_backend.py`）；② hash 引导（iframe 加载时注入 `#agentUrl`/`#agentToken`）；③（可选）画布插件 SDK。除此之外一律视为不可实现，确需新能力只能向画布项目提需求（见 `docs/对画布的需求清单.md`）
-- **已知集成边界**：画布内生成的图存于画布浏览器端（本地存储），服务端无法回读原图，只能通过 config 节点连线回读导出 URL；素材录制遗留一条测试素材（见 `workspace/assets`），属已知残留不影响功能
+### Rule 7: 画布边界 — 源码 vendored，改动限于登记的最小 patch 集
+- 画布（infinite-canvas，MIT）源码于 2026-11-06 用户批准搬入 `vendors/infinite-canvas/`，构建为独立产物 `static/canvas-app/`（`/canvas-app/` 同域直出）；**禁止**并入主包（首屏 400KB 门禁），**禁止**复活外部目录 + 独立端口的旧通道（`E:\09...`、3000、17371）
+- 集成面唯一三条：① 本进程 agent 协议（`web/routes/canvas_agent.py` + `adapters/canvas_agent_session.py`：SSE `tool_call` / `/canvas/state` / `/canvas/result`）；② 同域挂载 `/canvas-app/`（`web/app.py`）；③（可选）画布插件 SDK。除此之外一律视为不可实现
+- 画布侧改动**只允许**登记在案的最小 patch 集：`LocalAgentPanel headless`、`router basename`、`globals.css` / `canvas-theme.ts` 配色、`BASE_URL` 资源路径；清单与理由唯一登记处 = `CHANGELOG.md`「画布搬入与运行时收敛」条；**禁止**改变画布节点/项目数据格式
+- **数据边界不变**：画布数据在浏览器 IndexedDB，服务端无法直读原图/素材库；节点读写只经上述协议，只读快照用于理解布局
+- **升级纪律**：上游更新按最小 patch 集 rebase，禁止整目录覆盖式升级
 
 ---
 
@@ -112,10 +114,14 @@
 - 新工具未声明风险级别视为 high（deny-by-default），不得静默放行。
 - **同意范围矩阵（批 12 章程）**：暂停卡 accept 的同意按动作类声明（`CONSENT_CHARTER`）：costly 生成（image_generate/generate_video）可吃同意放行；「规格文档写入」为历史条款——document_write 已降 medium（2026-09-07），该路径自然失效，章程表保留（写入类不再入闸，fail-closed 无害）。其余 high（未注册工具等）不吃自动同意，仅「本次放行」可解除（fail-closed）。MCP costly 地板 high 不可下抬的底线不变。
 
-### 2.8 Skill 宪法（单一包形态 + 通用标题式 + 三级渐进披露）
+### 2.8 Skill 宪法（单一包形态 + 薄主文档 + 分册承载细节 + 三级渐进披露）
 - Skill 上传/保存/删除 = `data/skills/<slug>/SKILL.md` 单一包形态唯一数据源（对齐 Agent Skills 开放标准，frontmatter `name`/`description` 必填）+ 自动解析文档头部 frontmatter 声明（声明唯一源，外置配置文件退役）→ 刷新注册表；下拉框数据源不变。
-- **正文只认 Markdown 标题**（2026-11-11 全量迁移，用户裁决）：不再识别 `<planner>` 等平台私有标签；标签按普通文本处理。主文档写目标/流程/结构/方法，细节拆 `references/` 分册。
-- **三级加载（渐进披露）**：① 开关（用户启停）→ ② 目录摘要常驻（L1 元数据目录 + 轻量状态提示）→ ③ 主文档整篇注入（超 `skill_selected_inject_max_chars` 时注开头 + 标题目录）、`references/` 分册经 `read_skill(resource=…)` 按需续读。
+- **正文只认 Markdown 标题**（2026-11-11 全量迁移，用户裁决）：不再识别 `<planner>` 等平台私有标签；标签按普通文本处理。
+- **主文档骨架 = Flova 新 skill 六节**（2026-11-11 用户裁决，参考文档见交接单）：一、目标/输入/交付 → 二、项目结构规划 → 三、制片规格 → 四、创作流程规划（启动协议 / 步骤 / 依赖关系 / 何时暂停）→ 五、专业创作方法 → 六、Reference 路由。主文档只写骨架与干货，模板、提示词、剪辑细则等长细节下沉 `references/` 分册。
+- **分册三分法**：`references/媒体生成.md`（渠道选择/参考绑定/音频条件/首尾帧）、`references/提示词写作.md`（时长估算与各类提示词模板/固定尾部规则）、`references/剪辑交付.md`（节奏过渡/混音层级/失败修复/导出基准）。各包可按需追加专属分册（如五行特效库、武打剪辑律动参考）。
+- **主文档体量预算受机械校验**：超 `skill_selected_inject_max_chars` 即 `lint_skill_content` 告警；分册指针落在注入头部 `skill_selected_inject_head_chars` 之后亦告警（截断会让指针失联）。
+- **三级加载（渐进披露）**：① 开关（用户启停）→ ② 目录摘要常驻（L1 元数据目录 + 轻量状态提示）→ ③ 主文档整篇注入（超 `skill_selected_inject_max_chars` 时注开头 + 标题目录 + **从全文提取的分册清单**）、`references/` 分册经 `read_skill(resource=…)` 按需续读。
+- **分册可维护性**：分册必须能在 Skill 工作台查看/编辑/新增/删除（`/api/skills/docs/{slug}/refs`），不得只对 `read_skill` 开放而界面不可见。
 - **子代理供给**：Skill 主文档全文随委派任务注入（超预算截断并提示续读），子代理允许 `read_skill` 读分册；`stage` 仅作归组/展示，不再按阶段切章节注入。
 - **注入面纪律**：官方/平台 Skill 干净注入，不加任何包壳；仅外部导入 Skill 带来源标记供用户知情。
 - 管线阶段由通用主路径直走平台工具，无执行器子代理。
@@ -210,7 +216,7 @@
 ## 八、接入外部平台专项规则
 
 - **LLM 供应商**：必须实现 `BaseChatAdapter`（`chat()`+`chat_stream()`）；不支持 FC 时 `supports_function_calling=False`；流式 `tool_calls[].function.arguments` 必须 `json.loads()`；超时读 settings；错误抛 `AdapterError`
-- **画布/设计工具**：作为 Tool 接入；HTTP 封装在 Adapter（infinite-canvas 唯一后端，经 canvas-agent 协议）；结果经 StateManager 持久化；画布边界见 Rule 7
+- **画布/设计工具**：作为 Tool 接入；通道封装在 Adapter（infinite-canvas 唯一后端，L2 进程内会话协议）；结果经 StateManager 持久化；画布边界见 Rule 7
 - **CLI 工具**：`asyncio.create_subprocess_exec()`，禁止 `subprocess.run()` 阻塞；`await asyncio.sleep()`；解析失败抛 `AdapterError` 不返假数据
 - **桌面端**：复用 `/api/agent/chat`，不得另写状态管理/LLM 逻辑
 
@@ -273,6 +279,8 @@ src/video_agent/
 ├── adapters/  tools/  config.py  exceptions.py
 ├── utils/                  ← 跨切面原语下沉层（§六）：cancel_token.py / stop_signal.py / provider_config_loader.py / live_metrics.py / trace_retention.py / prompts.py / paths.py
 src/web/                    ← SolidJS SPA 唯一前端（§3）
+vendors/infinite-canvas/    ← 画布源码（MIT，vendored；改动限登记 patch 集，Rule7）
+static/canvas-app/          ← 画布独立构建产物（/canvas-app/，构建生成不入库）
 prompts/                    ← 指令治理外置资产（Rule6）
 tests/fixtures/             ← 技能夹具等快照
 ```
@@ -283,7 +291,7 @@ tests/fixtures/             ← 技能夹具等快照
 
 完成任何修改后，逐项确认：
 
-- [ ] 没有修改画布项目的任何文件（Rule 7）
+- [ ] 画布改动仅限登记的最小 patch 集，未新增数据格式侵入（Rule 7）
 - [ ] 没有绕过 Planner / StateManager / Adapter / Tool 体系（Rule 1-5）
 - [ ] 没有硬编码 prompt >3 行；文案治理迁移同批更新锁旧文案的断言测试（Rule 6）
 - [ ] 没有 manifest 削弱平台硬边界；触碰项有负面用例（§2.2）

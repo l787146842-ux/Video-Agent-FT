@@ -90,9 +90,14 @@ def _style_issues(
             "文档出现平台内部字段表（" + "、".join(table[:6])
             + "）：请把分镜/资产改写成「第 1 镜：……」段落"
         )
-    prompt_body = next(
-        (v for k, v in bodies.items() if "提示词" in k), "")
-    if create_mode and "```" in prompt_body:
+    # 提示词章节的代码块检查：Flova 六节骨架下提示词模板多在 Reference 路由
+    # 指向的分册里，与之相关的章节标题可能是「Reference 路由」「专业创作方法」
+    # 或旧的「提示词写法」，故对任一相关章节命中代码块即告警。
+    prompt_related = [
+        v for k, v in bodies.items()
+        if ("提示词" in k or "参考" in k or "路由" in k or "方法" in k)
+    ]
+    if create_mode and any("```" in v for v in prompt_related):
         issues.append(
             "提示词章节出现代码块：请改为正文段落或 > 引用块，"
             "不要用 ``` 包住提示词"
@@ -147,11 +152,19 @@ def validate_skill_draft(content: str, *, create_mode: bool) -> List[str]:
     if create_mode:
         if len(sections) < 2:
             issues.append(
-                "正文至少需要两个二级标题（例如「## 二、制作流程」「## 六、参考资料」）")
+                "正文至少需要两个二级标题（六节骨架见合约：目标/结构/规格/流程/方法/路由）")
         if len(body.strip()) < 200:
             issues.append("正文过短（不足 200 字）：请写清流程、结构与可执行方法")
         if not any(("流程" in t or "步骤" in t) for t in bodies):
             issues.append("缺少「制作流程」类章节：请写清步骤、依赖与何时暂停")
+        # Flova 六节骨架（2026-11-11 用户裁决）：只硬校验「流程」与「分册路由」
+        # 两个不可省节点——其余四节允许按 Skill 性质调整标题措辞，避免误伤。
+        # 分册路由的等价标题：参考 / 路由 / Reference。
+        if not any(("参考" in t or "路由" in t or "reference" in t.lower())
+                   for t in bodies):
+            issues.append(
+                "缺少「Reference 路由」章节：请列出什么时候读哪本分册"
+                "（references/媒体生成.md、提示词写作.md、剪辑交付.md）")
         for title, section_body in bodies.items():
             if any(marker in section_body for marker in placeholder_markers):
                 issues.append(f"章节「{title}」仍保留模板占位句，请改写成真实内容")

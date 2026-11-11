@@ -15,6 +15,7 @@ import { SkillStructuredView } from './SkillStructuredView';
 import { SkillLivePreview } from './SkillLivePreview';
 import { SkillStudioList } from './SkillStudioList';
 import { SkillAssistantPanel } from './SkillAssistantPanel';
+import { SkillRefsPanel } from './SkillRefsPanel';
 
 const KEY_LEFT_COLLAPSED = 'skstLeftCollapsed';
 
@@ -145,6 +146,8 @@ export default function SkillStudioView() {
             <SkillLivePreview raw={liveDoc()} />
           </div>
         </Show>
+        {/* 分册（references/）：主文档只留路由，长细节在这里查看/编辑 */}
+        <SkillRefsPanel />
       </div>
 
       {/* 优化助手右栏：仅编辑/新建态挂出（纯查看两栏，见 assistantVisible） */}

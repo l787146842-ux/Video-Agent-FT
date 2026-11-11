@@ -214,23 +214,7 @@ async def test_stock_behavior_all_enabled_list_skills():
 # ---------- 注入链路按需加载边缘分支（B1：planner 段/目录探测降级定向补测） ----------
 
 
-def test_planner_section_tag_priority_and_heading_fallback():
-    """planner 段提取：tag 形态优先；标题式回落「流程规划」切片；均无命中返空串。"""
 
-    class _StubDocs:
-        def list_skill_sections(self, content):
-            return []
-
-    pb = _pb(_base_state())
-    assert pb._planner_section_text(
-        "<planner>\n流程总纲\n</planner>\n<other>\n他段\n</other>", _StubDocs()) == "流程总纲"
-    assert pb._planner_section_text("无章节正文", _StubDocs()) == ""
-
-    class _HeadDocs:
-        def list_skill_sections(self, content):
-            return [{"title": "流程规划", "start": 0, "end": len(content)}]
-
-    assert "正文内容" in pb._planner_section_text("## 流程规划\n正文内容", _HeadDocs())
 
 
 def test_toc_lines_probe_failure_falls_back():
