@@ -15,6 +15,7 @@ from src.video_agent.core.provider_config import (
     exclude_retired_mock_providers,
     load_merged_providers,
 )
+from src.video_agent.core.audio_channels import audio_adapter_kind, audio_models_meta_of
 
 # 加载根目录 .env（运行环境变量）
 load_dotenv(PROJECT_ROOT / ".env")
@@ -35,6 +36,8 @@ def get_available_providers() -> List[Dict[str, Any]]:
                 "image_models": p.get("image_models", []),
                 "video_models": p.get("video_models", []),
                 "audio_models": p.get("audio_models", []),
+                "audio_models_meta": audio_models_meta_of(p),
+                "audio_adapter": audio_adapter_kind(p),
             })
     return result
 

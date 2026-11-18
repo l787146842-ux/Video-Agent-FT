@@ -5,12 +5,12 @@
 """
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from loguru import logger
 from pydantic import BaseModel
 from typing import List, Optional
 
-from src.video_agent.adapters.infinite_canvas_backend import resolve_canvas_agent_token
+from src.video_agent.adapters.canvas_agent_session import LOCAL_AGENT_TOKEN
 from src.video_agent.config import settings
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.utils.fileio import atomic_write_text
@@ -83,7 +83,7 @@ def _bound_to_loopback() -> bool:
 
 
 @router.get("/config", response_model=AppConfigResponse)
-async def get_config():
+async def get_config(request: Request):
     """前端 loadCanvasApiConfig() 调用"""
     resp = {
         "chat_models": DEFAULT_CHAT_MODELS,
@@ -94,14 +94,17 @@ async def get_config():
         # 附件数量上限（二期子对话批 3：浮窗上传入口提示用，唯一事实源 config）
         "max_attachments": int(settings.max_attachments),
     }
-    # 嵌入引导参数（画布站点 / canvas-agent 地址 / token，仅本机回环使用）：
-    # 前端据此拼 iframe src {站点}/#agentUrl=...&agentToken=...
+    # 嵌入引导参数（画布同域挂载地址 / 本进程 agent 协议端点 / token）：
+    # 前端据此拼 iframe src /canvas-app/#agentUrl=...&agentToken=...
     # 安全闸：非回环绑定时不下发真实 token（返回空串），回环时行为不变；
     # 下发范围说明见 docs/配置说明.md 画布集成迁移说明段。
+    # agent_url 必须是绝对地址：画布页 new URL() 校验协议后才会连接。
+    # 用当前请求 origin —— iframe 同源，浏览器拿到的就是它自己能访问的地址。
+    origin = str(request.base_url).rstrip("/")
     resp["infinite_canvas_embed"] = {
-        "canvas_url": settings.infinite_canvas_url,
-        "agent_url": settings.canvas_agent_url,
-        "agent_token": resolve_canvas_agent_token() if _bound_to_loopback() else "",
+        "canvas_url": "/canvas-app",
+        "agent_url": f"{origin}/api/canvas/agent",
+        "agent_token": LOCAL_AGENT_TOKEN if _bound_to_loopback() else "",
     }
     return resp
 

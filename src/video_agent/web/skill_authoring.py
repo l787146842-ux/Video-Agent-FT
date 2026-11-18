@@ -155,16 +155,9 @@ def validate_skill_draft(content: str, *, create_mode: bool) -> List[str]:
                 "正文至少需要两个二级标题（六节骨架见合约：目标/结构/规格/流程/方法/路由）")
         if len(body.strip()) < 200:
             issues.append("正文过短（不足 200 字）：请写清流程、结构与可执行方法")
-        if not any(("流程" in t or "步骤" in t) for t in bodies):
-            issues.append("缺少「制作流程」类章节：请写清步骤、依赖与何时暂停")
-        # Flova 六节骨架（2026-11-11 用户裁决）：只硬校验「流程」与「分册路由」
-        # 两个不可省节点——其余四节允许按 Skill 性质调整标题措辞，避免误伤。
-        # 分册路由的等价标题：参考 / 路由 / Reference。
-        if not any(("参考" in t or "路由" in t or "reference" in t.lower())
-                   for t in bodies):
-            issues.append(
-                "缺少「Reference 路由」章节：请列出什么时候读哪本分册"
-                "（references/媒体生成.md、提示词写作.md、剪辑交付.md）")
+        # 六节骨架（Flova 口径）只保留在创作 prompt 与新建模板里，作为
+        # AI 助手的默认写法；不再硬校验「流程」「Reference 路由」等章节。
+        # 手写/导入技能允许自由标题结构，缺节不会被拒保存/拒注册。
         for title, section_body in bodies.items():
             if any(marker in section_body for marker in placeholder_markers):
                 issues.append(f"章节「{title}」仍保留模板占位句，请改写成真实内容")

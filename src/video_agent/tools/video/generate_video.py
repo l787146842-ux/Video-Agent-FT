@@ -30,6 +30,8 @@ class GenerateVideoTool(BaseTool):
     provider_kind = "video"  # I-3 裁决 2026-09-03：provider 注入声明轴
     description = (
         "根据传入的首帧图片和提示词生成视频并返回视频地址。"
+        "返回的地址由你用 storyboard_patch_draft 写入目标分镜卡的 videoUrl 落卡；"
+        "该卡已有视频时，写入会落到同组新建的承载卡，原卡与旧片保持原样。"
         "生成渠道由系统按优先级自动注入供应商。"
     )
 

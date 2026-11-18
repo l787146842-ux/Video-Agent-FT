@@ -3,6 +3,8 @@ from .manager import ToolManager
 from .video.generate_video import GenerateVideoTool
 from .storyboard_tools import register_storyboard_tools
 from .document_tools import register_document_tools
+from .skill_file_tools import register_skill_file_tools
+from .assembly_tools import register_assembly_tools
 from .analysis_tools import register_analysis_tools
 from .web_tools import register_web_tools
 from .structured_output import register_structured_output_tools
@@ -14,6 +16,10 @@ ToolManager.register(GenerateVideoTool())
 # studio-actions 映射的标准 Tool
 register_storyboard_tools()
 register_document_tools()
+# 技能包内只读文件（dsh read/read_image 同构）：read_file/read_image
+register_skill_file_tools()
+# 组装导出（video_assembler）：成片合成 + 方案落盘 + 推画布
+register_assembly_tools()
 register_analysis_tools()
 register_web_tools()
 # K6 批（2026-09-16 对齐 flova/dsh）：子代理完工打卡工具（子代理专属可见）

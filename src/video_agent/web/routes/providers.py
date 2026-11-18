@@ -29,6 +29,7 @@ from src.video_agent.utils.provider_config_loader import (
     update_env_key,
 )
 from src.video_agent.core.provider_config import CLI_PROTOCOLS
+from src.video_agent.core.audio_channels import audio_adapter_kind, audio_models_meta_of
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 from src.video_agent.adapters.probe_adapter import (
     ProbeHTTPError,
@@ -55,6 +56,8 @@ class FetchModelsResponse(BaseModel):
     total: int = 0
     protocol: str = "openai"
     error: str = ""
+    # 非错误提示（如“该平台无 /models，已用预置清单”），前端以 info 级展示
+    note: str = ""
 
 
 class TestConnectionResponse(BaseModel):
@@ -115,6 +118,12 @@ def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
     env_name = provider_key_env(p.get("id", ""))
     has_key, preview = get_key_preview(env_name)
     result = {k: v for k, v in p.items() if k not in ("api_key", "clear_key", "wallet_api_key", "clear_wallet_key")}
+    # 音频能力清单由后端唯一推导（模型名 → voice_design/tts/music/sfx），
+    # 前端只消费不重算（P1）；显式 audio_models_meta 若已配置则以配置为准。
+    if p.get("audio_models") or p.get("audio_models_meta"):
+        result["audio_models_meta"] = audio_models_meta_of(p)
+        # 是否已接音频适配器（前端据此标“未接音频”，避免选了才发现报错）
+        result["audio_adapter"] = audio_adapter_kind(p)
     result["has_key"] = has_key
     result["key_preview"] = preview
     result["key_env"] = env_name
@@ -140,6 +149,20 @@ async def get_providers():
         "providers": [public_provider(p) for p in providers],
         "canvas_online": canvas_online,
     }
+
+
+def normalize_provider_audio(clean: Dict[str, Any]) -> Dict[str, Any]:
+    """落盘前补回能力清单与适配器声明（原地补，返回同一对象）。
+
+    设置页表不展示 `audio_models_meta` / `audio_request_mode`，每次保存都会把它们丢掉，
+    导致「未接音频」与模型跨通道串选。这里按 `audio_models` 重新推导，不信任前端回传。
+    """
+    if clean.get("audio_models") or clean.get("audio_models_meta"):
+        clean["audio_models_meta"] = audio_models_meta_of(clean)
+        kind = audio_adapter_kind(clean)
+        if kind:
+            clean["audio_request_mode"] = kind
+    return clean
 
 
 @router.put("/providers")
@@ -174,7 +197,10 @@ async def save_providers(request: Request):
             "api_key", "clear_key", "has_key", "key_preview", "key_env",
             "wallet_api_key", "clear_wallet_key", "has_wallet_key", "wallet_key_preview", "wallet_key_env",
         )}
-        saved.append(clean)
+        # 能力清单与适配器声明**不信任前端回传**：设置页表单不展示这两个字段，
+        # 每次保存都会把服务端下发的值丢掉（已实证多次），导致“未接音频”、
+        # 模型跨通道串选。这里按 audio_models 重新推导后落盘，不依赖前端。
+        saved.append(normalize_provider_audio(clean))
 
     save_api_providers(saved)
     # 模型编辑面板排障锚点：每次落盘都记录 chat_models_meta 条数
@@ -199,6 +225,55 @@ _CLI_MODELS = {
     "codex": ["gpt-image-2", "gpt-5.5"],
     "jimeng": ["5.0", "4.6", "4.5", "4.1", "4.0", "3.1", "3.0"],
 }
+
+
+def _auth_style(provider_id: str) -> tuple:
+    """供应商声明的鉴权头（auth_header/auth_prefix）；未声明返回空串走默认映射。
+
+    ElevenLabs 这类平台用 ``xi-api-key`` 而非 ``Authorization: Bearer``，
+    既然“以后加任何厂商都要能拉取”，鉴权头就必须可配置而不是写死 Bearer。
+    """
+    if not provider_id:
+        return "", ""
+    for p in load_merged_providers() or []:
+        if str(p.get("id") or "") == str(provider_id):
+            return str(p.get("auth_header") or ""), str(p.get("auth_prefix") or "")
+    return "", ""
+
+
+def _preset_models(provider_id: str) -> Dict[str, Any]:
+    """供应商配置里已登记的模型，按配置分类直接返回。
+
+    部分平台（豆包语音）根本没有 ``/models`` 接口（实测 404），拉取永远失败；
+    这些平台的模型只能靠配置声明。直接回填预置清单，比只报错更有用；
+    不是硬编码平台：任何“已登记模型 + 无 /models”的供应商都适用。
+    """
+    empty: Dict[str, Any] = {
+        "all": [], "image_models": [], "chat_models": [],
+        "video_models": [], "audio_models": [], "total": 0,
+    }
+    if not provider_id:
+        return empty
+    for p in load_merged_providers() or []:
+        if str(p.get("id") or "") != str(provider_id):
+            continue
+        out: Dict[str, Any] = {}
+        all_models: List[str] = []
+        for key in ("image_models", "chat_models", "video_models", "audio_models"):
+            models = [str(m).strip() for m in (p.get(key) or []) if str(m or "").strip()]
+            # 音频：声明在 audio_models_meta 却不在 audio_models 的也要算进来
+            if key == "audio_models":
+                for entry in p.get("audio_models_meta") or []:
+                    if isinstance(entry, dict):
+                        name = str(entry.get("model") or "").strip()
+                        if name and name not in models:
+                            models.append(name)
+            out[key] = models
+            all_models.extend(m for m in models if m not in all_models)
+        out["all"] = all_models
+        out["total"] = len(all_models)
+        return out
+    return empty
 
 
 @router.post("/providers/fetch-models", response_model=FetchModelsResponse)
@@ -231,8 +306,10 @@ async def fetch_models(req: ProviderProbeRequest):
         return {"error": str(e), "all": [], "total": 0}
 
     try:
-        all_models = await get_provider_probe_adapter().fetch_model_list(base_url, api_key)
-        classified = classify_models(all_models)
+        auth_header, auth_prefix = _auth_style(req.provider_id)
+        all_models = await get_provider_probe_adapter().fetch_model_list(
+            base_url, api_key, auth_header=auth_header, auth_prefix=auth_prefix)
+        classified = classify_models(all_models, base_url)
         return {
             "all": all_models,
             **classified,
@@ -242,7 +319,20 @@ async def fetch_models(req: ProviderProbeRequest):
     except ProbeTimeoutError:
         return {"error": "连接超时（15s）", "all": [], "total": 0}
     except ProbeHTTPError as e:
-        return {"error": f"HTTP {e.status_code}: {e.body_text}", "all": [], "total": 0}
+        message = f"HTTP {e.status_code}: {e.body_text}"
+        if e.status_code == 404:
+            preset = _preset_models(req.provider_id)
+            if preset["total"]:
+                # 该平台没有 /models 接口，直接用已登记的模型顶上
+                return {
+                    **preset,
+                    "protocol": detect_protocol(base_url, req.protocol),
+                    "note": ("该平台不提供 /models 接口，已填入本项目预置的模型清单"
+                             "（如需其它模型可在下方手动添加）"),
+                }
+            message = ("该平台不提供模型列表接口（/models 404）。"
+                       "请在下方「音频模型 / 生图模型…」手动添加模型名")
+        return {"error": message, "all": [], "total": 0}
     except Exception as e:
         return {"error": str(e), "all": [], "total": 0}
 
@@ -324,8 +414,10 @@ async def test_connection(req: ProviderProbeRequest):
 
     api_key = resolve_api_key(req.api_key, req.provider_id)
     try:
-        all_models = await get_provider_probe_adapter().fetch_model_list(base_url, api_key)
-        classified = classify_models(all_models)
+        auth_header, auth_prefix = _auth_style(req.provider_id)
+        all_models = await get_provider_probe_adapter().fetch_model_list(
+            base_url, api_key, auth_header=auth_header, auth_prefix=auth_prefix)
+        classified = classify_models(all_models, base_url)
         return {
             "ok": True,
             "status": 200,

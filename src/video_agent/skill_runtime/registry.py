@@ -18,6 +18,7 @@ from src.video_agent.config import settings  # 叶子依赖：停用开关活读
 from src.video_agent.core import ports
 from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.skill_runtime.manifest_schema import (
+    invocation_policy,
     split_issue_warnings,
 )
 
@@ -136,6 +137,23 @@ class SkillEntry:
         声明后写/迁移更新后立即生效（每次从磁盘解析语义一致）。
         None = 未声明，平台回落最小闸。"""
         return frontmatter.load_manifest(self.slug)
+
+    @property
+    def invocation(self) -> Tuple[bool, bool]:
+        """(model_invocable, user_invocable)；frontmatter 活读，缺省 true/true。
+
+        dsh 四组合：只控制「模型目录/read_skill」与「用户 /slug」两个面，
+        不控制文件读取；非法声明由注册期 fail-hard 拒入。
+        """
+        return invocation_policy(self.manifest)
+
+    @property
+    def model_invocable(self) -> bool:
+        return self.invocation[0]
+
+    @property
+    def user_invocable(self) -> bool:
+        return self.invocation[1]
 
     @property
     def available_tools(self) -> List[str]:
@@ -484,6 +502,32 @@ def resolve_loadable_entry(wanted: str) -> Optional[SkillEntry]:
     """resolve_entry 命中后查开关：停用/未注册返回 None。"""
     entry = resolve_entry(wanted)
     if entry is None or entry.slug in disabled_slugs():
+        return None
+    return entry
+
+
+def model_catalog_entries() -> List[SkillEntry]:
+    """模型可见目录（dsh modelInvocable=true）：已注册 ∧ 未停用 ∧ 模型可用。"""
+    return [e for e in loadable_entries() if e.model_invocable]
+
+
+def user_catalog_entries() -> List[SkillEntry]:
+    """用户可见目录（dsh userInvocable=true）：已注册 ∧ 未停用 ∧ 用户可触发。"""
+    return [e for e in loadable_entries() if e.user_invocable]
+
+
+def resolve_model_entry(wanted: str) -> Optional[SkillEntry]:
+    """模型加载入口：只放行 modelInvocable=true 的可加载条目。"""
+    entry = resolve_loadable_entry(wanted)
+    if entry is None or not entry.model_invocable:
+        return None
+    return entry
+
+
+def resolve_user_entry(wanted: str) -> Optional[SkillEntry]:
+    """用户 /slug 入口：只放行 userInvocable=true 的可加载条目。"""
+    entry = resolve_loadable_entry(wanted)
+    if entry is None or not entry.user_invocable:
         return None
     return entry
 

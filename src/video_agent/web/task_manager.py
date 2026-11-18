@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils.paths import DATA_DIR
 from src.video_agent.web.task_store import TaskStore
@@ -400,9 +401,16 @@ def writeback_if_complete(task_id: str) -> None:
     if task.get("video_url"):
         url = task["video_url"]
         field = "videoUrl"
+    elif task.get("audio_url"):
+        url = task["audio_url"]
+        field = "audioUrl"
     elif task.get("result", {}) and task["result"].get("images"):
         url = task["result"]["images"][0]
         field = "imgUrl"
+    elif task.get("result", {}) and task["result"].get("audio"):
+        # 音频任务通常同时写 audio_url；此处兼容只写 result.audio 的实现
+        url = task["result"]["audio"]
+        field = "audioUrl"
     if not url:
         return
 
@@ -414,8 +422,14 @@ def writeback_if_complete(task_id: str) -> None:
         return
     _cat, _group, draft = found
     draft[field] = url
+    # 音色设计产物：voice_id 与 target_model 强绑定，必须随卡持久化（换模型作废）
+    voice_id = str((task.get("result") or {}).get("voice_id") or "")
+    if field == "audioUrl" and voice_id:
+        draft["voiceId"] = voice_id
     # 同步生成媒体类型，保证预览区与参数栏跟随最新结果（如视频替换原图片）
-    media_type = "video" if field == "videoUrl" else "image"
+    media_type = (
+        "video" if field == "videoUrl" else "audio" if field == "audioUrl" else "image"
+    )
     draft["mediaType"] = media_type
     draft["genType"] = media_type
     # 一张卡片只存一个媒体：清空其他类型的 URL
@@ -423,5 +437,8 @@ def writeback_if_complete(task_id: str) -> None:
         if other_field != field:
             draft[other_field] = ""
     draft["tag"] = "已生成"
+    # 2026-10-26 用户裁决：出片成功自动绑定为该组同类媒体的采用媒体
+    # （同组同类型唯一：绑新卡自动解绑旧卡，绿勾永远只有一个）
+    ops.enforce_single_bound(_group, draft)
     svc.save()
     logger.info(f"[Generate] Writeback: draft {draft_id} → {field}={url[:60]}")

@@ -1,9 +1,10 @@
 """
 画布后端分发入口（Rule4: 外部调用走 Adapter）。
 
-唯一后端 = infinite-canvas（canvas-agent HTTP 协议），实现见
-adapters/infinite_canvas_backend.py；端口定义见 adapters/canvas_port.py。
-本模块只保留全局单例工厂与健康探测缓存的对外口径，
+唯一后端 = infinite-canvas（L2：进程内会话通道，无 Node sidecar），实现见
+adapters/infinite_canvas_backend.py；协议端点见 web/routes/canvas_agent.py，
+端口定义见 adapters/canvas_port.py。
+本模块只保留全局单例工厂与在线状态的对外口径，
 调用方（路由/工具/装配）一律经 get_canvas_adapter() 取后端。
 """
 from typing import TYPE_CHECKING, Optional

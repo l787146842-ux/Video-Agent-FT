@@ -37,6 +37,7 @@ from src.video_agent.web.routes.plugins import router as plugins_router
 from src.video_agent.web.routes.upload import router as upload_router
 from src.video_agent.web.routes.assets_library import router as assets_library_router
 from src.video_agent.web.routes.canvas import router as canvas_router
+from src.video_agent.web.routes.canvas_agent import router as canvas_agent_router
 from src.video_agent.web.routes.cli_status import router as cli_status_router
 from src.video_agent.web.routes.runtime_settings import router as runtime_settings_router, load_runtime_settings
 from src.video_agent.web.routes.video_batch import router as video_batch_router
@@ -275,6 +276,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/workspace/assets", StaticFiles(directory=str(ASSETS_DIR)), name="uploaded-assets")
 
+# 画布子应用产物（vendors/infinite-canvas/web 构建，base=/canvas-app/）。
+# 独立产物而非并入主包：画布是 React+antd，单包 ~3.6MB，并入会击穿主包 400KB 首屏门禁。
+CANVAS_APP_DIR = STATIC_DIR / "canvas-app"
+
 
 def _studio_page() -> FileResponse:
     """新前端页面（唯一前端，SolidJS SPA）；dist 未构建时明确报错（启动脚本会自动补构建）。
@@ -325,6 +330,27 @@ async def health():
     }
 
 
+@app.get("/canvas-app", include_in_schema=False)
+@app.get("/canvas-app/{path:path}", include_in_schema=False)
+async def canvas_app(path: str = ""):
+    """画布子应用同域挂载：静态资源直出，其余路径回退 index.html。
+
+    画布用 BrowserRouter，深链接（/canvas-app/canvas/<id>）必须回退入口；
+    未知路径同样回退，由画布路由自行渲染 404。目录穿越一律拒绝。
+    """
+    index = CANVAS_APP_DIR / "index.html"
+    if not index.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="画布产物缺失，请执行 python scripts/build_canvas.py 后重启服务",
+        )
+    if path:
+        candidate = (CANVAS_APP_DIR / path).resolve()
+        if CANVAS_APP_DIR.resolve() in candidate.parents and candidate.is_file():
+            return FileResponse(str(candidate))
+    return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/canvas", include_in_schema=False)
 @app.get("/settings", include_in_schema=False)
 async def spa_fallback():
@@ -344,6 +370,8 @@ app.include_router(plugins_router, prefix="/api", tags=["plugins"])
 app.include_router(upload_router, prefix="/api", tags=["upload"])
 app.include_router(assets_library_router, prefix="/api", tags=["assets-library"])
 app.include_router(canvas_router, prefix="/api", tags=["canvas"])
+# 画布 agent 协议（L2：本进程直接充当 canvas-agent，画布页连此端点）
+app.include_router(canvas_agent_router, prefix="/api/canvas/agent", tags=["canvas-agent"])
 app.include_router(cli_status_router, prefix="/api", tags=["cli-status"])
 app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settings"])
 app.include_router(video_batch_router, prefix="/api", tags=["video-batch"])

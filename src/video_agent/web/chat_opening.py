@@ -174,7 +174,11 @@ def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
     记录）；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，前奏不冒充读取。"""
     notes: List[tuple] = []
     if resolved_skill:
-        notes.append(("system", f"已绑定 Skill「{resolved_skill}」：正文经 read_skill 按需加载"))
+        notes.append((
+            "system",
+            f"已绑定 Skill「{resolved_skill}」：正文按需加载"
+            "（用户消息带 /slug 时一次性注入；模型可调用技能用 read_skill）",
+        ))
     return notes
 
 

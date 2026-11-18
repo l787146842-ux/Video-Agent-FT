@@ -75,6 +75,53 @@ class VideoGenRequest(BaseModel):
     draft_type: str = "shot"
 
 
+class AudioGenRequest(BaseModel):
+    """音频生成请求（四通道共用；按 channel 取用各自参数）。
+
+    channel 取值见 core/audio_channels.AUDIO_CHANNELS；未用到的字段忽略。
+    时长不是参数：百炼 Fun-Music 无 duration 入参，时长由提示词/后期决定。
+    """
+    channel: str = "music"
+    prompt: str = ""
+    provider_id: str = ""
+    model: str = ""
+    # 音色设计
+    preview_text: str = ""
+    language: str = "zh"
+    sample_rate: int = 24000
+    audio_format: str = ""
+    prefix: str = ""
+    voice_id: str = ""
+    # 音乐
+    lyrics: str = ""
+    instrumental: bool = True
+    gender: str = ""
+    watermark: bool = False
+    # 音效/语音合成
+    references: List[Dict[str, str]] = []
+    channels: int = 2
+    volume: int = 50
+    rate: float = 1.0
+    speed: float = 0.0
+    pitch: int = 0
+    emotion: str = ""
+    # 关联草稿（完成后服务端自动回写）
+    draft_id: str = ""
+    draft_type: str = "audio"
+
+
+class VoiceCloneRequest(BaseModel):
+    """上传参考音频创建音色（语音合成参数栏的「上传音色」入口）。
+
+    target_model = 后续语音合成要用的模型（音色与模型绑定，不能跨模型用）。
+    """
+    provider_id: str = ""
+    target_model: str = ""
+    audio_url: str = ""
+    preview_text: str = ""
+    language: str = "zh"
+
+
 class BatchImageGenRequest(BaseModel):
     target: str = "all_shots"  # "all_keyElements" / "all_shots" / 逗号分隔的 draft_id
     provider_id: str = ""

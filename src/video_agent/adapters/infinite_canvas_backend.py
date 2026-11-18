@@ -5,10 +5,10 @@ InfiniteCanvasBackend — infinite-canvas canvas-agent 通道适配器（Rule4: 
 所有外部调用收敛为 POST /api/tools（工具调用）与 GET /health、/config（探活/版本），
 Tool 层不直接出现 httpx 调用。失败统一抛 AdapterError。
 
-对端契约出处（只读参照，禁止修改该目录任何文件）：
-E:\\09 Github上的实用工具\\infinite-canvas-main\\canvas-agent\\src\\canvas\\schemas.ts（34 工具与 ops 闭集）
-E:\\09 Github上的实用工具\\infinite-canvas-main\\canvas-agent\\src\\server\\http.ts（/api/tools、/health、/config、token 鉴权）
-E:\\09 Github上的实用工具\\infinite-canvas-main\\canvas-agent\\src\\canvas\\session.ts（AGENT_PROTOCOL_VERSION）
+协议契约出处（L2 起本仓自持，画布源码已 vendored）：
+- 协议端点：`src/video_agent/web/routes/canvas_agent.py`
+- 工具翻译与会话：`src/video_agent/adapters/canvas_agent_session.py`
+- 画布执行侧 ops 语义：`vendors/infinite-canvas/web/src/lib/canvas/canvas-agent-ops.ts`
 """
 import asyncio
 import json
@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import httpx
 from loguru import logger
 
+from src.video_agent.adapters.canvas_agent_session import get_canvas_agent_session
 from src.video_agent.adapters.canvas_schema import (
     CANVAS_TOOL_TO_INFINITE_CANVAS_NODE_TYPE,
     INFINITE_CANVAS_IMAGE_MEDIA_FIELD,
@@ -26,7 +27,7 @@ from src.video_agent.adapters.canvas_schema import (
 from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils import gen_id
-from src.video_agent.utils.paths import ASSETS_DIR, DATA_DIR
+from src.video_agent.utils.paths import ASSETS_DIR
 
 if TYPE_CHECKING:
     from src.video_agent.adapters.canvas_port import CanvasBackend
@@ -38,9 +39,6 @@ PROTOCOL_VERSION = 6
 # canvas_apply_ops 批量分片：单批操作上限（串行提交，单批失败单批重试一次）
 APPLY_OPS_BATCH_SIZE = 20
 
-# 画布版本漂移记录文件（协议版本持久化，供更新后比对告警）
-_CANVAS_VERSION_FILE = DATA_DIR / "canvas_integration.json"
-
 # 生图轮询间隔（秒）
 _IMAGE_POLL_INTERVAL = 2.0
 
@@ -48,9 +46,8 @@ _IMAGE_POLL_INTERVAL = 2.0
 # 避免任务丢失场景卡满 image_gen_timeout
 _IMAGE_POLL_MAX_MISSES = 5
 
-# /health 快探独立超时（秒）：在线探测不与写路径 canvas_timeout 共用，
-# 与旧熊布快探口径对齐（负缓存维持原状，不在此新增）
-_HEALTH_PROBE_TIMEOUT = 2.0
+# 画布站点探测超时（秒）：仅外部站点调试回退路径使用
+_SITE_PROBE_TIMEOUT = 2.0
 
 # 默认图片节点尺寸（世界坐标 px）
 _IMAGE_NODE_SIZE = 320
@@ -58,26 +55,9 @@ _IMAGE_NODE_SIZE = 320
 # 单批失败重试前的退避（秒）
 _RETRY_BACKOFF = 0.5
 
-
-def _resolve_token(explicit: str = "") -> str:
-    """token 优先取显式参数/环境变量，回退读 ~/.infinite-canvas/canvas-agent.json。
-
-    canvas-agent 首次启动自动生成该配置文件（含 url+token，仅本机使用）。
-    """
-    tok = (explicit or settings.canvas_agent_token or "").strip()
-    if tok:
-        return tok
-    cfg = Path.home() / ".infinite-canvas" / "canvas-agent.json"
-    try:
-        data = json.loads(cfg.read_text(encoding="utf-8"))
-        return str(data.get("token") or "").strip()
-    except Exception:
-        return ""
-
-
-def resolve_canvas_agent_token(explicit: str = "") -> str:
-    """token 解析的对外公开入口（/api/config 下发等复用，避免重复实现）"""
-    return _resolve_token(explicit)
+# 大类容器内边距（对齐画布原生组：GROUP_WRAP_PADDING / GROUP_WRAP_TOP_PADDING）
+CONTAINER_PADDING = 24.0
+CONTAINER_TOP_PADDING = 52.0
 
 
 def _agent_static_base() -> str:
@@ -97,8 +77,9 @@ def _to_infinite_node(node: Dict[str, Any]) -> Dict[str, Any]:
     """把工具层节点字典转换为 infinite-canvas 节点结构（add_node/update_node 用）。
 
     类型映射经 canvas_schema.CANVAS_TOOL_TO_INFINITE_CANVAS_NODE_TYPE；
-    图片 URL / 文本正文统一存 metadata.content（对端 image/text 节点负载契约，
-    出处 canvas-agent/src/canvas/schemas.ts 的 metadata recordSchema）。
+    图片/视频/音频 URL 与文本正文统一存 metadata.content（对端 image/text/
+    video/audio 节点负载契约，出处 canvas-agent/src/canvas/schemas.ts 的
+    metadata recordSchema）。
     """
     raw_type = str(node.get("type") or "text")
     node_type = CANVAS_TOOL_TO_INFINITE_CANVAS_NODE_TYPE.get(raw_type)
@@ -116,11 +97,24 @@ def _to_infinite_node(node: Dict[str, Any]) -> Dict[str, Any]:
         if not url:
             raise AdapterError(f"画布写入校验失败: 图片节点 {node.get('id')} 缺少 url")
         content = _absolutize_url(url)
+    elif node_type in ("video", "audio"):
+        url = str(node.get("url") or "")
+        if not url:
+            raise AdapterError(
+                f"画布写入校验失败: {node_type} 节点 {node.get('id')} 缺少 url")
+        content = _absolutize_url(url)
     else:
         content = str(node.get("prompt") or node.get("content") or node.get("text") or "")
     metadata: Dict[str, Any] = {INFINITE_CANVAS_IMAGE_MEDIA_FIELD: content}
     if node.get("status"):
         metadata["status"] = node["status"]
+    # 大类容器归属（2026-11-11）：成员节点的 groupId 指向容器组 id；
+    # 容器组自身带 container=True 标记，供 canvas_list/refit 识别。
+    group_id = str(node.get("group_id") or "").strip()
+    if group_id:
+        metadata["groupId"] = group_id
+    if node.get("container"):
+        metadata["container"] = True
     out: Dict[str, Any] = {
         "id": node.get("id"),
         "nodeType": node_type,
@@ -198,104 +192,51 @@ def _extract_generated_ids(result: Any) -> List[str]:
     return ids
 
 
+async def _probe_site(url: str) -> bool:
+    """探测画布站点根路径：拿到任意 HTTP 应答即视为可达（4xx/5xx 也说明服务在跑）"""
+    try:
+        async with httpx.AsyncClient(
+            timeout=_SITE_PROBE_TIMEOUT,
+            trust_env=False,  # 禁用系统代理，避免本地回环被代理拦截
+            follow_redirects=True,
+        ) as client:
+            await client.get(url)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
 class InfiniteCanvasBackend:
-    """infinite-canvas canvas-agent 客户端（单例 AsyncClient，token 头 x-canvas-agent-token）"""
+    """infinite-canvas 画布后端（L2：进程内会话通道，无 Node sidecar）。
+
+    保留 base_url/token/timeout 构造签名以兼容既有装配与测试；
+    实际读写全部走 adapters.canvas_agent_session（浏览器执行、本进程等待回执）。
+    """
 
     def __init__(self, base_url: str = "", token: str = "", timeout: int = 0):
-        self.base_url = (base_url or settings.canvas_agent_url).rstrip("/")
+        self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout or settings.canvas_timeout
-        self._explicit_token = token
-        self._client: Optional[httpx.AsyncClient] = None
         # canvas_get_state TTL 快照缓存（写路径一律绕过）；代际号防写前旧快照回填：
         # invalidate_state_cache 递增代际，在途读回填前比对，代际已变则弃回填
         self._state_cache: Optional[Dict[str, Any]] = None
         self._state_cache_time: float = 0.0
         self._state_cache_generation: int = 0
-        self._health_cache: Optional[Dict[str, Any]] = None
-        self._health_cache_time: float = 0.0
+        # 测试接缝：注入假会话即可在不起浏览器连接的前提下验证适配层
+        self._session_override: Optional[Any] = None
 
-    def client(self) -> httpx.AsyncClient:
-        """进程内单例连接池（懒建：等 canvas-agent 生成配置文件后仍能取到 token）"""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=self.timeout,
-                trust_env=False,  # 禁用系统代理，避免本地回环被代理拦截
-                headers={"x-canvas-agent-token": _resolve_token(self._explicit_token)},
-            )
-        return self._client
+    def _session(self):
+        return self._session_override or get_canvas_agent_session()
 
     async def aclose(self) -> None:
-        if self._client is not None and not self._client.is_closed:
-            await self._client.aclose()
-
-    # ---------- 底层通道 ----------
-
-    async def _get_json(self, path: str, timeout: Optional[float] = None) -> Dict[str, Any]:
-        """GET 公开端点（/health、/config），失败抛 AdapterError；
-        timeout 为本次请求独立超时（快探用），缺省沿用客户端全局超时"""
-        try:
-            extra = {"timeout": timeout} if timeout is not None else {}
-            resp = await self.client().get(path, **extra)
-            resp.raise_for_status()
-            return resp.json()
-        except httpx.ConnectError as exc:
-            raise AdapterError(
-                f"无法连接 canvas-agent ({self.base_url})，请确认 canvas-agent 已启动: {exc}"
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise AdapterError(f"canvas-agent 响应超时 ({self.timeout}s): {exc}", retryable=True) from exc
-        except httpx.HTTPStatusError as exc:
-            raise AdapterError(
-                f"canvas-agent API 错误 [{exc.response.status_code}]: {exc.response.text[:300]}",
-                http_status=exc.response.status_code,
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise AdapterError(f"canvas-agent 请求失败: {exc}") from exc
+        """生命周期钩子：进程内会话无常驻连接池，无需释放（保留签名供 lifespan 调用）。"""
 
     async def _call_tool(self, name: str, tool_input: Optional[Dict[str, Any]] = None) -> Any:
-        """统一工具调用入口：POST /api/tools，body {name, input}，返回 result 字段"""
-        try:
-            resp = await self.client().post(
-                "/api/tools", json={"name": name, "input": tool_input or {}}
-            )
-        except httpx.ConnectError as exc:
-            raise AdapterError(
-                f"无法连接 canvas-agent ({self.base_url})，请确认 canvas-agent 已启动: {exc}"
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise AdapterError(f"canvas-agent 响应超时 ({self.timeout}s): {exc}", retryable=True) from exc
-        except httpx.HTTPError as exc:
-            raise AdapterError(f"canvas-agent 请求失败: {exc}") from exc
-        if resp.status_code == 401:
-            raise AdapterError(
-                "canvas-agent token 无效，请检查 CANVAS_AGENT_TOKEN 或 ~/.infinite-canvas/canvas-agent.json",
-                status_code=401,
-            )
-        try:
-            data = resp.json()
-        except ValueError:
-            data = {}
-        if resp.status_code >= 400 or not data.get("ok"):
-            msg = str(data.get("error") or resp.text[:300])
-            timeout_like = "超时" in msg or "timed out" in msg.lower()
-            raise AdapterError(
-                f"infinite-canvas 工具 {name} 失败: {msg}",
-                retryable=True if timeout_like else None,
-                http_status=resp.status_code,
-            )
-        return data.get("result")
+        """统一工具调用入口：进程内画布会话（浏览器执行、本进程等待回执）。"""
+        return await self._session().call_tool(name, tool_input or {})
 
     async def health(self) -> Dict[str, Any]:
-        """GET /health 全量（含 hasCanvas，可区分“服务在线但画布页未开”），带 TTL 缓存；
-        探测用独立 2s 快超时，不复用写路径 canvas_timeout"""
-        ttl = settings.canvas_health_cache_seconds
-        if self._health_cache is not None and (time.time() - self._health_cache_time) < ttl:
-            return self._health_cache
-        data = await self._get_json("/health", timeout=_HEALTH_PROBE_TIMEOUT)
-        self._health_cache = data
-        self._health_cache_time = time.time()
-        return data
+        """进程内画布会话健康（hasCanvas = 画布页已连且已上报快照）。"""
+        return self._session().health()
 
     async def _get_state(self, *, use_cache: bool = True) -> Dict[str, Any]:
         """canvas_get_state（TTL 快照缓存）；写路径/差异计算须 use_cache=False"""
@@ -317,18 +258,23 @@ class InfiniteCanvasBackend:
         self._state_cache_time = 0.0
         self._state_cache_generation += 1
 
-    async def _apply_ops(self, ops: List[Dict[str, Any]]) -> List[Any]:
-        """canvas_apply_ops 分片串行提交（每批 APPLY_OPS_BATCH_SIZE，单批失败重试一次）"""
+    async def _apply_ops(self, ops: List[Dict[str, Any]], batch_size: int = 0) -> List[Any]:
+        """canvas_apply_ops 分片串行提交（每批 APPLY_OPS_BATCH_SIZE，单批失败重试一次）。
+
+        batch_size 可由调用方放大：容器 refit 的「组移位 + 成员补偿」必须落在
+        同一批（跨批会露中间态，成员先被带走再回来）。
+        """
+        chunk = batch_size if batch_size > 0 else APPLY_OPS_BATCH_SIZE
         results: List[Any] = []
-        for i in range(0, len(ops), APPLY_OPS_BATCH_SIZE):
-            batch = ops[i:i + APPLY_OPS_BATCH_SIZE]
+        for i in range(0, len(ops), chunk):
+            batch = ops[i:i + chunk]
             try:
                 results.append(await self._call_tool("canvas_apply_ops", {"ops": batch}))
             except AdapterError as exc:
                 if exc.status_code == 401:
                     raise
                 logger.warning(
-                    f"[InfiniteCanvas] canvas_apply_ops 第 {i // APPLY_OPS_BATCH_SIZE + 1} 批失败，重试: {exc}"
+                    f"[InfiniteCanvas] canvas_apply_ops 第 {i // chunk + 1} 批失败，重试: {exc}"
                 )
                 await asyncio.sleep(_RETRY_BACKOFF)
                 results.append(await self._call_tool("canvas_apply_ops", {"ops": batch}))
@@ -453,7 +399,7 @@ class InfiniteCanvasBackend:
     async def create_canvas(
         self, title: str = "未命名画布", kind: str = "smart", icon: str = "sparkles"
     ) -> Dict[str, Any]:
-        """infinite-canvas 34 工具闭集无新建项目工具：尽力打开画布列表页引导手动创建"""
+        """画布工具闭集无新建项目工具：尽力打开画布列表页引导手动创建"""
         try:
             await self._call_tool("site_navigate", {"path": "/canvas"})
         except AdapterError:
@@ -512,6 +458,67 @@ class InfiniteCanvasBackend:
         self.invalidate_state_cache()
         return True
 
+    async def refit_container(self, canvas_id: str, group_id: str) -> Optional[Dict[str, Any]]:
+        """按成员包围盒重算容器组的位置与宽高（2026-11-11）。
+
+        画布原生 update_node 对**组**的位置变更带「整体拖动」语义（成员随组
+        位移），因此「挪框」在同一批 ops 内追加成员位置回写：组先移到新包围盒，
+        成员被连带移动 dx/dy，随后逐条写回原坐标 —— 最终只有框动、内容不动。
+        成员为空（说明节点被删光）时不动，交由画布的空组回收规则处理。
+        """
+        await self.get_canvas(canvas_id)
+        state = await self._get_state(use_cache=False)
+        nodes = [n for n in state.get("nodes", []) if isinstance(n, dict)]
+        group = next(
+            (n for n in nodes if n.get("id") == group_id and n.get("type") == "group"), None)
+        if group is None:
+            return None
+        members = [
+            n for n in nodes
+            if n.get("type") != "group"
+            and str((n.get("metadata") or {}).get("groupId") or "") == group_id
+        ]
+        if not members:
+            return None
+
+        def _box(n: Dict[str, Any]) -> Tuple[float, float, float, float]:
+            pos = n.get("position") or {}
+            return (float(pos.get("x") or 0), float(pos.get("y") or 0),
+                    float(n.get("width") or 0), float(n.get("height") or 0))
+
+        boxes = [_box(n) for n in members]
+        min_x = min(b[0] for b in boxes)
+        min_y = min(b[1] for b in boxes)
+        max_x = max(b[0] + b[2] for b in boxes)
+        max_y = max(b[1] + b[3] for b in boxes)
+        x = min_x - CONTAINER_PADDING
+        y = min_y - CONTAINER_TOP_PADDING
+        width = (max_x - min_x) + CONTAINER_PADDING * 2
+        height = (max_y - min_y) + CONTAINER_TOP_PADDING + CONTAINER_PADDING
+
+        gx, gy, _, _ = _box(group)
+        dx, dy = x - gx, y - gy
+        moved = abs(dx) > 0.01 or abs(dy) > 0.01
+        patch: Dict[str, Any] = {"width": width, "height": height}
+        if moved:
+            patch["position"] = {"x": x, "y": y}
+        ops: List[Dict[str, Any]] = [{"type": "update_node", "id": group_id, "patch": patch}]
+        if moved:
+            # 组位移会把成员一起带走；逐条写回原坐标（同批，不露中间态）
+            for m in members:
+                if not m.get("id"):
+                    continue
+                mx, my, _, _ = _box(m)
+                ops.append({"type": "update_node", "id": m["id"],
+                            "patch": {"position": {"x": mx, "y": my}}})
+        await self._apply_ops(ops, batch_size=max(APPLY_OPS_BATCH_SIZE, len(ops)))
+        self.invalidate_state_cache()
+        return {
+            "canvas_id": canvas_id, "group_id": group_id,
+            "x": x, "y": y, "width": width, "height": height,
+            "members": len(members),
+        }
+
     async def delete_node(self, canvas_id: str, *, node_id: str) -> bool:
         """删除指定节点（新鲜快照定位；相关连线一并 delete_connections）；返回是否存在"""
         await self.get_canvas(canvas_id)
@@ -547,6 +554,76 @@ class InfiniteCanvasBackend:
             await self._apply_ops(ops)
             self.invalidate_state_cache()
         return ids
+
+    async def group_nodes(
+        self, canvas_id: str, *, node_ids: List[str]
+    ) -> Dict[str, Any]:
+        """canvas_group_nodes：把已存在节点打成一个组（对端 ids 至少 2 个）。
+
+        画布没有「空分组」——组框是把已有节点包起来，不能凭空建壳；
+        不足 2 个节点时本地直接拒（对端 zod min(2)，提前给出可读错误）。
+        """
+        await self.get_canvas(canvas_id)
+        ids = [str(n).strip() for n in node_ids if str(n).strip()]
+        if len(ids) < 2:
+            raise AdapterError("画布打组至少需要 2 个节点（画布不支持空分组）")
+        await self._call_tool("canvas_group_nodes", {"ids": ids})
+        self.invalidate_state_cache()
+        return {"canvas_id": canvas_id, "grouped": len(ids)}
+
+    async def ungroup_nodes(
+        self, canvas_id: str, *, node_ids: List[str]
+    ) -> Dict[str, Any]:
+        """canvas_ungroup_nodes：解散组（对端接受组节点 id 或组内成员 id）"""
+        await self.get_canvas(canvas_id)
+        ids = [str(n).strip() for n in node_ids if str(n).strip()]
+        if not ids:
+            raise AdapterError("画布解散组需要至少 1 个节点 id")
+        await self._call_tool("canvas_ungroup_nodes", {"ids": ids})
+        self.invalidate_state_cache()
+        return {"canvas_id": canvas_id, "ungrouped": len(ids)}
+
+    async def add_video_node(
+        self,
+        canvas_id: str,
+        *,
+        url: str,
+        name: str = "",
+        position: Optional[Tuple[float, float]] = None,
+    ) -> Dict[str, Any]:
+        """追加视频节点（组装导出成片落画布）。
+
+        位置缺省 = 现有节点最下方一个节点高度之外（避免盖住已有内容）；
+        视频节点负载契约 = metadata.content 存 URL（画布前端 builtin-nodes 读取）。
+        """
+        await self.get_canvas(canvas_id)
+        if not str(url or "").strip():
+            raise AdapterError("画布写入校验失败: 视频节点缺少 url")
+        x, y = position if position else (0.0, 0.0)
+        if not position:
+            state = await self._get_state(use_cache=False)
+            nodes = [n for n in state.get("nodes") or [] if isinstance(n, dict)]
+            max_y = max(
+                (float((n.get("position") or {}).get("y") or 0 or 0) for n in nodes),
+                default=0.0,
+            )
+            x, y = _resolve_drop_point(state, None, None)
+            if nodes:
+                y = max_y + 260
+        node = {
+            "id": gen_id("agent", wide=True),
+            "type": "video",
+            "title": name or "成片",
+            "x": x, "y": y,
+            "url": url,
+            "width": 420, "height": 236,
+        }
+        ic = _to_infinite_node(node)
+        op: Dict[str, Any] = {"type": "add_node"}
+        op.update(ic)
+        await self._apply_ops([op])
+        self.invalidate_state_cache()
+        return {"node_id": ic.get("id"), "canvas_id": canvas_id}
 
     async def get_selection(self) -> Dict[str, Any]:
         """canvas_get_selection 读当前页选中节点（契约：{nodes: [...]}）"""
@@ -755,74 +832,37 @@ class InfiniteCanvasBackend:
     # ---------- 在线检测与版本漂移 ----------
 
     async def is_online(self) -> bool:
-        """/health 在线且画布页已连接（hasCanvas）；“服务在线但画布页未开”经 health() 区分"""
-        try:
-            h = await self.health()
-        except AdapterError:
-            return False
-        return bool(h.get("ok")) and bool(h.get("hasCanvas"))
+        """画布功能可用口径：画布页已连接本进程 agent 且已上报过画布快照。"""
+        return self._session().has_canvas()
+
+    async def is_site_reachable(self) -> bool:
+        """画布站点是否可达（仅外部站点调试路径使用）。
+
+        同域挂载后由 web 路由按 `static/canvas-app/index.html` 存在性判定可达，
+        不会调用本方法；保留实现供“画布单独跑在 3000”时的回退探测。
+        """
+        url = (settings.infinite_canvas_url or "").strip()
+        return bool(url) and await _probe_site(url)
 
     def online_cached(self) -> Optional[bool]:
-        """最近一次 /health 探测的缓存结果（不触发网络请求）；None = 尚未探测过"""
-        if self._health_cache is None:
+        """画布在线状态（不触发网络）。
+
+        None = 尚未有画布页连过（planner 保持现状、不裁剪工具）；
+        True/False = 当前会话是否可用（内存事实，无 TTL）。
+        """
+        session = self._session()
+        if not session.ever_connected():
             return None
-        return bool(self._health_cache.get("ok")) and bool(self._health_cache.get("hasCanvas"))
+        return session.has_canvas()
 
     async def get_app_info(self) -> Dict[str, Any]:
-        """GET /config → {version, protocolVersion, url}（version 为协议版本字符串）"""
-        data = await self._get_json("/config")
-        pv = data.get("protocolVersion")
-        return {"version": str(pv), "protocolVersion": pv, "url": data.get("url") or self.base_url}
+        """画布应用信息：L2 后由本进程提供，版本即钉住的协议版本。"""
+        return {"version": str(PROTOCOL_VERSION), "protocolVersion": PROTOCOL_VERSION,
+                "url": "/api/canvas/agent"}
 
     async def check_version_drift(self) -> Optional[str]:
-        """比对 /config protocolVersion 与上次记录，漂移时告警（离线/失败返回 None）"""
-        try:
-            info = await self.get_app_info()
-        except Exception:
-            return None  # 探测失败不阻塞启动
-        version = str(info.get("version") or "").strip()
-        if not version:
-            return None
-        recorded = _read_version_record()
-        drift_msg: Optional[str] = None
-        if recorded and recorded != version:
-            drift_msg = (
-                f"infinite-canvas canvas-agent 已更新: {recorded} → {version}（代码钉住协议 {PROTOCOL_VERSION}）。"
-                "集成依赖其工具契约，请重新验证（运行 tests/integration infinite-canvas 契约测试）"
-            )
-            logger.warning(f"[InfiniteCanvas] {drift_msg}")
-        if recorded != version:
-            _write_version_record(version)
-        return drift_msg
-
-
-def _read_version_record() -> str:
-    """读 data/canvas_integration.json 中 infinite_canvas 段的协议版本"""
-    try:
-        if _CANVAS_VERSION_FILE.exists():
-            data = json.loads(_CANVAS_VERSION_FILE.read_text(encoding="utf-8"))
-            return str(data.get("infinite_canvas", {}).get("protocol_version") or "")
-    except Exception:
-        pass
-    return ""
-
-
-def _write_version_record(version: str) -> None:
-    """合并写（保留文件内其他段），失败仅 debug（不阻塞启动）"""
-    try:
-        data: Dict[str, Any] = {}
-        if _CANVAS_VERSION_FILE.exists():
-            try:
-                data = json.loads(_CANVAS_VERSION_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                data = {}
-        if not isinstance(data, dict):
-            data = {}
-        data["infinite_canvas"] = {"protocol_version": version, "checked_at": int(time.time())}
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _CANVAS_VERSION_FILE.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    except Exception as exc:
-        logger.debug(f"[InfiniteCanvas] 版本记录写入失败: {exc}")
+        """版本漂移：协议版本由本项目与画布产物同一仓库发布，不存在外部漂移，恒返回 None。"""
+        return None
 
 
 # ---------- 模块级单例 ----------

@@ -36,8 +36,10 @@ ALLOWED_EXTS = {
     ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".gif": "image",
     # 视频
     ".mp4": "video", ".avi": "video", ".mov": "video", ".webm": "video",
-    # 音频
+    # 音频（m4a/aac 与 generation_audio._AUDIO_REF_EXTS 同口径：
+    # 手机录音常见 m4a，界面提示也写着 m4a，不能上传时才拒绝）
     ".mp3": "audio", ".wav": "audio", ".ogg": "audio", ".flac": "audio",
+    ".m4a": "audio", ".aac": "audio",
     # 文档（供剧本拆解）
     ".txt": "doc", ".md": "doc", ".pdf": "doc", ".docx": "doc",
 }

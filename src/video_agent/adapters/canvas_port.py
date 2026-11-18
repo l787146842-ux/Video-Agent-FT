@@ -69,6 +69,36 @@ class CanvasBackend(Protocol):
         """批量追加节点（一次批量 ops 提交）。返回新节点 id 列表。"""
         ...
 
+    async def group_nodes(
+        self, canvas_id: str, *, node_ids: List[str]
+    ) -> Dict[str, Any]:
+        """把已存在的节点打成一个组（至少 2 个节点；画布无空分组概念）。
+
+        返回 {"canvas_id", "grouped": n}。
+        """
+        ...
+
+    async def ungroup_nodes(
+        self, canvas_id: str, *, node_ids: List[str]
+    ) -> Dict[str, Any]:
+        """解散组（传组节点 id 或组内成员 id）。返回 {"canvas_id", "ungrouped": n}。"""
+        ...
+
+    async def add_video_node(
+        self,
+        canvas_id: str,
+        *,
+        url: str,
+        name: str = "",
+        position: Optional[Tuple[float, float]] = None,
+    ) -> Dict[str, Any]:
+        """追加视频节点（成片落画布：metadata.content 存视频 URL）。
+
+        position: 世界坐标 (x, y)；缺省放在现有节点下方。
+        返回 {"node_id", "canvas_id"}。
+        """
+        ...
+
     # ---------- 选中态 ----------
 
     async def get_selection(self) -> Dict[str, Any]:
@@ -166,7 +196,14 @@ class CanvasBackend(Protocol):
     # ---------- 在线检测与版本漂移 ----------
 
     async def is_online(self) -> bool:
-        """检测画布是否在线"""
+        """检测画布是否在线（服务可达且画布页已连，画布功能可用口径）"""
+        ...
+
+    async def is_site_reachable(self) -> bool:
+        """检测画布站点是否可达（只判站点本体，不含画布页已连语义）。
+
+        iframe 嵌入的“画布能否加载”判定用它：画布页未接入 agent 时画布仍可渲染。
+        """
         ...
 
     async def get_app_info(self) -> Dict[str, Any]:

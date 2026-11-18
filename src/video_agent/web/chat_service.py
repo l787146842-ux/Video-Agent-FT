@@ -481,11 +481,10 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         chat_provider=ctx.cand_provider, chat_model=ctx.cand_model,
         chat_adapter_factory=_create_chat_adapter,
     )
-    resolved_skill = (
-        "" if ctx.adjust_scope else _resolve_skill_name_for_injection(
-            ctx.body.skill_name or "", ctx.body.skill_slug or "", ctx.svc.state_dict, ctx.user_text,
-        )
-    )
+    # dsh 口径：正文不随 system prompt 注入；Skill 归属只由本轮 /slug 手势
+    # 在 planner._build_and_log_skill_event 里写入（首个用户触发技能）。
+    # 不再从 body.skill_name / skill_slug / usedSkills 回退出「当前选中」。
+    resolved_skill = ""
     # 状态惰性构建器：多步循环每轮刷新
     # scope 请求换 scope 裁剪构建器，目标组全量/其余指针）
     ctx.state_builder = (
@@ -853,9 +852,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
         svc, body.selected_draft_id, body.selected_type
     )
 
-    resolved_skill = _resolve_skill_name_for_injection(
-        body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
-    )
+    # 同流式路径：Skill 归属只由本轮 /slug 手势在 planner 里确定
+    resolved_skill = ""
     # 状态惰性构建器：多步循环每轮刷新
     state_builder = (
         _stage_aware_state_builder(svc, body.asset_mode)

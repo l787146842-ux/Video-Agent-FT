@@ -1,10 +1,9 @@
 """
 画布交互路由 — 对话栏生成的图片拖放进画布、画布图片回读、选中态读取。
 
-背景：本项目与画布跨域（iframe 嵌入），浏览器原生 HTML5 拖拽事件
-不会投递进跨域 iframe（实证：同源 iframe 可投递，跨域完全不投递），
-因此前端在拖拽时显示自有放置层捕获落点，再调本接口经 CanvasBackend
-协议写入图片节点（Rule 4: 只走 Adapter；Rule 7: 不改画布）。
+背景：画布以同域子应用（`/canvas-app/`）iframe 嵌入。浏览器原生 HTML5 拖拽
+事件不跨文档投递（跨域实证；同域也不保证），因此前端在拖拽时显示自有放置层
+捕获落点，再调本接口经 CanvasBackend 协议写入图片节点（Rule 4: 只走 Adapter）。
 路由层不判后端类型，响应契约前端零感知。
 """
 from datetime import datetime
@@ -21,11 +20,16 @@ from src.video_agent.adapters.canvas_schema import INFINITE_CANVAS_IMAGE_MEDIA_F
 from src.video_agent.config import settings
 from src.video_agent.state.models import CAT_SHOTS
 from src.video_agent.exceptions import AdapterError
-from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.utils.paths import ASSETS_DIR, STATIC_DIR
 
 router = APIRouter()
 
 _ASSETS_URL_PREFIX = "/workspace/assets/"
+
+
+def _canvas_app_bundled() -> bool:
+    """画布是否以同域子应用产物形式随本服务发布（/canvas-app/）。"""
+    return (STATIC_DIR / "canvas-app" / "index.html").is_file()
 
 _MIME_BY_SUFFIX = {
     ".png": "image/png",
@@ -108,9 +112,11 @@ class CanvasListItem(BaseModel):
 
 
 class CanvasListResponse(BaseModel):
-    """画布列表响应"""
+    """画布列表响应（两个在线标志口径分离）"""
     canvases: List[CanvasListItem]
     canvas_online: bool
+    # 画布站点可达（前端 iframe“能否加载”判定；不要求画布页已连 agent）
+    canvas_reachable: bool = False
 
 
 class CanvasSelectNodesResponse(BaseModel):
@@ -227,18 +233,33 @@ async def list_canvas_node_images():
 
 @router.get("/canvas/list", response_model=CanvasListResponse)
 async def list_canvases_for_picker():
-    """返回所有未删除画布列表（供前端手动画布选择器使用）。"""
+    """返回所有未删除画布列表（供前端手动画布选择器使用）。
+
+    在线标志口径分离：
+    - canvas_reachable：画布产物已构建并同域挂载（iframe“能否加载”判定）；
+    - canvas_online：画布页已连本进程 agent 协议（读写画布/在线生图等能力可用）。
+    """
+    # 同域挂载后画布由本进程直出：产物存在即可达，不再探 3000 端口。
+    # 外部站点模式（未迁移 / 单独调试画布）仍回退端口探测。
     adapter = get_canvas_adapter()
+    reachable = _canvas_app_bundled()
+    if not reachable:
+        try:
+            reachable = await adapter.is_site_reachable()
+        except Exception:
+            reachable = False
+    if not reachable:
+        return {"canvases": [], "canvas_online": False, "canvas_reachable": False}
     try:
         online = await adapter.is_online()
     except Exception:
         online = False
     if not online:
-        return {"canvases": [], "canvas_online": False}
+        return {"canvases": [], "canvas_online": False, "canvas_reachable": True}
     try:
         canvases = await adapter.list_canvases()
     except AdapterError:
-        return {"canvases": [], "canvas_online": True}
+        return {"canvases": [], "canvas_online": True, "canvas_reachable": True}
     result = [
         {
             "id": c.get("id", ""),
@@ -251,7 +272,7 @@ async def list_canvases_for_picker():
     ]
     # 按更新时间降序
     result.sort(key=lambda x: x["updated_at"], reverse=True)
-    return {"canvases": result, "canvas_online": True}
+    return {"canvases": result, "canvas_online": True, "canvas_reachable": True}
 
 
 @router.get("/canvas/all-node-images", response_model=AllCanvasImagesResponse)

@@ -30,10 +30,12 @@ from .generate_common import (
 )
 from .generate_image import router as _image_router
 from .generate_video import router as _video_router
+from .generate_audio import router as _audio_router
 
 router = APIRouter()
 router.include_router(_image_router)
 router.include_router(_video_router)
+router.include_router(_audio_router)
 
 
 # ---------- 生成日志响应模型 ----------
@@ -87,7 +89,8 @@ async def get_active_tasks():
             active.append({
                 "task_id": tid,
                 "draft_id": t.get("draft_id", ""),
-                "kind": "video" if tid.startswith("vid") else "image",
+                "kind": t.get("media_kind") or (
+                    "video" if tid.startswith("vid") else "image"),
                 "created_at": t.get("created_at", time.time()),
             })
     return {"tasks": active}
@@ -128,12 +131,15 @@ def _terminal_snapshot(task_id: str, task: dict) -> str:
     payload = {
         "task_id": task_id,
         "status": task.get("status"),
-        "kind": "video" if task.get("adapter_type") == "video_generation" else "image",
+        "kind": task.get("media_kind") or (
+            "video" if task.get("adapter_type") == "video_generation" else "image"),
         "draft_id": task.get("draft_id", ""),
         "elapsed": task.get("elapsed") or round(time.time() - task.get("created_at", time.time()), 1),
     }
     if task.get("video_url"):
         payload["video_url"] = task["video_url"]
+    if task.get("audio_url"):
+        payload["audio_url"] = task["audio_url"]
     if task.get("result"):
         payload["result"] = task["result"]
     if task.get("error"):

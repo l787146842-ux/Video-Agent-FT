@@ -49,7 +49,7 @@ frontmatter 任意键原样透传，便于将来与 Agent Skills 开放标准互
 避免与平台未来登记键或其他导入源撞键。判定归一入口 is_extension_key；
 本清单校验只按登记表消费键，扩展键不进任何 _check_* 路径。
 """
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # 告警级问题前缀：validate 返回清单中以此开头的条目为
 # WARN（开放注册降级/废除键过渡告警），不触发 fail-hard 拒注册；
@@ -106,6 +106,60 @@ ZOMBIE_STEP_KEYS = ("stage_executors", "step_done_conditions", "step_short_title
 
 # ---------- v3 键白名单 ----------
 SCHEMA_VERSION = 3
+
+# dsh 调用策略键（Agent Skills 兼容扩展）：两个开关只控制「可见面」
+# ── 模型侧 / 用户侧，不控制文件读取路径。
+INVOCATION_MODEL_KEY = "disable-model-invocation"
+INVOCATION_USER_KEY = "user-invocable"
+
+_TRUE_STRINGS = frozenset({"true", "yes", "on", "1"})
+_FALSE_STRINGS = frozenset({"false", "no", "off", "0"})
+
+
+def _parse_invocation_bool(raw: Any) -> Tuple[Optional[bool], str]:
+    """严格布尔解析（dsh 口径）：bool 或大小写不敏感的 true/false、
+    yes/no、on/off、1/0；其余值报错，绝不静默放行。"""
+    if isinstance(raw, bool):
+        return raw, ""
+    if isinstance(raw, str):
+        v = raw.strip().casefold()
+        if v in _TRUE_STRINGS:
+            return True, ""
+        if v in _FALSE_STRINGS:
+            return False, ""
+    return None, f"必须是布尔值（true/false、yes/no、on/off、1/0），实际为 {raw!r}"
+
+
+def invocation_policy(data: Any) -> Tuple[bool, bool]:
+    """frontmatter → (model_invocable, user_invocable)。
+
+    缺省 true/true；非法值回落 true/true（注册期由
+    `_check_invocation_flags` fail-hard 拒入，运行期活读遇到坏值不静默
+    扩大可见面，仍按默认值处理并由 registration 失败清单暴露）。
+    """
+    model_invocable = True
+    user_invocable = True
+    if not isinstance(data, dict):
+        return model_invocable, user_invocable
+    if INVOCATION_MODEL_KEY in data:
+        val, err = _parse_invocation_bool(data.get(INVOCATION_MODEL_KEY))
+        if not err and val is not None:
+            # disable-model-invocation 是负向键：true = 模型不可用
+            model_invocable = not val
+    if INVOCATION_USER_KEY in data:
+        val, err = _parse_invocation_bool(data.get(INVOCATION_USER_KEY))
+        if not err and val is not None:
+            user_invocable = val
+    return model_invocable, user_invocable
+
+
+def _check_invocation_flags(data: Dict[str, Any], issues: List[str]) -> None:
+    """调用策略两键严格布尔校验（声明即校验，非法 fail-hard）。"""
+    for key in (INVOCATION_MODEL_KEY, INVOCATION_USER_KEY):
+        if key in data:
+            _, err = _parse_invocation_bool(data.get(key))
+            if err:
+                issues.append(f"{key} {err}")
 
 
 def _check_exec_list(name: str, k: Any, v: Any, issues: List[str]) -> None:
@@ -289,6 +343,7 @@ def validate_manifest_data(data: Any) -> List[str]:
                 issues.append("pause.stage_pause 必须是布尔值")
     # v3 键：全部可选，未声明=零预设，非法 fail-closed
     _check_schema_version(data, issues)
+    _check_invocation_flags(data, issues)
     _check_scripts(data.get("scripts"), issues)
     _check_resources(data.get("resources"), issues)
     return issues

@@ -135,6 +135,19 @@ _DRAFT_FIELDS_HINT = (
     "**音色就地写在那句台词旁边**：写完 `{某角色说：“…”}` 紧接着写 `@音色·该角色名`；"
     "不要在卡片末尾另起一句「对白分别采用 A、B、C 的音色」这种汇总——"
     "汇总句建立不了「哪句台词用哪个音色」的对应关系。"
+    # 2026-10-26 绑定批（用户裁决「只有绑定的媒体才能进行后续的操作」）：
+    # bound = 卡媒体的「分组采用」标记；出片成功由系统自动绑定；用户审核后
+    # 决定换用另一张图/音频时用 patch 改绑（同组同类型唯一，自动解绑旧卡）。
+    "bound=true 表示该卡媒体为所属分组同类媒体的采用媒体"
+    "（同组同类型唯一，绑新卡自动解绑旧卡）；"
+    "组内同类媒体已有绑定卡时，后续生成只取绑定卡；"
+    "用户确认换用另一张时用 patch 把目标卡置 bound=true。"
+    # 2026-10-26 用户裁决「已有媒体不得覆盖」（范围 = Agent 聊天框）：
+    # 本工具是视频与音频的落卡通道，故再生成的口径必须在此写明——否则模型
+    # 会以为自己改的是原卡，后续按原 draft_id 读回却看到旧媒体（假前提）。
+    "卡上已有同种媒体时，媒体字段（imgUrl/videoUrl/audioUrl）的写入会落到"
+    "同组新建的承载卡，回执的 draft_id 即该新卡、原卡与旧媒体保持原样；"
+    "提示词与参数类字段照常写在目标卡上。"
 )
 
 # group patch 合法字段枚举（2026-09-23 批10，事故 4444/P1-1）：
@@ -378,6 +391,21 @@ class StoryboardCreateGroupTool(BaseTool):
     def get_input_schema(self) -> Type[BaseModel]:
         return CreateGroupInput
 
+    def model_view(self, data: Optional[Dict[str, Any]]) -> str:
+        """建组回执必须带 group_id（2026-09-23 批2/Q3 用户裁决）。
+
+        回喂口径从 fc_feedback 的按名特判移到工具自身（2026-11-11 模型可见
+        输出契约）：建组后模型拿不到 id 只能靠 `current` 兜底，会落错组。
+        """
+        data = data or {}
+        detail = str(data.get("detail") or "").strip()
+        group_id = str(data.get("group_id") or "").strip()
+        if not group_id:
+            return detail
+        line = (f"分组 ID = {group_id}"
+                "（后续 add_draft/patch 请显式传 group_id，勿依赖 current）")
+        return f"{line}。{detail}" if detail else line
+
     async def aexecute(self, params: CreateGroupInput) -> ToolResult:
         svc = StateManager.get_instance()
         cat_key = ops.category_for_group_type(params.group_type)
@@ -488,6 +516,9 @@ class StoryboardCreateGroupTool(BaseTool):
             # 附带草稿
             if draft_payload:
                 _extra = ops.append_draft(new_group, draft_payload, svc.state_dict)
+                # 2026-10-26 绑定批（用户裁决）：建组内联卡即绑定时同组同类型唯一
+                if _extra.get("bound"):
+                    ops.enforce_single_bound(new_group, _extra)
                 # 全局设置补印（与 add_draft / patch_draft 同一口径，2026-10-09）：
                 # 本路径此前**漏了补印** ⇒ 由此建出的卡渠道为空，执行期只能靠
                 # 回退链猜（用户裁决「执行时按卡内已填参数」要求卡上必有值）。
@@ -543,9 +574,22 @@ class StoryboardPatchDraftTool(BaseTool):
                 # REST `/storyboard/drafts/{id}` 是用户手编路径，不归平台改写
                 # （P2：代码校验只裁定模型产出，不拦用户意志）。
                 patch = _normalize_free_text(dict(params.patch))
+                # 2026-10-26 用户裁决「已有媒体不得覆盖」：本工具是视频与音频
+                # 的**落卡通道**（generate_video 只回地址，媒体由模型 patch 写入）。
+                # 目标卡已有同种媒体 ⇒ 本次媒体写到同组新建的承载卡上，原卡与
+                # 旧媒体保持原样；判定与建卡唯一实现 = ops.regen_carrier（G4：
+                # 与生图批量轨的异步回写同源）。提示词/参数类 patch 不受影响。
+                _regen_kind = ops.media_overwrite_kind(draft, patch)
+                if _regen_kind:
+                    _origin_id = str(draft.get("id") or params.draft_id)
+                    draft = ops.duplicate_draft_for_regen(
+                        svc.state_dict, group, draft)
                 # 统一白名单（含 imageResolution/genType，与文本轨一致）
                 changed, _ = ops.patch_draft(draft, patch, svc.state_dict)
                 if changed:
+                    # 2026-10-26 绑定批（用户裁决）：绑定时同组同类型唯一
+                    if patch.get("bound") or _regen_kind:
+                        ops.enforce_single_bound(group, draft)
                     # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
                     ops.sync_shot_duration(group, draft, patch)
                     # 全局设置补印（与文本轨一致，草稿缺分辨率/时长时
@@ -555,7 +599,16 @@ class StoryboardPatchDraftTool(BaseTool):
                     _conflict = save_or_conflict(svc)
                     if _conflict is not None:
                         return _conflict
-                    return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id)})
+                    _data: Dict[str, Any] = {
+                        "draft_id": draft.get("id", params.draft_id)}
+                    if _regen_kind:
+                        # §2.5 平台改写必须模型可见：媒体落到了新卡，原卡原样保留。
+                        _data["regen_of"] = _origin_id
+                        _data["detail"] = (
+                            f"「{_origin_id}」已有该种媒体，本次{_regen_kind}媒体写到"
+                            f"同组新建的承载卡「{draft.get('id', '')}」，"
+                            "原卡与旧媒体保持原样")
+                    return ToolResult(success=True, data=_data)
         return ToolResult(
             success=False,
             error=(f"Draft '{params.draft_id}' not found（未做任何改动，"
@@ -619,6 +672,9 @@ class StoryboardAddDraftTool(BaseTool):
                            "与 group_type 后重试。"))
 
             draft = ops.append_draft(target_group, draft_payload, svc.state_dict)
+            # 2026-10-26 绑定批（用户裁决）：新建即绑定时同组同类型唯一
+            if draft.get("bound"):
+                ops.enforce_single_bound(target_group, draft)
             # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
             ops.sync_shot_duration(target_group, draft)
             # 全局设置补印（唯一权威源）：草稿未自带供应商时按全局设置填充，

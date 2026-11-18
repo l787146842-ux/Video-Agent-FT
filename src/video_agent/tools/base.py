@@ -137,6 +137,18 @@ class BaseTool(ABC):
         """
         return None
 
+    def model_view(self, data: Optional[Dict[str, Any]]) -> str:
+        """模型可见结果渲染（对齐 dsh 的 output/render 契约，2026-11-11）。
+
+        `data` 是给宿主/前端的结构化值；模型只应看到本方法产出的文本。
+        默认沿用既有回喂口径 `data["detail"]`；凡 data 里含有模型下一步要用的
+        标识（画布 id、节点 id、分组 id 等）或可读结果，工具**必须覆写本方法**，
+        否则回喂层会把原始 data 兜底塞回并告警（成功结果不得对模型静默为空）。
+
+        契约测试 tests/unit/test_tool_model_view_contract.py 对全部注册工具生效。
+        """
+        return str((data or {}).get("detail") or "").strip()
+
 
 # ===== 写类工具的落盘结果判定（2026-09-27 批，事故 9999/2026-09-27 动作二②） =====
 #
