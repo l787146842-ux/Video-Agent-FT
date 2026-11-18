@@ -216,6 +216,9 @@ class Settings:
 
     # 图片生成超时（秒）
     image_gen_timeout: int = field(default_factory=lambda: _env_int("IMAGE_GEN_TIMEOUT", 180))
+    # 音频生成超时（秒）：音乐生成单次可达数分钟（Fun-Music 整曲同步返回），
+    # 与图片/视频超时分开配置，避免长曲被 180s 误判失败
+    audio_gen_timeout: int = field(default_factory=lambda: _env_int("AUDIO_GEN_TIMEOUT", 300))
 
     # 附件限制
     max_doc_chars: int = field(default_factory=lambda: _env_int("MAX_DOC_CHARS", 30000))
@@ -310,20 +313,17 @@ class Settings:
             raise ValueError(
                 f"SKILL_RUNTIME_MODE/SKILL_RUNTIME={_stale!r} 已退役（整改批 3.5）："
                 "通用主路径为唯一 Skill 注入路径，请移除该环境变量后重启")
-        # 画布旧环境变量已退役（画布集成收敛到 canvas-agent 单后端）：
-        # 检测到旧键只警告不 raise（仿 SKILL_RUNTIME 显式处置，旧键已无读取方，
-        # 硬拒会阻断正常启动）；新键 = CANVAS_AGENT_URL / CANVAS_AGENT_TOKEN
-        #（画布站点地址另见 INFINITE_CANVAS_URL）。
+        # 画布旧环境变量已退役（画布集成已内置：同域子应用 + 进程内 agent 协议）：
+        # 检测到旧键只警告不 raise（旧键已无读取方，硬拒会阻断正常启动）；
+        # 画布接入令牌自动生成于 data/canvas_agent_token，无需环境变量配置。
         for _stale_canvas_key in (
             "CANVAS_BASE_URL", "CANVAS_PROVIDERS_URL",
             "CANVAS_PROVIDERS_FILE", "CANVAS_ENV_FILE",
         ):
             if str(os.getenv(_stale_canvas_key) or "").strip():
                 logging.getLogger(__name__).warning(
-                    f"[Config] 环境变量 {_stale_canvas_key} 已退役（画布集成收敛到 "
-                    "canvas-agent 单后端），不再被读取；新键为 CANVAS_AGENT_URL / "
-                    "CANVAS_AGENT_TOKEN（画布站点地址用 INFINITE_CANVAS_URL），"
-                    "请移除旧键以免误导")
+                    f"[Config] 环境变量 {_stale_canvas_key} 已退役（画布集成已内置，"
+                    "无需配置服务地址），不再被读取；请移除旧键以免误导")
 
     # 模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
     # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
@@ -379,26 +379,28 @@ class Settings:
     # 存储后端（"local" | "s3"）
     storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
 
+    # 组装导出（video_assembler）ffmpeg 可执行文件路径；空 = 依次找
+    # PATH 上的 ffmpeg、imageio-ffmpeg 自带二进制（pip 安装即可用，无需系统安装）
+    ffmpeg_path: str = field(default_factory=lambda: os.getenv("FFMPEG_PATH", ""))
+
     # 项目状态持久化后端（"json" | "sqlite"）：默认 sqlite（事务原子性
     # 与并发安全）且为项目状态唯一事实源（首启自动从旧 JSON 文件一次性导入）；
     # STATE_BACKEND=json 仅保留为测试基线与旧 JSON 工作区回落路径，
     # sqlite 写入后回退不再无损
     state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "sqlite"))
 
-    # 画布集成（infinite-canvas 单后端，经 canvas-agent HTTP 协议）
+    # 画布集成（L2：同域子应用 + 进程内 agent 协议，无 Node sidecar）
     canvas_timeout: int = field(default_factory=lambda: _env_int("CANVAS_TIMEOUT", 30))
     canvas_enabled: bool = field(default_factory=lambda: _env_bool("CANVAS_ENABLED", True))
 
+    # 画布在线状态已是内存事实（无 TTL）；此值仅被 MCP 工具清单缓存复用
     canvas_health_cache_seconds: int = field(default_factory=lambda: _env_int(
         "CANVAS_HEALTH_CACHE_SECONDS", 30))
-    # infinite-canvas canvas-agent 通道：
-    # agent HTTP 服务地址；token 默认空 = 自动回退读 ~/.infinite-canvas/canvas-agent.json
-    #（canvas-agent 首次启动生成）；画布站点地址（前端 iframe 嵌入引导用）
-    canvas_agent_url: str = field(default_factory=lambda: os.getenv(
-        "CANVAS_AGENT_URL", "http://127.0.0.1:17371"))
+    # 以下两项仅外部站点调试回退路径使用（正常部署留空：画布由本服务直出）：
+    # canvas_agent_url 已不再作为 HTTP 目标；infinite_canvas_url 仅 is_site_reachable 回退探测用
+    canvas_agent_url: str = field(default_factory=lambda: os.getenv("CANVAS_AGENT_URL", ""))
     canvas_agent_token: str = field(default_factory=lambda: os.getenv("CANVAS_AGENT_TOKEN", ""))
-    infinite_canvas_url: str = field(default_factory=lambda: os.getenv(
-        "INFINITE_CANVAS_URL", "http://localhost:3000"))
+    infinite_canvas_url: str = field(default_factory=lambda: os.getenv("INFINITE_CANVAS_URL", ""))
     # canvas_get_state TTL 快照缓存（秒，1–2s 抗高频读）；写路径一律绕过缓存
     canvas_agent_state_cache_seconds: float = field(default_factory=lambda: float(
         os.getenv("CANVAS_AGENT_STATE_CACHE_SECONDS", "1.5")))
@@ -470,7 +472,7 @@ SETTINGS_GROUPS: dict = {
                 "state_group_body_chars", "state_delta_enabled", "context_overflow_policy", "prompt_gate_mode",
                 "llm_image_max_edge", "max_doc_chars", "max_attachments",
                 "max_llm_images", "trace_reasoning_max_chars"),
-    "media": ("image_gen_timeout", "image_ref_limit", "image_gen_concurrency",
+    "media": ("image_gen_timeout", "audio_gen_timeout", "image_ref_limit", "image_gen_concurrency",
               "video_gen_concurrency", "audio_gen_concurrency", "video_ref_limit_image",
               "video_ref_limit_video", "video_ref_limit_audio", "video_ref_limit_total",
               "max_chat_inserts", "default_image_provider_id", "default_image_model",

@@ -277,8 +277,18 @@ AUDIO_KEYWORDS = ["audio", "speech", "tts", "asr", "voice", "music", "suno", "wh
                   "cosyvoice", "sensevoice", "paraformer", "sovits", "vits"]
 
 
-def classify_models(all_models: List[str]) -> Dict[str, List[str]]:
-    """自动将模型列表分类为 image/chat/video/audio"""
+# 纯音频平台：模型名不含 tts/speech 等特征（如 ElevenLabs 的 eleven_v4），
+# 若走“未知→chat”兜底会全部落进对话模型（但它们根本没有对话能力）。
+# 新增同类平台（只做音频的）在此登记一处即可。
+_AUDIO_ONLY_HOSTS = ("elevenlabs.io",)
+
+
+def classify_models(all_models: List[str], base_url: str = "") -> Dict[str, List[str]]:
+    """自动将模型列表分类为 image/chat/video/audio。
+
+    ``base_url`` 可选：纯音频平台（ElevenLabs 等）下，未命中任何关键词的模型
+    从 chat 改归 audio。
+    """
     image_models: List[str] = []
     video_models: List[str] = []
     audio_models: List[str] = []
@@ -293,6 +303,9 @@ def classify_models(all_models: List[str]) -> Dict[str, List[str]]:
             audio_models.append(m)
         else:
             chat_models.append(m)
+    if base_url and any(host in base_url.lower() for host in _AUDIO_ONLY_HOSTS):
+        audio_models.extend(chat_models)
+        chat_models = []
     return {
         "image_models": image_models,
         "chat_models": chat_models,

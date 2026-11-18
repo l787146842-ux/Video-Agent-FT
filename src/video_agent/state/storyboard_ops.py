@@ -10,6 +10,7 @@ FC Tool（tools/storyboard_tools.py）与动作执行器（core/action_executor.
 不做 undo 快照（调用方 push_undo）。所有函数直接就地修改传入的 state_dict 结构。
 """
 import ast
+import copy
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,6 +22,7 @@ from src.video_agent.state.models import (
     CAT_AUDIO_ITEMS,
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
+    DRAFT_DEFAULT_FIELDS,
     build_draft_dict,
     infer_media_type,
 )
@@ -144,6 +146,13 @@ ALLOWED_DRAFT_FIELDS = (
     "size", "timbre", "refAssets", "desc",
     # 2026-09-23 批5：音频归属语义（voice=角色音色卡 / bgm / narration / …）
     "audioType",
+    # 2026-10-28 音频通道批（M1-M3）：通道/音色/音乐参数随卡落库，
+    # 否则 Agent 建卡与用户改参都写不进（白名单拒收会静默丢字段）
+    "audioChannel", "voiceId", "previewText", "audioLanguage", "audioSampleRate",
+    "audioFormat", "lyrics", "instrumental", "audioGender", "audioWatermark",
+    "audioChannels", "audioVolume", "audioRate",
+    # 2026-10-26 绑定批（用户裁决）：卡媒体绑定态（同组同类型唯一）
+    "bound",
 )
 
 # 新建草稿（storyboard_add_draft / storyboard_create_group 附带）允许的字段：
@@ -656,6 +665,123 @@ def patch_draft(
     return changed, dropped
 
 
+def enforce_single_bound(group: Dict[str, Any], draft: Dict[str, Any]) -> List[str]:
+    """把 draft 置为绑定态，并解除同组**同媒体类型**的其他绑定。
+
+    2026-10-26 用户裁决：同组同类型唯一（绑新卡自动解绑旧卡，绿勾永远只有一个）。
+    判据同 `infer_media_type`（唯一缺省入口）；工具写口与异步回写共用本函数。
+    返回被解绑的草稿 id 列表（空 = 无旧绑定）。
+    """
+    kind = infer_media_type(draft)
+    unbound: List[str] = []
+    for d in (group or {}).get("drafts", []) or []:
+        if not isinstance(d, dict) or d is draft:
+            continue
+        if d.get("bound") and infer_media_type(d) == kind:
+            d["bound"] = False
+            unbound.append(str(d.get("id") or ""))
+    draft["bound"] = True
+    return unbound
+
+
+# ---------- 再生隔离（2026-10-26 用户裁决：已有媒体不得被覆盖） ----------
+# 裁决（用户原话要点）：关键元素 / 分镜 / 音频在**已经生成**的情况下，Agent 聊天框
+# 里要求重新生成时，默认**不能覆盖原有的媒体文件**，只能再建一张卡承载新结果。
+# 判定口径（用户三问三答）：判据 = **该卡已有同种媒体**（图看 imgUrl / 视频看
+# videoUrl / 音频看 audioUrl）；范围 = 仅 Agent 聊天框（用户手点的前端生成按钮
+# 不在此列——P2：代码校验只裁定模型产出，不拦用户意志）；批量再生遇到已有媒体的
+# 卡 = **逐张新建卡再生成**（不是跳过、不是整批拒收）。
+#
+# 为什么落在 ops 而不是各写一遍（G4）：写媒体的 Agent 路径有两条——
+#   ① 生图批量轨的异步回写（web/task_manager.writeback_if_complete）；
+#   ② 模型 patch 草稿写 imgUrl/videoUrl/audioUrl（storyboard_patch_draft，
+#      视频与音频的落卡通道）。
+# 两处各写一份判定 = 下一次改动必然漏一条（本仓既有事故的共同成因），故判定与
+# 建卡都收在本模块，调用方只负责「替换目标 + 把回执如实写回给模型」。
+
+# 一张卡只存一个媒体（与 task_manager 回写同口径）；kind ↔ 字段的唯一映射
+MEDIA_URL_FIELDS: Tuple[str, ...] = ("imgUrl", "videoUrl", "audioUrl")
+_MEDIA_KIND_TO_FIELD: Dict[str, str] = {
+    "image": "imgUrl",
+    "video": "videoUrl",
+    "audio": "audioUrl",
+}
+_FIELD_TO_MEDIA_KIND: Dict[str, str] = {v: k for k, v in _MEDIA_KIND_TO_FIELD.items()}
+
+
+def draft_media_url(draft: Dict[str, Any], kind: str) -> str:
+    """该卡**同种媒体**的已有地址（空串 = 尚未生成）。"""
+    field = _MEDIA_KIND_TO_FIELD.get(str(kind or "").strip().lower(), "")
+    if not field:
+        return ""
+    return str((draft or {}).get(field) or "").strip()
+
+
+def media_overwrite_kind(draft: Dict[str, Any], patch: Dict[str, Any]) -> str:
+    """patch 是否会**覆盖该卡已有的同种媒体**：返回被覆盖的媒体种类（无冲突返回空串）。
+
+    冲突判据三件同时成立：patch 带该字段、新值非空、卡上已有非空地址且**值不同**。
+    同值重写（幂等回写）不算覆盖——那不会丢任何东西。
+    """
+    for field, kind in _FIELD_TO_MEDIA_KIND.items():
+        new_value = str((patch or {}).get(field) or "").strip()
+        if not new_value:
+            continue
+        current = str((draft or {}).get(field) or "").strip()
+        if current and current != new_value:
+            return kind
+    return ""
+
+
+def duplicate_draft_for_regen(
+    state: Dict[str, Any], group: Dict[str, Any], draft: Dict[str, Any],
+) -> Dict[str, Any]:
+    """为「已有媒体再生成」新建一张承载卡（原卡与旧媒体**保持原样**）。
+
+    新卡继承原卡的提示词 / 描述 / 制作参数 / 渠道 / 参考素材（同一次生成意图的
+    同一套输入），只清空媒体地址与绑定态：媒体由本次生成落地后才成立。
+    **全字段拷贝**（不止默认字段集）：逐卡渠道（imageProviderId/videoModel 等）
+    与自定义参数不在默认集里，漏拷会让新卡跑回全局设置=换了一个渠道。
+    id 不拷——由构建工厂重新分配（拷贝会撞 `draft_id_exists` 查重）。
+    label 加「再生」后缀：左栏卡面零文字，用户靠整卡 title 分辨两张卡。
+    """
+    payload: Dict[str, Any] = {
+        k: copy.deepcopy(v) for k, v in (draft or {}).items()
+        if k != "id" and k not in MEDIA_URL_FIELDS and k != "bound"
+    }
+    for field in MEDIA_URL_FIELDS:
+        payload[field] = ""
+    # 失败态不继承：新卡是「还没生成」而不是「上次失败」
+    if str(payload.get("tag") or "") == "生成失败":
+        payload["tag"] = "Agent"
+    _label = str(payload.get("label") or "").strip()
+    if _label:
+        payload["label"] = f"{_label}（再生）"
+    payload["bound"] = False
+    # 构建工厂只取默认字段集：逐卡渠道等额外字段（imageProviderId/videoModel/
+    # customRatioWidth…）不在集内，须在工厂之后补回——否则承载卡静默换渠道。
+    _extras = {
+        k: v for k, v in payload.items()
+        if k not in DRAFT_DEFAULT_FIELDS and k != "id"
+    }
+    new_draft = append_draft(group, payload, state)
+    new_draft.update(_extras)
+    return new_draft
+
+
+def regen_carrier(
+    state: Dict[str, Any], group: Dict[str, Any], draft: Dict[str, Any],
+    kind: str,
+) -> Tuple[Dict[str, Any], bool]:
+    """取本次生成的落卡目标 → (目标卡, 是否新建了承载卡)。
+
+    卡上**已有该种媒体** ⇒ 新建承载卡（原卡与旧媒体不覆盖）；否则原卡就地写。
+    """
+    if not draft_media_url(draft, kind):
+        return draft, False
+    return duplicate_draft_for_regen(state, group, draft), True
+
+
 def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """按 ALLOWED_GROUP_FIELDS 白名单就地更新 group，返回 (是否有字段被修改, 被丢弃字段名列表)。"""
     dropped = dropped_patch_fields(patch, ALLOWED_GROUP_FIELDS)
@@ -889,12 +1015,19 @@ def resolve_shot_refs(
             d for d in (ke_group.get("drafts") or [])
             if isinstance(d, dict) and (d.get("imgUrl") or "")
         ]
-        # 图像类优先（音色卡 mediaType=audio 且无 imgUrl，本就不会入选；
-        # video 卡带 imgUrl 时才是真歧义——按种类排到后面）
+        # 绑定优先（2026-10-26 用户裁决：只有绑定的媒体才能进行后续操作）：
+        # 组内存在绑定的图像卡时只认它；无绑定时维持存量口径（图像类优先→首张）
         pick = next(
-            (d for d in candidates if infer_media_type(d) == "image"),
-            candidates[0] if candidates else None,
-        )
+            (d for d in candidates
+             if d.get("bound") and infer_media_type(d) == "image"),
+            None)
+        if pick is None:
+            # 图像类优先（音色卡 mediaType=audio 且无 imgUrl，本就不会入选；
+            # video 卡带 imgUrl 时才是真歧义——按种类排到后面）
+            pick = next(
+                (d for d in candidates if infer_media_type(d) == "image"),
+                candidates[0] if candidates else None,
+            )
         if pick is not None:
             refs.append({"url": str(pick.get("imgUrl")), "role": "reference"})
     return refs[:limit]
@@ -926,12 +1059,18 @@ def resolve_shot_audio_refs(
         if ke_group is None:
             continue
         drafts = [d for d in (ke_group.get("drafts") or []) if isinstance(d, dict)]
-        # ① voice 卡优先（音色锚点的规范载体）
+        # 绑定优先（2026-10-26 用户裁决）：组内有绑定音频时只认绑定卡
         pick = next(
             (d for d in drafts
-             if str(d.get("audioUrl") or "").strip()
-             and str(d.get("audioType") or "").strip() == "voice"),
+             if str(d.get("audioUrl") or "").strip() and d.get("bound")),
             None)
+        # ① voice 卡优先（音色锚点的规范载体）
+        if pick is None:
+            pick = next(
+                (d for d in drafts
+                 if str(d.get("audioUrl") or "").strip()
+                 and str(d.get("audioType") or "").strip() == "voice"),
+                None)
         # ② 回落：该组任意带音源的首张卡（存量兼容，不加硬判）
         if pick is None:
             pick = next(

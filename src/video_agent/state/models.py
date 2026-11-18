@@ -59,6 +59,10 @@ class DraftRecord(BaseModel):
     draft_id: str = Field(alias="id")
     label: str = "草稿"
     tag: str = "草稿"  # "推荐" | "已确认" | "草稿" | "生成中" | "Agent"
+    # 绑定态（2026-10-26 用户裁决）：该卡媒体为所属分组「同类媒体」的采用媒体；
+    # 出图成功自动绑定（同组同类型唯一），右键可手动绑定/取消；
+    # 后续生成只认绑定媒体（参考解析优先取绑定卡，未绑定时维持存量口径）
+    bound: bool = False
     media_type: str = Field(alias="mediaType", default="image")  # "image" | "video" | "audio"
     gen_type: str = Field(alias="genType", default="")  # 当前选中的生成类型（缺省回退 media_type）
     prompt: str = ""
@@ -332,6 +336,8 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     # storyboard_ops.AUDIO_TYPES（voice = Skill 明文的 key_element_audio 角色音色卡）。
     "audioType": "",
     "refAssets": [],
+    # 绑定态（2026-10-26 用户裁决）：新建卡默认未绑定；出图成功由写回链路置真
+    "bound": False,
 }
 
 
