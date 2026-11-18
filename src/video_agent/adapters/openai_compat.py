@@ -529,6 +529,17 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     使用完毕后调用 await adapter.close 释放资源。
     """
 
+    # 图片输入能力声明（2026-11-13 read_image 能力闸）：OpenAI 兼容协议的
+    # 消息体本就承载 `content: [{type: "image_url", ...}]` 多模态内容——本平台
+    # 的附件/@引用注入全程走这条通道（web/multimodal_builder →
+    # turn_executor → 本适配器 chat/chat_stream），故**协议层确实能承载图片**。
+    # 供应商配置里没有逐模型的 vision 能力标记（data/api_providers.json 零
+    # capability 声明），无法按模型细分；若声明 False，本平台既有的多模态
+    # 附件功能与 read_image 会一起失效（比「个别模型不支持」严重得多），
+    # 故按真实协议能力声明 True；模型级不支持仍由上游 400 经既有
+    # AdapterError 通道如实上抛（不静默）。
+    supports_image_input = True
+
     def __init__(self, base_url: str, api_key: str = "", model: str = "", provider_id: str = ""):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key

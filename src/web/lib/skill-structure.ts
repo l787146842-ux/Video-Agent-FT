@@ -185,3 +185,35 @@ export function frontmatterMeta(content: string): { name: string; description: s
   }
   return { name, description };
 }
+
+/** dsh 调用策略两开关的只读解析（前端展示用）。
+ *
+ * 解析口径与后端 `manifest_schema.invocation_policy` 严格对齐：
+ * - `disable-model-invocation`（负向键）：缺省 false → 模型可用；
+ * - `user-invocable`（正向键）：缺省 true → 用户可用；
+ * - 严格布尔：true/false、yes/no、on/off、1/0（大小写不敏感）；非法值
+ *   后端会拒注册，前端这里回落缺省值（与后端 invocation_policy 同口径）。
+ *
+ * 仅用于工作台展示，不参与运行期判定（判定权威仍在后端注册表）。 */
+export function frontmatterInvocation(content: string): {
+  modelInvocable: boolean;
+  userInvocable: boolean;
+} {
+  const { frontmatter } = splitFrontmatter(content || '');
+  const truthy = new Set(['true', 'yes', 'on', '1']);
+  const falsy = new Set(['false', 'no', 'off', '0']);
+  let modelInvocable = true;
+  let userInvocable = true;
+  if (frontmatter) {
+    for (const line of frontmatter.split('\n')) {
+      const m = line.match(/^\s*(disable-model-invocation|user-invocable)\s*:\s*(.*?)\s*$/);
+      if (!m) continue;
+      const raw = m[2].replace(/^["']|["']$/g, '').trim().toLowerCase();
+      const val = truthy.has(raw) ? true : falsy.has(raw) ? false : null;
+      if (val === null) continue; // 非法值：后端拒注册，前端按缺省展示
+      if (m[1] === 'disable-model-invocation') modelInvocable = !val;
+      else userInvocable = val;
+    }
+  }
+  return { modelInvocable, userInvocable };
+}

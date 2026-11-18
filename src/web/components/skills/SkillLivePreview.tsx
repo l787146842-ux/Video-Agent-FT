@@ -1,6 +1,6 @@
 import { createMemo, Show } from 'solid-js';
 import {
-  frontmatterMeta, parseSkillStructure,
+  frontmatterInvocation, frontmatterMeta, parseSkillStructure,
 } from '@/lib/skill-structure';
 import { SkillStructuredRead } from './SkillStructuredRead';
 
@@ -24,7 +24,11 @@ export function SkillLivePreview(props: { raw: string }) {
         fallback={<div class="skst-live-empty">正在等待模型输出文档…</div>}
       >
         <div class="sks-scroll">
-          <SkillStructuredRead struct={parsed()} meta={meta()} />
+          <SkillStructuredRead
+            struct={parsed()}
+            meta={meta()}
+            invocation={frontmatterInvocation(props.raw)}
+          />
         </div>
       </Show>
     </div>

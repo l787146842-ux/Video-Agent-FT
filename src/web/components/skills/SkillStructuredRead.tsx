@@ -11,9 +11,20 @@ import { sectionMeta, type SkillStructure } from '@/lib/skill-structure';
 export function SkillStructuredRead(props: {
   struct: SkillStructure;
   meta?: { name: string; description: string };
+  /** dsh 调用策略（由调用方经 frontmatterInvocation 解析后传入；缺省 = 双可用）。 */
+  invocation?: { modelInvocable: boolean; userInvocable: boolean };
 }) {
   const displayName = () => props.meta?.name || props.struct.name || '（未命名）';
   const displayDesc = () => props.meta?.description || props.struct.description || '（未设置）';
+  /** dsh 四组合的人类可读标签（只读；改组合在源码 frontmatter 里改）。 */
+  const invocationLabel = () => {
+    const { modelInvocable, userInvocable } =
+      props.invocation ?? { modelInvocable: true, userInvocable: true };
+    if (modelInvocable && userInvocable) return '模型可调用 · 用户可调用';
+    if (modelInvocable) return '模型可调用 · 用户不可调用';
+    if (userInvocable) return '用户专用（模型不可调用）';
+    return '内部技能（都不可调用）';
+  };
   return (
     <div class="skill-structured">
       <section class="sks-group">
@@ -25,6 +36,12 @@ export function SkillStructuredRead(props: {
         <div class="sks-box sks-box-row">
           <span>{displayDesc()}</span>
           <span class="sks-count">{displayDesc().length}/200</span>
+        </div>
+        {/* dsh 调用策略两开关（只读展示）：权威判定在后端注册表，
+            这里只让用户看到本技能属于哪种组合（2026-11-12 对齐批）。 */}
+        <div class="sks-label">调用方式</div>
+        <div class="sks-box sks-box-row">
+          <span>{invocationLabel()}</span>
         </div>
       </section>
       <For each={props.struct.sections}>

@@ -7,11 +7,12 @@ Skill 下拉数据 = 仅文档 Skill（data/skills/<slug>/SKILL.md 单一包形�
 以它为源编辑保存整文件覆盖，含声明头才不会抹掉必填键导致拒注册；用户改文档就是改流程。
 """
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from loguru import logger
 
 import json
+import mimetypes
 from typing import Dict, List, Literal, Optional
 
 from src.video_agent.core.sse_events import (
@@ -102,7 +103,9 @@ async def get_agent_config():
     修复入口留在工作台 /api/skills/docs（磁盘全量，不动）。
     """
     doc_skills = []
-    for e in skill_registry.loadable_entries():
+    # dsh 四组合：下拉框只列 userInvocable=true 的技能；模型侧目录另走
+    # prompt_builder（只列 modelInvocable=true）。
+    for e in skill_registry.user_catalog_entries():
         doc_skills.append({
             "id": f"doc:{e.slug}",
             "name": e.name,
@@ -112,7 +115,9 @@ async def get_agent_config():
             "system_prompt": (get_skill_doc(e.slug) or {}).get("content") or e.content,
             "source": "doc",
             "slug": e.slug,
-            # 欠账显性化——规划级执行器名单随契约下发，
+            "model_invocable": e.model_invocable,
+            "user_invocable": e.user_invocable,
+            # 欠账显性化——规划级执行者名单随契约下发，
             # 前端据实标注（不硬编码工具名）
             "planning_executors": _planning_executors_of(e.name),
         })
@@ -202,6 +207,33 @@ async def get_one_skill_doc(slug: str):
             f"Skill 文档 '{slug}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
         )
     return doc
+
+
+@router.get("/skills/{slug}/file")
+async def get_skill_package_file(slug: str, path: str = ""):
+    """技能包内媒体只读访问（read_file 返回的 url 指向这里）。
+
+    路径复用 registry.resolve_skill_resource 的 fail-closed jail：
+    只放行 references/ 与 assets/ 内的登记资源，禁绝对路径/.. /符号链接逃逸。
+    另补硬链接拒绝：`resolve_skill_resource` 只解符号链接，同 inode 的第二个
+    目录项可落在包外且路径层面看不出来（与 tools/skill_file_tools 的 jail 同口径，
+    2026-11-13 审计补）。
+    """
+    target, err = skill_registry.resolve_skill_resource(slug, path)
+    if target is None:
+        raise VideoAgentError(
+            err or "文件不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
+    try:
+        # 包内普通文件 st_nlink 恒为 1；>1 = 该 inode 还有别的名字（可能在包外）
+        if target.stat().st_nlink > 1:
+            raise VideoAgentError(
+                "文件为硬链接（同一 inode 存在包外目录项），拒绝访问",
+                status_code=404, error_code=LEGACY_NOT_FOUND)
+    except OSError:
+        raise VideoAgentError(
+            "文件状态读取失败", status_code=404, error_code=LEGACY_NOT_FOUND)
+    media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return FileResponse(str(target), media_type=media_type)
 
 
 @router.get("/skills/docs/{slug}/history", response_model=SkillDocHistoryResponse)

@@ -1,7 +1,8 @@
 import { createEffect, createMemo, createSignal, on, Show, type JSX } from 'solid-js';
 import { FiCode, FiCopy, FiEdit2, FiEye, FiMoreHorizontal } from 'solid-icons/fi';
 import {
-  parseSkillStructure, serializeSkillStructure, frontmatterMeta, type SkillStructure,
+  parseSkillStructure, serializeSkillStructure, frontmatterMeta, frontmatterInvocation,
+  type SkillStructure,
 } from '@/lib/skill-structure';
 import { saveSkillCopy } from '@/stores/skill-studio';
 import { SkillStructuredRead } from './SkillStructuredRead';
@@ -157,7 +158,11 @@ export function SkillStructuredView(props: {
             fallback={<pre class="sks-raw">{props.raw}</pre>}
           >
             <div class="sks-scroll">
-              <SkillStructuredRead struct={parsed()} meta={meta()} />
+              <SkillStructuredRead
+                struct={parsed()}
+                meta={meta()}
+                invocation={frontmatterInvocation(props.raw)}
+              />
             </div>
           </Show>
         }
