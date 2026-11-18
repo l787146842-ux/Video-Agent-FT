@@ -1,6 +1,7 @@
 ---
 name: 剧本生视频（需上传剧本）
 description: 用户上传剧本、要求把它一镜到底做成视频时使用。以 Prompt Draft 分批确认作为生成前的强制闸门，走剧本忠实的分镜、元素、视频与音频全流程，全程按关键阶段暂停。
+disable-model-invocation: true
 ---
 
 # 剧本生视频（需上传剧本）

@@ -1,6 +1,7 @@
 ---
 name: AI-短剧一站式生成
 description: 一站式生成短剧。用户要从剧本走完整条链路到成片时使用。
+disable-model-invocation: true
 ---
 
 # AI-短剧一站式生成
