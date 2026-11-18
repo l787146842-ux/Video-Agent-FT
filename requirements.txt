@@ -33,6 +33,10 @@ Pillow>=10.0
 # 未安装时诚实降级：提示用户改用 .md/.txt
 pdfplumber>=0.11
 
+# 组装导出（video_assembler）成片合成：imageio-ffmpeg 自带跨平台 ffmpeg 二进制，
+# 无需系统级安装；系统已装 ffmpeg 时优先走 PATH / FFMPEG_PATH。
+imageio-ffmpeg>=0.6
+
 # 可选：MCP 外部工具接入层（任务#37 B4，tools/mcp/）的官方 SDK；
 # 未安装时整层诚实降级为零工具（日志可见），主链路不中断；
 # 需要接入外部 MCP server 时执行：pip install mcp

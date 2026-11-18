@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/check_bundle_size.mjs",
+    "build:canvas": "python scripts/build_canvas.py",
     "check:size": "node scripts/check_bundle_size.mjs",
     "preview": "vite preview",
     "check": "tsc --noEmit && eslint src/web/",

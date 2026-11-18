@@ -26,6 +26,8 @@
 ```bash
 python -m src.video_agent.web    # 后端 FastAPI 服务
 npm run dev / build / check      # 前端 Vite 开发 / 构建（输出 static/dist/）/ tsc + eslint
+python scripts/build_canvas.py   # 画布子应用构建（独立产物 static/canvas-app/，/canvas-app/ 挂载）
+python scripts/sync_canvas_upstream.py --check --upstream <dir>  # 画布上游增量同步（--apply 生效，保留本地 patch）
 python scripts/acceptance.py --quick   # 日常快验（GATES + tsc）
 python scripts/acceptance.py           # 批末全量验收（终验追加 --with-eval）
 python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontmatter/manifest 解析底线）

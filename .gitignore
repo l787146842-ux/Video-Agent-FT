@@ -73,9 +73,10 @@ docs/archive/
 # 架构可视化插件产出的派生图（.structurizr/.dot 等，本地保留、可再生、以宪法为准不入库）
 docs/architecture/
 
-# 临时测试目录
-.pytest_tmp/
-.pytest_tmp_run*/
+# 临时测试目录：pytest.ini 的 basetemp 固定在 .pytest_tmp/run；会话排障绕行时
+# 会在仓库根另起 basetemp（.pytest_tmprun1 / .pytest_tmpacc2 / .pytest_tmphook1 等），
+# 故按前缀兜底——凡是 .pytest_tmp 开头的目录一律不入库。
+.pytest_tmp*/
 
 # 大文件截图（根目录散落截图统一由下行兜底）
 # 根目录散落截图（调试/冒烟产物，统一放 test-results/ 或删除）
@@ -84,6 +85,12 @@ docs/architecture/
 # Node/Vite
 node_modules/
 static/dist/
+
+# 画布子应用（vendors/infinite-canvas 独立构建产物与构建期临时目录，可再生不入库）
+static/canvas-app/
+.tmp-build/
+vendors/infinite-canvas/web/tsconfig.tsbuildinfo
+vendors/infinite-canvas/.sync-conflicts/
 
 # 测试产物
 coverage/
