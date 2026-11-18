@@ -24,6 +24,8 @@
     "canvas_resize_node",
     "canvas_delete_nodes",
     "canvas_connect_nodes",
+    "canvas_group_nodes",
+    "canvas_ungroup_nodes",
     "canvas_select_nodes",
     "canvas_set_viewport",
     "canvas_run_generation",
@@ -42,6 +44,8 @@
     "delete_node",
     "delete_connections",
     "connect_nodes",
+    "group_nodes",
+    "ungroup_nodes",
     "set_viewport",
     "select_nodes",
     "run_generation"
