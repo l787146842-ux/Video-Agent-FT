@@ -61,6 +61,17 @@ DECLARED_DATA: List[Tuple[str, str]] = [
     # --- round_compact fallback prefix (M-2: prompts/ is primary) ---
     ("\uff08\u7cfb\u7edf\uff09\u65e9\u671f\u8f6e\u6b21\u5df2\u538b\u7f29\u4e3a\u6458\u8981\uff1a",
      "round summary prefix fallback (prompts/ is primary source)"),
+    # --- synthetic-user-message prefixes (token_budget 轮组边界判定，结构检测常量) ---
+    ("\u5f53\u524d\u5de5\u4f5c\u53f0\u72b6\u6001 JSON",
+     "state-injection prefix (token_budget._SYNTHETIC_USER_PREFIXES; structural "
+     "detection constant matching prompt_builder.build_state_tail_message header, "
+     "not injected prose itself)"),
+    ("<skill_content",
+     "skill-injection prefix (token_budget._SYNTHETIC_USER_PREFIXES; structural "
+     "detection constant for skill_runtime.render output tag, not injected prose)"),
+    ("\uff08\u4efb\u52a1\u6267\u884c\u671f\u95f4\u6536\u5230\u60a8\u7684\u6307\u4ee4",
+     "mid-turn instruction prefix (token_budget._SYNTHETIC_USER_PREFIXES; structural "
+     "detection constant for steering-message injection, not injected prose)"),
     # --- spec_rules migration constants (iron_rules doc patching) ---
     ("\u7528\u6237\u6307\u4ee4 > \u672c\u6587\u6863 > Skill/\u7cfb\u7edf\u9ed8\u8ba4",
      "old priority chain v1 (migration matching pattern)"),

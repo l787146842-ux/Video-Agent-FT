@@ -117,12 +117,14 @@
 ### 2.8 Skill 宪法（单一包形态 + 薄主文档 + 分册承载细节 + 三级渐进披露）
 - Skill 上传/保存/删除 = `data/skills/<slug>/SKILL.md` 单一包形态唯一数据源（对齐 Agent Skills 开放标准，frontmatter `name`/`description` 必填）+ 自动解析文档头部 frontmatter 声明（声明唯一源，外置配置文件退役）→ 刷新注册表；下拉框数据源不变。
 - **正文只认 Markdown 标题**（2026-11-11 全量迁移，用户裁决）：不再识别 `<planner>` 等平台私有标签；标签按普通文本处理。
-- **主文档骨架 = Flova 新 skill 六节**（2026-11-11 用户裁决，参考文档见交接单）：一、目标/输入/交付 → 二、项目结构规划 → 三、制片规格 → 四、创作流程规划（启动协议 / 步骤 / 依赖关系 / 何时暂停）→ 五、专业创作方法 → 六、Reference 路由。主文档只写骨架与干货，模板、提示词、剪辑细则等长细节下沉 `references/` 分册。
+- **主文档骨架 = AI 助手默认六节模板**（2026-11-12 调整）：一、目标/输入/交付 → 二、项目结构规划 → 三、制片规格 → 四、创作流程规划（启动协议 / 步骤 / 依赖关系 / 何时暂停）→ 五、专业创作方法 → 六、Reference 路由。六节只约束 AI 技能助手的默认产出与新建模板；手写/导入技能允许自由标题，**保存/注册/运行不因缺节失败**。
 - **分册三分法**：`references/媒体生成.md`（渠道选择/参考绑定/音频条件/首尾帧）、`references/提示词写作.md`（时长估算与各类提示词模板/固定尾部规则）、`references/剪辑交付.md`（节奏过渡/混音层级/失败修复/导出基准）。各包可按需追加专属分册（如五行特效库、武打剪辑律动参考）。
-- **主文档体量预算受机械校验**：超 `skill_selected_inject_max_chars` 即 `lint_skill_content` 告警；分册指针落在注入头部 `skill_selected_inject_head_chars` 之后亦告警（截断会让指针失联）。
-- **三级加载（渐进披露）**：① 开关（用户启停）→ ② 目录摘要常驻（L1 元数据目录 + 轻量状态提示）→ ③ 主文档整篇注入（超 `skill_selected_inject_max_chars` 时注开头 + 标题目录 + **从全文提取的分册清单**）、`references/` 分册经 `read_skill(resource=…)` 按需续读。
-- **分册可维护性**：分册必须能在 Skill 工作台查看/编辑/新增/删除（`/api/skills/docs/{slug}/refs`），不得只对 `read_skill` 开放而界面不可见。
-- **子代理供给**：Skill 主文档全文随委派任务注入（超预算截断并提示续读），子代理允许 `read_skill` 读分册；`stage` 仅作归组/展示，不再按阶段切章节注入。
+- **主文档体量建议**：正文按需读取，体量直接变成模型上下文成本；建议 5000 字以内，长细节下沉分册。不再有“选中即截断”的注入预算。
+- **加载（dsh 四组合）**：`disable-model-invocation` / `user-invocable` 两个开关决定「模型目录 / 用户命令」两个可见面；现有技能全部 user-only。用户消息带 `/slug` 时一次性注入完整 `<skill_content>`（user 角色上下文，不调 `read_skill`，不每轮注入）；模型可调用技能经 `read_skill` 按需加载，正文留在历史。**无持久「当前选中」**：`skill_name` 只由本轮 `/slug` 手势写入，`usedSkills` 只作 UI 最近使用展示。
+- **分册读取**：`references/` / `assets/` 由 `read_file(skill=…, file_path=…)` 读取（只读技能包、相对路径、路径 jail）；图片用 `read_image`；音频/视频只返回元信息。
+- **`read_file` 对 user-only 技能：主代理拒绝、子代理放行**（用户裁决 2026-11-12）：`model_invocable=false` 的技能，主代理（委派深度 0）不得经 `read_file` / `read_image` 自行加载其任何正文（含 `SKILL.md` 与分册），错误文案与 `read_skill` 对齐（`skill "<name>" is not available for model invocation`）；子代理（委派深度 ≥1）照常可读——保留「主代理把技能包路径交给子代理自读」的供给设计（见下条）。判据 = 目标条目的 `model_invocable` + 当前委派深度，两维缺一不可。
+- **分册可维护性**：分册必须能在 Skill 工作台查看/编辑/新增/删除（`/api/skills/docs/{slug}/refs`），不得只对读工具开放而界面不可见。
+- **子代理供给**：平台不再自动把 Skill 主文档拼进子代理任务；主代理在 `run_subagent.task` 里写全文、摘要或技能包路径，子代理用 `read_file` 自读。`stage` 仅作归组/展示。
 - **注入面纪律**：官方/平台 Skill 干净注入，不加任何包壳；仅外部导入 Skill 带来源标记供用户知情。
 - 管线阶段由通用主路径直走平台工具，无执行器子代理。
 - 关键步骤失败**禁止绕过回喂/虚报**：`fc_tool_runner` 按客观探针（document_write 等工作台状态）覆写完成文案，模型不得假装已执行。

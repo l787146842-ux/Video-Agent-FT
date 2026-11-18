@@ -36,6 +36,7 @@
 | migrate_media_generator_merge.py | D-24 媒体生成支 步骤1a（2026-10-01 归档）：14 个 Skill 的 `<image_generate>`/`<generate_video>`/`<audio_generate>`（含孤立 `<generation>`）合并为单一 `<media_generator>`，**正文逐字不改**（对 golden 逐字节中性）；dry-run 默认、--apply 落盘，已执行完毕 |
 | migrate_ref_assets_to_urls.py | 9999 三问批（2026-09-26 归档）：把草稿 `refAssets` 里的**草稿 id** 归一到媒体 URL（实测 79 条全是 id 形态）；**未执行**（用户裁决「只修代码，存量不管」），apply 前须停服务 |
 | migrate_9999_sheet_refs.py | 9999 三问批（2026-09-26 归档）：给 11 张「分镜表格图」卡按 `shotRefs` 补规范引用记号（`<<<image_名称>>>`）+ 参考图；**未执行**（同上裁决），dry-run 实测 11/11 全解析；幂等（已含记号的卡自动跳过） |
+| check_stage_face_consistency.py | 2026-11-12 宽权限批归档：校验 Skill 声明的能力面与委派面是否一致。本批删除 `capability` 面与阶段委派切分后**守护对象已不存在**，故主体归档、从 acceptance GATES 与 CI 移除。**注意：本脚本已不可直接运行**（移动后 `sys.path` 不再指向仓库根，`import src` 失败），仅作历史追溯，禁止再纳入任何门禁 |
 
 > **未执行件例外（2026-09-26）**：末两行是本目录**唯一**「已归档但未执行」的脚本
 > （上表其余各行均按设立口径「迁移目标已在各自批次内执行完毕」）。
