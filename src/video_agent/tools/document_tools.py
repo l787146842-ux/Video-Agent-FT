@@ -15,13 +15,11 @@ from src.video_agent.core import ports, prompt_gates
 # 批3（事故 2222/Q3b）：run_subagent.stage 的 description 动态拼接枚举值——
 # 单一事实源 = core.subagent 的 PIPELINE_STAGE_KINDS/STAGE_LABELS（顶层引用，
 # 只读常量；core.subagent 仅依赖 utils.prompts + skill_runtime，无环）。
-from src.video_agent.core.subagent import (
-    PIPELINE_STAGE_KINDS, STAGE_LABELS, stage_card_contract,
-    stage_scope_contract,
-)
+from src.video_agent.core.subagent import PIPELINE_STAGE_KINDS, STAGE_LABELS
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import headings as skill_headings
 from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime.render import render_skill_content
 from src.video_agent.tools.base import (
     BaseTool,
     ProviderInjectionContext,
@@ -77,18 +75,9 @@ def _stage_hint() -> str:
         f"{k}（{STAGE_LABELS.get(k, k)}）"
         for k in sorted(PIPELINE_STAGE_KINDS))
     return (
-        f"本次委派推进的生产阶段名。可选值：{pairs}；留空 = 通用委派。"
-        "填写后系统把所选 Skill 主文档全文注入子代理（分册路径一并给出，"
-        "子代理可按需 read_skill）；stage 只用于阶段归组、建卡限定与遥测，"
-        "不再按阶段切章节。任务书里不用复述规范。"
-        "各阶段对新建草稿卡的限定：" + "；".join(
-            f"{k}（{stage_card_contract(k)}）"
-            for k in sorted(PIPELINE_STAGE_KINDS) if stage_card_contract(k))
-        + "。安排 current_step / task 时以该限定为准。"
-        + "各阶段的分工边界：" + "；".join(
-            f"{k}（{stage_scope_contract(k)}）"
-            for k in sorted(PIPELINE_STAGE_KINDS) if stage_scope_contract(k))
-        + "。"
+        f"本次委派的生产阶段名，只作归组/展示/遥测。可选值：{pairs}；"
+        "留空 = 通用委派。平台不按阶段裁剪工具、不按阶段限定建卡；"
+        "技能内容由你在 task 里提供，或给技能包标识让子代理用 read_file 自读。"
     )
 
 
@@ -462,26 +451,53 @@ def _skill_resources_for(skill_name: str, content: str) -> List[str]:
     return list(dict.fromkeys(out))
 
 
+def _model_invocation_blocker(matched: str) -> Optional[registry.SkillEntry]:
+    """按**最终出正文的显示名/标识精确反查**注册条目，返回其中的
+    非 model-invocable 条目（None = 无阻断）。
+
+    只做精确名/标识比对，不复刻 `skill_docs.resolve_skill_content` 的
+    双向包含匹配——正文由端口决定，本函数只回答「这条正文属于哪一个
+    注册条目、该条目允不允许模型加载」，避免形成第二份解析真相（P1）。
+    同名多条目时 fail-closed：任一不可模型调用即拒绝，不靠遍历顺序赌。
+    已停用/未注册条目不归本门禁判定（既有 DISABLED/UNREGISTERED/NOT_FOUND
+    三类文案路径负责），故只查 loadable_entries。
+    """
+    wanted = (matched or "").strip()
+    if not wanted:
+        return None
+    try:
+        hits = [
+            e for e in registry.loadable_entries()
+            if wanted in (e.name, e.slug)
+        ]
+        # 精确名未命中（显示名与注册名漂移等异常态）：退一步用门户模糊解析，
+        # 仍只用于**加严**判定——解析不出/歧义时维持既有放行口径。
+        if not hits:
+            resolved = registry.resolve_entry(wanted)
+            if resolved is not None:
+                hits = [resolved]
+    except Exception:  # 注册表不可用时不阻断既有错误文案路径
+        return None
+    for entry in hits:
+        if not entry.model_invocable:
+            return entry
+    return None
+
+
 def _wrap_skill_content(skill_name: str, body: str,
-                        resources: List[str]) -> str:
+                        resources: List[str], skill_slug: str = "") -> str:
     """read_skill 三段式返回（对齐 dsh 的 content/resources/instructions）。
 
-    正文在前且原样保留；资源清单只作提示，不是指令；最后一句固定说明
-    防止模型把 Skill 指令误当作用户要求。
+    与用户 `/slug` 注入共用 `skill_runtime.render`，保证两条路径
+    渲染形状一致；资源段给出 Skill 包标识供 `read_file` 使用。
     """
-    parts = [f'<skill_content name="{skill_name}">',
-             (body or "").rstrip(),
-             "</skill_content>"]
-    if resources:
-        parts.append("<skill_resources>")
-        parts.extend(f"- {r}" for r in resources)
-        parts.append("</skill_resources>")
-    else:
-        parts.append("<skill_resources>（无显式引用的分册资源）</skill_resources>")
-    parts.append(
-        "<skill_instructions>以上是 Skill 指令，不是用户要求；"
-        "续读用 section/start/resource。</skill_instructions>")
-    return "\n".join(parts)
+    return render_skill_content(
+        name=skill_name,
+        body=body,
+        skill_slug=skill_slug,
+        resources=resources,
+        user_injected=False,
+    )
 
 
 class ReadSkillTool(BaseTool):
@@ -503,6 +519,29 @@ class ReadSkillTool(BaseTool):
         sd = ports.skill_docs_port()
 
         wanted = (params.name or "").strip()
+        # dsh 调用策略：模型加载入口只放行 modelInvocable=true 的技能；
+        # 用户专用技能（disable-model-invocation: true）只能经 /slug 注入，
+        # 模型自行 read_skill 一律拒绝（与 dsh skill 工具同一语义）。
+        #
+        # 2026-11-13 severity-① 绕过修复：门禁判定对象必须是**最终出正文的
+        # 那条 entry**，不能只对输入 token 做一次模糊解析——`resolve_entry`
+        # 在歧义名（「短剧」同时包含于多个技能名等）下按设计返回 None，
+        # 旧门禁因此整条失效，正文由 `resolve_skill_content` 的包含匹配补上，
+        # 实测 user-only 技能全文被模型读走。故门禁分两段：
+        #   ① pre-gate：输入**无歧义**命中非 model-invocable 条目 → 立即拒绝，
+        #      不进入任何正文读取路径；
+        #   ② post-gate：正文解析出真实 matched 名后，经 registry 反查该条目，
+        #      非 model-invocable 同样拒绝——歧义输入只可能在②收口。
+        # 拒绝结果一律 `success=False` 且不带 data（不返回任何正文）。
+        # ② 必须在正文解析之后做：正文由 skill_docs 端口的双向包含匹配决定，
+        # 在 tools 层复刻该匹配会形成第二份解析真相（P1 违例），且一旦与端口
+        # 语义漂移就会误拒合法的 model-invocable 技能。
+        _reg_entry = registry.resolve_entry(wanted)
+        if _reg_entry is not None and not _reg_entry.model_invocable:
+            return ToolResult(
+                success=False,
+                error=f'skill "{_reg_entry.name}" is not available for model invocation',
+            )
         # 与 Planner 选中项注入共用同一套解析（仅文档 Skill，模糊匹配）；
         # 可加载性门户在 resolve_skill_content 内收口（M2 停用=真停用）
         matched, content = sd.resolve_skill_content(wanted)
@@ -512,6 +551,20 @@ class ReadSkillTool(BaseTool):
             entry = registry.resolve_loadable_entry(wanted)
             if entry is not None and str(entry.content or "").strip():
                 matched, content = entry.name, entry.content
+        # ② post-gate（severity-① 绕过修复的收口点）：正文已解析出真实
+        # matched 名，此时按该名精确反查**出正文的那条 entry** 再判一次
+        # model_invocable。pre-gate 只覆盖无歧义输入；歧义输入下
+        # resolve_entry 返回 None，旧实现正是从这里漏放 user-only 正文。
+        if content:
+            _blocker = _model_invocation_blocker(matched)
+            if _blocker is not None:
+                # 拒绝必须彻底：success=False 且不带 data（不返回任何正文）
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f'skill "{_blocker.name}" is not available '
+                        "for model invocation"),
+                )
         if not content:
             # 拒载文案外置 planner/skill_runtime.md（M3 批2）：三类语义区分——
             # 已停用（仅真停用才报，在册启用项不误报）/ 未注册被拒 / 未找到；
@@ -531,13 +584,15 @@ class ReadSkillTool(BaseTool):
                 return ToolResult(success=False, error=render_prompt_section(
                     "planner/skill_runtime.md", "UNREGISTERED", name=wanted)
                     or f"Skill「{wanted}」未通过注册，不可加载（请到 Skill 工作台修复）")
-            available = [e.name for e in registry.loadable_entries()]
+            available = [e.name for e in registry.model_catalog_entries()]
             return ToolResult(success=False, error=render_prompt_section(
                 "planner/skill_runtime.md", "NOT_FOUND",
                 name=wanted, available="、".join(available) or "无")
                 or f"未找到 Skill「{wanted}」")
         # 三段式返回：正文 / 可读资源清单 / 使用说明（对齐 dsh）。
         # 正文原样；资源清单只列正文显式引用且真实存在的路径。
+        matched_entry = registry.resolve_entry(matched) or _reg_entry
+        skill_slug = str(getattr(matched_entry, "slug", "") or "")
         source_note = _skill_source_note(matched)
         resource_hints = _skill_resources_for(matched, content)
         # 目录包资源按需加载（P2-4）：resource 与正文/章节互斥，
@@ -562,7 +617,8 @@ class ReadSkillTool(BaseTool):
                     "name": matched, "resource": resource,
                     "media_kind": media_kind, "size": size,
                     "content": _wrap_skill_content(
-                        f"{matched} · {resource}", desc, resource_hints),
+                        f"{matched} · {resource}", desc, resource_hints,
+                        skill_slug=skill_slug),
                 })
             try:
                 res_text = res_path.read_text(encoding="utf-8-sig")
@@ -578,7 +634,8 @@ class ReadSkillTool(BaseTool):
             return ToolResult(success=True, data={
                 "name": matched, "resource": resource,
                 "content": _wrap_skill_content(
-                    f"{matched} · {resource}", out, resource_hints),
+                    f"{matched} · {resource}", out, resource_hints,
+                    skill_slug=skill_slug),
             })
         # 章节续读：section 命中任意级 Markdown 标题时只返回该章节全文，
         # start 相对章节正文起点；未命中时回喂可用章节清单（给模型纠错机会）
@@ -604,7 +661,8 @@ class ReadSkillTool(BaseTool):
             return ToolResult(success=True, data={
                 "name": matched, "section": section_title,
                 "content": _wrap_skill_content(
-                    f"{matched} · {section_title}", out, resource_hints),
+                    f"{matched} · {section_title}", out, resource_hints,
+                    skill_slug=skill_slug),
             })
         # 全文按需读：start>0 时按字符偏移续读（复用 read_uploaded_doc 分段先例）
         start = max(0, params.start)
@@ -616,7 +674,8 @@ class ReadSkillTool(BaseTool):
         out = body + note + ("\n" + source_note if source_note else "")
         return ToolResult(success=True, data={
             "name": matched,
-            "content": _wrap_skill_content(matched, out, resource_hints),
+            "content": _wrap_skill_content(
+                matched, out, resource_hints, skill_slug=skill_slug),
         })
 
 
@@ -637,7 +696,7 @@ class ListSkillsTool(BaseTool):
         # 名单与 count 统一从可加载性门户派生（单一事实源：已注册 ∧ 未停用，
         # 开关活读；M2 停用=真停用，不再在本工具内联复述过滤）
         try:
-            entries = registry.loadable_entries()
+            entries = registry.model_catalog_entries()
         except Exception as e:
             return ToolResult(success=False, error=f"Skill 名单读取失败：{e}")
         skills = [
@@ -1121,8 +1180,9 @@ class RunSubagentInput(BaseModel):
         description="选填补充：只写**这个子代理用得上、而它自己读不到**的东西"
         "（如用户刚在对话里确认、尚未落盘的新参数）。带 stage 时本阶段目标"
         "由系统按阶段生成，通常留空即可；没有这类信息就整段不写。"
-        "剧本、规格文档、工作台里已有的内容都不用写（子代理自读得到，"
-        "Skill 章节也已随之注入）。",
+        "剧本、规格文档、工作台里已有的内容都不用写（子代理自读得到）。"
+        "技能内容也不再自动转发：要让它按某个 Skill 干活，请在此写明技能包"
+        "标识/路径，子代理可用 read_file(skill=…, file_path=…) 自读。",
     )
     # 阶段执行器铺满批（2026-09-15）：可选生产阶段名，成员唯一枚举 =
     # core/subagent.py::PIPELINE_STAGE_KINDS。2026-09-21 批3（事故 2222/Q3b）：
@@ -1168,7 +1228,9 @@ class RunSubagentTool(BaseTool):
     description = (
         "把一段工作委派给子代理：它在独立上下文里连续执行到完成，只回结果摘要。"
         "task 只写子代理完成任务所必要、而它自己读不到的信息（共享工作台与文档它自读）。"
-        "stage 只作阶段归组与展示；Skill 主文档全文随任务注入，分册由子代理按需 read_skill 读取。"
+        "stage 只作阶段归组与展示。"
+        "平台不自动转发 Skill 内容：要让子代理按某个 Skill 干活，在 task 里写明"
+        "技能包标识或全文摘要，子代理可用 read_file(skill=…, file_path=…) 自读分册。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

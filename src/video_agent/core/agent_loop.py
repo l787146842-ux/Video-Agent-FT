@@ -73,6 +73,10 @@ from src.video_agent.skill_runtime.progress import (
     bind_progress_emitter,
     unbind_progress_emitter,
 )
+from src.video_agent.utils.agent_depth import (
+    bind_subagent_depth,
+    unbind_subagent_depth,
+)
 
 # 执行器已下沉 core：顶层导入替代旧 TYPE_CHECKING 下的 web 延迟引用
 from src.video_agent.core.action_executor import StateOperationExecutor
@@ -200,6 +204,9 @@ async def run_agent_loop(
     stop_scope_own: Optional[str] = None,
     session_conversation_id: str = "",
     state_event_content: str = "",
+    # 用户 /slug 触发的一次性 Skill 注入（dsh user-explicit 同形）：
+    # 追加在 user/state 之后，与日志 seq 同序；空串 = 本轮无注入。
+    skill_event_content: str = "",
     # 子代理深度（R6 豁免）：**已退役**（K6 批）——子代理收尾由
     # structured_output 打卡判定，不再据深度豁免假停续跑；本参数仅供
     # 其它消费面/取证透传（2026-09-22 批2 订正过期注释）。
@@ -274,6 +281,10 @@ async def run_agent_loop(
     # （planner._build_and_log_state_event 已落 source=state 事件）
     if state_event_content:
         messages.append({"role": "user", "content": state_event_content})
+    # 用户 /slug 一次性 Skill 注入：排在 state 之后（dsh 的
+    # user-explicit instructions context 同位），不参与 system 前缀。
+    if skill_event_content:
+        messages.append({"role": "user", "content": skill_event_content})
 
     # 协作式停止：循环开始无条件清除**自己作用域**的残留标志（上一任务被
     # 停止后未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop；
@@ -295,6 +306,11 @@ async def run_agent_loop(
     # （已提交供应商侧的不可撤销任务），不再是唯一中断手段
     cancel_token = CancellationToken(scope=stop_scope)
     _cancel_bind = bind_cancel_token(cancel_token)
+    # 委派深度下发（2026-11-13 read_file 门禁批）：工具层读不到 PlannerContext，
+    # 但 read_file/read_image 判 user-only 技能需要知道「主代理 or 子代理」
+    # （用户裁决：主代理拒绝、子代理放行）。绑在此处 = 子代理走同一循环，
+    # 深度天然正确；与 cancel/progress 同处 finally 解绑。
+    _depth_bind = bind_subagent_depth(subagent_depth)
     _progress_token = None
     # 轮末 turn/end 真值（8888 委派失踪批·批 D）：finally 统一落 turn/end 时
     # 携带本轮真实出口——done 正常 / stopped 用户停止 / cancelled 硬取消 /
@@ -864,6 +880,7 @@ async def run_agent_loop(
         # 统一解绑（幂等）：任何出口都经此收尾，不再有分散解绑点
         unbind_progress_emitter(_progress_token)
         unbind_cancel_token(_cancel_bind)
+        unbind_subagent_depth(_depth_bind)
         # 会话忙闲闸释放（8888 事故批）：正常/停止/取消/异常全出口对称释放
         release_conversation_loop(session_conversation_id)
         # 轮末事件流闭合（v4 批 E3）：任何轮出口（正常/停止/取消/异常上抛）
