@@ -1,12 +1,13 @@
 # *- coding: utf-8 -*-
-"""状态驱动管线知识源 + 闸预检（定义层承自本模块，账本/裁判数据归 workflow_runtime）。
+"""状态驱动管线知识源（定义层承自本模块，账本/裁判数据归 workflow_runtime）。
 
-本模块提供阶段表/依赖图/客观探针作为「法条」，供闸机消费（done-闸判定完成、
-轮始闸预检装配原料闸/规格闸兜底卡；stage_precondition 越阶闸已随 C1b 退役）
-（层 9 由代码执行不依赖模型自觉；行动发起永远归模型）。
+本模块提供阶段表/依赖图/客观探针作为「法条」：**纯展示与审计判定**用途
+（workflow_runtime 的完成度重算、gates_cards 的「下一步」选项派生）。
+（stage_precondition 越阶闸已随 C1b 裁决 2026-08-31 退役；闸预检
+`gate_precheck` 兜底卡壳已随 2026-11-12 宽权限批删除。）
 
-本模块是纯数据层（阶段表/探针/兜底卡装配），无任何编排权
-（不发起行动、不驱动轮次）。
+本模块是纯数据层，无任何编排权（不发起行动、不驱动工具、不驱动闸机、
+不驱动轮次）；行动发起永远归模型。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -164,19 +165,15 @@ def step_done_probe(
 
 
 def stage_table(skill: str) -> List[StageSpec]:
-    """平台规范阶段表（skill 感知裁剪）。
+    """平台规范阶段表（纯展示）。
 
-    无 video_assembler 执行器章节的 Skill 无组装阶段。
-    （C1b 裁决 2026-08-31：flow.stages dict 覆盖声明退役；
-    2026-08-31 用户裁决：spec 机械阶段退役，规格归散文驱动。）"""
-    entry = registry.resolve_entry(skill)
-    tools = set(entry.available_tools) if entry else set()
-    table: List[StageSpec] = []
-    for spec in CANONICAL_STAGES:
-        if spec.key == "assembly" and "video_assembler" not in tools:
-            continue
-        table.append(StageSpec(spec.key, spec.title, spec.executors, spec.deterministic))
-    return table
+    2026-11-12 宽权限批：不再按 Skill 章节能力裁剪阶段；所有阶段都返回，
+    是否做音频/组装由模型按 Skill 散文判断，平台不用 available_tools 猜。
+    """
+    return [
+        StageSpec(spec.key, spec.title, spec.executors, spec.deterministic)
+        for spec in CANONICAL_STAGES
+    ]
 
 
 def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
@@ -297,15 +294,11 @@ def _effective_stage_deps(skill: str, table: List[StageSpec]) -> Dict[str, List[
     return deps
 
 
-async def gate_precheck(
-    state_manager: Any, skill: str, user_message: Any = "",
-) -> None:
-    """闸预检壳（2026-08-31 用户裁决退役原料闸/规格闸机械兜底卡）。
-
-    恒返回 None = 交接模型循环；流程顺序与原料收集归 skill 散文 +
-    模型自觉（外部标杆对齐）。保留委托壳：planner_triage/planner 委托。
-    """
-    return None
+# 闸预检 `gate_precheck` 委托壳已删除（2026-11-12 宽权限批）：
+# 原料闸/规格闸机械兜底卡随用户裁决 2026-08-31 退役后它恒返 None，其唯一
+# 消费者 `planner_triage.run_gate_precheck` + `planner._run_gate_precheck`
+# 同批整链删除 ⇒ 零生产消费者。本模块只保留纯数据/客观探针（不驱动工具、
+# 不驱动闸机、不发起行动）。
 
 
 # step_done_conditions 声明探针注入下一步机械派生（gates_cards 被

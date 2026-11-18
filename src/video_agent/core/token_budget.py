@@ -130,6 +130,22 @@ def _record_context_event(kind: str, detail: str) -> None:
         logger.debug(f"[TokenBudget] context event 记录失败（忽略）: {e}")
 
 
+# 系统合成 user 消息的稳定前缀（轮组边界判定用）：这些消息以 user 角色入历史，
+# 但**不是**用户原话，不能当作轮组锚点（否则压缩可能压掉用户原话、保留整段注入）。
+# 前缀唯一源：
+#   - 「（系统」= 步回喂 / 检查点（session_log.render_step_feedback 等）
+#   - 「当前工作台状态 JSON」= prompt_builder.build_state_tail_message 轮首状态注入
+#   - 「<skill_content」= skill_runtime.render 用户 /slug 一次性注入
+# 2026-11-12 dsh 对齐批：后两条为本次新增——它们此前被当成真人轮锚点，
+# 使压缩可在注入块中间切分轮组（可能压掉用户原话而保留整段技能正文）。
+_SYNTHETIC_USER_PREFIXES = (
+    "（系统",
+    "（任务执行期间收到您的指令",
+    "当前工作台状态 JSON",
+    "<skill_content",
+)
+
+
 def _is_real_user_msg(msg: Dict[str, Any]) -> bool:
     """判定 user 消息是否为用户真实输入（与系统合成的回喂/注入相对）。
 
@@ -143,9 +159,7 @@ def _is_real_user_msg(msg: Dict[str, Any]) -> bool:
     if isinstance(content, list):
         return True  # 多模态 content parts = 真实用户消息
     text = str(content)
-    if text.startswith("（系统") or text.startswith("（任务执行期间收到您的指令"):
-        return False
-    return True
+    return not text.startswith(_SYNTHETIC_USER_PREFIXES)
 
 
 def window_recent_turns(

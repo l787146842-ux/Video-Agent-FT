@@ -22,7 +22,6 @@ from loguru import logger
 from src.video_agent.core.chat_port import ChatAdapterPort, ChatResponse
 from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.config import (
-    EXECUTION_MODE_GATE_MODES,
     normalize_exec_mode,
     normalize_exec_pref,
     settings,
@@ -52,8 +51,7 @@ from src.video_agent.core.planner_output import append_costly_retry_action, asse
 # 阶段表/探针/闸预检纯数据层（导入期同时落地
 # step_done_probe 注册钩子，不得删除）
 from src.video_agent.core import stage_probes
-from src.video_agent.core import prompt_gates
-from src.video_agent.core import fc_response, planner_gate_session, planner_triage
+from src.video_agent.core import fc_response, planner_gate_session
 from src.video_agent.core import session_log
 # 单轮执行协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
 from src.video_agent.core.turn_executor import TurnExecutor
@@ -61,14 +59,11 @@ from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.progress import emit_event_card
 from src.video_agent.config import settings
-from src.video_agent.skill_runtime import frontmatter as skill_frontmatter
-from src.video_agent.skill_runtime.registry import (
-    STAGE_LABELS, fallback_skill_from_state,
-)
+from src.video_agent.skill_runtime import invocation as skill_invocation
+from src.video_agent.skill_runtime.registry import STAGE_LABELS
 # Workflow Runtime：账本 + 裁判数据层
-from src.video_agent.core import workflow_contract, workflow_runtime
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core import state_delta as state_delta_mod
-from src.video_agent.core.pause_composer import PAUSE_KIND_STAGE_DONE
 # 正宗子代理：契约常量/纯辅助（subagent 仅依赖 utils.prompts，无环）+ 子会话创建
 from src.video_agent.core import subagent as subagent_mod
 from src.video_agent.state import conversation_ops
@@ -91,6 +86,7 @@ _STUDIO_STATE_TOOLS = frozenset({
 _CANVAS_TOOLS = frozenset({
     "canvas_list", "canvas_read_nodes", "canvas_add_node", "canvas_update_node",
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
+    "canvas_create_container", "canvas_group_nodes", "canvas_ungroup_nodes",
 })
 
 # 批 10 · 执行偏好注入文案唯一源（分节键 = PREF_<档位大写>；
@@ -99,7 +95,8 @@ _EXEC_PREF_NOTE_FILE = "planner/execution_preference.md"
 
 # 执行模式注入文案唯一源（2026-09-06 对齐批；分节键 = MODE_<档位大写>；
 # 消费端 _load_execution_mode_note；ai_decide 默认档无分节 = 不注入，行为与
-# 现状一致。key_steps_confirm/pause_all 两档另有轮末阶段闸机械拦停兜底）
+# 现状一致。档位只承载「模型侧引导呈现」语义：阶段推进不再有平台机械拦停闸，
+# 硬保证仍在工具调用点三条安全闸（暂停纪律/工具风险/生成确认））
 _EXEC_MODE_NOTE_FILE = "planner/execution_mode.md"
 
 # 后台节点任务登记；drain 供测试/关停等待
@@ -133,8 +130,8 @@ class PlannerContext:
     # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
-    # 用户键入原文（未经多模态/附件拼装）。闸预检/分诊历史消费点
-    # 只认原话——附件预览里的剧本对白问号不得参与判定（根因）。
+    # 用户键入原文（未经多模态/附件拼装）。用户 /slug 手势扫描与
+    # 闸机豁免意图判定只认原话——附件预览里的剧本对白问号不得参与判定。
     raw_user_text: str = ""
     use_studio_context: bool = True
     asset_mode: str = "bound"    # 资产过滤模式
@@ -154,7 +151,7 @@ class PlannerContext:
     # 由 web 层按 task_id 装配（agent_task_manager.drain_pending_guidance）；
     # None = 无注入（非任务路径）。
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None
-    # 轮始客观推进信号（输入类 decision 消费/闸预检分诊；
+    # 轮始客观推进信号（输入类 decision 消费；
     # runtime 不据此自主行动）：
     # "pause"=上轮暂停被消费；"continue"=点选系统派生继续选项；
     # "attachment"=本轮带附件。
@@ -181,9 +178,6 @@ class PlannerContext:
     # 消息每步注入；文案唯一源 = prompts/planner/execution_mode.md；
     # ai_decide 默认档 = 空串不注入（行为与现状一致）。
     execution_mode_note: str = ""
-    # 轮末阶段闸快照（2026-09-06 对齐批）：轮始 ensure_run 的 run 快照，
-    # 供轮末对比「本轮是否有阶段节点翻转完成」（机械闸触发判据，客观探针口径）
-    workflow_run0: Dict[str, Any] = field(default_factory=dict)
     # 微调作用域（微调真子对话）：非空 ⇔ 本请求归属隐藏线程子对话，
     # 纪律提示段（prompts/planner/adjust.md）据此注入；
     # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
@@ -214,6 +208,11 @@ class PlannerContext:
     # run_agent_loop 组装 messages 时追加在 user 消息之后（与日志 seq 同序，
     # 回放=请求逐字节）。空串 = 本轮无状态注入（非 studio / 构建失败回落）。
     state_event_content: str = ""
+    # 用户 `/slug` 触发的一次性 Skill 注入（dsh user-explicit 同形）：
+    # handle_message 轮始扫描 raw_user_text，命中 user-invocable 技能后
+    # 渲染完整 <skill_content> 并落 source=skill 事件；agent_loop 在
+    # user/state 之后追加一次。空串 = 本轮无用户 Skill 触发。
+    skill_event_content: str = ""
     # B 方案增量对账（state_delta_enabled）：上一轮的状态 digest/哈希
     _state_digest: Optional[Dict[str, Dict[str, str]]] = None
     _state_hash: str = ""
@@ -349,7 +348,7 @@ class Planner:
         （工具自身校验 + gen_confirm/tool_risk 闸 + 失败回喂带保留声明）；
         裁剪每步重算曾是前缀缓存击穿点，全量常驻后 tools 跨步字节稳定。
         轮界级裁剪源：canvas 探针 / MCP 白名单 / 非 studio 上下文 /
-        主代理纯编排 deny（MAIN_AGENT_DENY，2026-09-19 批，仅 depth==0）。
+        子代理安全 deny（花钱/确认/导出/递归）。主代理不再按阶段裁创作工具。
         """
         excluded = set()
         # K6 批（2026-09-16 对齐 dsh）：structured_output 为子代理专属完工
@@ -357,26 +356,13 @@ class Planner:
         # UNAVAILABLE 段不渲染 CHILD_ONLY_TOOLS（主代理不感知打卡工具）。
         if not getattr(context, "subagent_depth", 0):
             excluded |= subagent_mod.CHILD_ONLY_TOOLS
-            # 2026-09-19 主代理纯编排批（翻案 2026-09-18「工具要给全」）：
-            # 主代理结构性缺少各执行阶段的专业写入工具（故事板结构/素材
-            # 分析产出/提示词草稿），只能经 run_subagent 委派触达。子代理
-            # （depth≥1）不并入本集——它们正是这些工具的执行主体。
-            # 门控：仅生产编排上下文（有选中 Skill）且非微调子对话——
-            # ・无 Skill（自由对话）= 无阶段流水线，不锁（主代理可直接操作）；
-            # ・adjust_scope（微调真子对话）= 交互式微调模式，保留 patch/read
-            #   工具（同旧 PRODUCTION_MAIN_PRUNE 的 adjust 豁免口径）。
-            if context.skill_name and not getattr(context, "adjust_scope", None):
-                excluded |= subagent_mod.MAIN_AGENT_DENY
         # 子代理 deny 模式（2026-09-15 1111 批，对齐 dsh inherit∩restrict）：
-        # 子级继承主代理整面工具，仅剔除 deny 集（run_subagent 防递归 / 花钱
-        # 生成 / workflow_pause / stage 去 read_skill）。不再用硬编码 allowlist
-        # （会漏授阶段落点工具，1111 实证 script_analysis_report 未授予）。
+        # 子级继承主代理整面工具，仅剔除安全 deny 集（run_subagent 防递归 /
+        # 花钱生成 / workflow_pause / 成片导出 / 用户确认动作）。
         # deny 叠加在 studio/canvas/MCP 常规裁剪之上（子级与父同受这些轮界裁剪）。
         deny = getattr(context, "subagent_deny", None)
         if deny:
             excluded |= set(deny)
-        # 主代理读工具/媒体生成不裁（2026-09-18「工具要给全」维持读工具部分；
-        # 2026-09-19 主代理纯编排批只锁执行写入工具 = 上方 MAIN_AGENT_DENY）。
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:
@@ -397,28 +383,15 @@ class Planner:
         return frozenset(excluded)
 
     def _apply_stage_card_media(self, context: "PlannerContext") -> None:
-        """按本轮委派阶段下发「建卡限定」到 FC 执行器（2026-09-21 批4 / 09-25 扩展）。
+        """阶段建卡白名单已退役（2026-11-12 宽权限批）：显式清空两维。
 
-        同 `turn_excluded` 模式：轮始一次、轮内冻结。范围只限**新建草稿卡**
-        （add_draft / create_group 内联 draft），判定实现 = `fc_gates.card_media_gate`；
-        本方法只负责把「当前阶段 → 允许的 mediaType / audioType」送达执行器。
-        两个维度正交（2026-09-23 批11 既已确立 mediaType/audioType 两维）：
-          - `stage_card_media`：卡的媒体类型（image/video/audio）；
-          - `stage_card_audio_types`：音频卡的**种类**（voice/bgm/narration…），
-            仅当媒体类型判定为 audio 时生效（2026-09-25 用户裁决：故事板设计阶段
-            只建角色音色卡）。
-        主代理轮/通用委派（无 stage）= 两维均空集 ⇒ 不启用限定（零变化）。
+        阶段名只保留展示语义；新建草稿卡不再按阶段限制 mediaType/audioType。
+        保留方法名与执行器字段，避免测试桩/旧调用方 import 失败。
         """
+        self._fc_runner.stage_card_media = frozenset()
+        self._fc_runner.stage_card_audio_types = frozenset()
         child_stage = subagent_mod.resolve_stage(
             getattr(context, "subagent_stage", "") or "")
-        self._fc_runner.stage_card_media = (
-            subagent_mod.stage_card_media(child_stage) if child_stage
-            else frozenset())
-        # 2026-09-25 用户裁决：故事板设计阶段只建角色音色卡（BGM/旁白卡由音频
-        # 生成阶段承接）。同一处下发，第二维（音频种类）与 mediaType 正交。
-        self._fc_runner.stage_card_audio_types = (
-            subagent_mod.stage_card_audio_types(child_stage) if child_stage
-            else frozenset())
         self._fc_runner.stage_label = (
             STAGE_LABELS.get(child_stage, child_stage) if child_stage else "")
 
@@ -542,28 +515,9 @@ class Planner:
                   or "").strip()
         if _brief:
             base_task += f"\n\n{_brief}"
-        # 平台把 Skill 主文档整篇注入子代理（通用 skill 口径）：
-        # 不再按 stage 切章节；stage 只用于 actor 标签与遥测。
-        # 分册（references/…）不注入，子代理需要时自行 read_skill。
-        parent_skill = str(getattr(parent_ctx, "skill_name", "") or "").strip()
-        if parent_skill and self._skill_docs is not None:
-            try:
-                getter = getattr(self._skill_docs, "get_skill_doc", None)
-                doc = getter(parent_skill) if getter else None
-                sk = skill_frontmatter.strip_frontmatter(
-                    (doc or {}).get("content") or "").strip()
-                if sk:
-                    total = len(sk)
-                    max_chars = int(getattr(
-                        settings, "skill_subagent_inject_max_chars", 0) or 0)
-                    if max_chars > 0 and total > max_chars:
-                        sk = (sk[:max_chars]
-                              + f"\n...（主文档共 {total} 字，已截断；"
-                                "其余内容按需调 read_skill 读取）")
-                    base_task += (
-                        f"\n\n===== Skill 主文档（{parent_skill}）=====\n{sk}")
-            except Exception as _e:
-                logger.warning("[Subagent] Skill 主文档注入失败（跳过）: {}", _e)
+        # dsh 口径：平台不自动把技能全文转发给子代理。子代理是独立上下文，
+        # 主代理在 task 里写什么它就拿到什么；需要时由主代理给技能包标识/
+        # 路径，子代理用 read_file 自读。
         # 流式二期（子代理活动 actor 归组）：子循环事件经 tagger 统一打标
         # subagent={cid,stage,label,depth}，前端按 cid 把同一子代理的活动归成
         # 一张 actor 卡（flova 具名 specialist 形态）。只加字段、不改子事件原有
@@ -636,8 +590,8 @@ class Planner:
         """为携带 confirmation 的响应签发 pause_id 并登记 interaction.active_pause。
 
         汇流点一（handle_message 轮末组装后）覆盖 FC workflow_pause 与轮末策略卡；
-        汇流点二（_run_gate_precheck）的提醒类兜底卡已出槽（批 B），改走正文注入 +
-        quick-actions 芯片，不再经本方法登记。登记不改变
+        轮始闸预检整链已退役（2026-11-12 宽权限批），本方法为暂停卡唯一签发点。
+        登记不改变
         awaiting_confirmation 既有语义（消费链零行为变更），只叠加结构化标识。
         """
         if not response.confirmation:
@@ -665,74 +619,6 @@ class Planner:
             record_degradation("planner._issue_pause")
             logger.warning("[PauseId] active_pause 登记失败（不影响暂停卡渲染）: {}", _e)
 
-    def _apply_stage_gate(self, response: "PlannerResponse", context: "PlannerContext") -> None:
-        """轮末阶段闸（2026-09-06 对齐批，宪法 §2.3 闸机）。
-
-        执行模式 ∈ EXECUTION_MODE_GATE_MODES（key_steps_confirm/pause_all）
-        且有活跃 Skill 时：本轮内有阶段节点翻转完成（轮始快照 vs 轮末
-        sync_run 重算，客观探针口径）且新当前节点符合档位目标
-        （key_steps_confirm=审批节点；pause_all=任意节点）→ 平台机械签发
-        暂停卡：confirmation/options + workflow_run.pending_decision
-        （token 前缀 review:，chat_consume.resolve_decision 消费落
-        DecisionResolved，审批节点完成入账）。签发复用 _issue_pause 单一链。
-        档位 > Skill 散文（2026-09-06 用户裁决）：确认档下 Skill 声明
-        「直通」不影响本闸——停由平台保证，模型只在停点呈现成果。
-        ai_decide（默认档）/auto_full 不启用机械闸：默认档行为与现状一致。
-        同步说明：sync_run 轮末重算对所有档位执行（审计账本恢复推进），
-        闸签发仅限确认档。"""
-        if not (settings.pipeline_orchestrator_enabled and context.skill_name):
-            return
-        if context.adjust_scope:
-            # 子对话不发确认卡（二期子对话批 3 同款纪律，与 FC 轨
-            # scope_auto_pause 对齐）：微调真子对话内阶段翻转不签发闸卡
-            return
-        try:
-            state = self.state_manager.state_dict or {}
-            # 轮末账本同步（全档位）：completed_nodes 客观重算，账本恢复推进
-            run_after = workflow_runtime.sync_run(state, context.skill_name)
-        except Exception as _e:
-            record_degradation("planner.stage_gate")
-            logger.warning("[StageGate] 轮末 run 同步跳过: {}", _e)
-            return
-        mode = normalize_exec_mode(settings.execution_mode)
-        if mode not in EXECUTION_MODE_GATE_MODES:
-            return
-        # 单一活跃暂停槽位：响应已带确认/暂停标识、槽位被占、有待决决议 → 不发行
-        if response.confirmation or response.pause_id:
-            return
-        interaction = state.get("interaction") or {}
-        if interaction.get("active_pause") or interaction.get("awaiting_confirmation"):
-            return
-        if run_after.get("pending_decision"):
-            return
-        node_before = str((getattr(context, "workflow_run0", None) or {}).get("current_node") or "")
-        completed_after = set(run_after.get("completed_nodes") or [])
-        if not node_before or node_before not in completed_after:
-            return  # 本轮无阶段翻转（纯对话/同阶段中间步），不停
-        node_id = str(run_after.get("current_node") or "")
-        if not node_id:
-            return
-        if mode == "key_steps_confirm":
-            if node_id not in workflow_contract.DEFAULT_V2_REVIEW_NODES:
-                return
-        title = workflow_contract.NODE_TITLES.get(node_id, node_id)
-        response.confirmation = f"「{title}」已完成，请过目本阶段成果并选择下一步。"
-        response.confirmation_options = [
-            {"label": "确认，继续推进",
-             "description": "当前阶段成果确认通过，进入下一阶段"},
-            {"label": "提出调整",
-             "description": "对当前阶段成果提出修改意见后再继续"},
-        ]
-        response.pause_kind = PAUSE_KIND_STAGE_DONE
-        # 挂起决议（review: 前缀 = chat_consume 轮末解析约定）：用户批复经
-        # resolve_decision 落 DecisionResolved，审批节点完成入账
-        run_after["pending_decision"] = {
-            "token": f"review:{run_after.get('run_id')}:{node_id}",
-            "node_id": node_id,
-            "schema": {"type": "approval"},
-        }
-        run_after["status"] = "waiting_user"
-
     # ---------- 核心对话入口 ----------
 
     async def handle_message(
@@ -748,11 +634,8 @@ class Planner:
         （文本块解析仅消费系统内部合成的确认块）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
-        # 当前 Skill 归属：请求未携带 Skill 时回退项目 usedSkills 末位，
-        # 保证后续轮次仍绑定同一执行器；单一实现见 registry.fallback_skill_from_state。
-        if not context.skill_name:
-            context.skill_name = fallback_skill_from_state(self.state_manager.state_dict)
-
+        # dsh 口径：没有持久「当前选中」。Skill 归属只来自本轮 /slug 手势
+        # （_build_and_log_skill_event 写 context.skill_name）；不再回退 usedSkills。
         # 轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存仅限本轮）
         workflow_runtime.clear_compile_cache()
         # 子对话不发确认卡（二期子对话批 3）：scope 任务命中 workflow_pause 直接
@@ -791,6 +674,10 @@ class Planner:
         # source=state 事件，轮内步间零注入（尾部消息每步重建退役）；
         # 需要全量时模型调 read_state_group 按需读（外部标杆转录同形态）
         context.state_event_content = self._build_and_log_state_event(context)
+        # dsh 用户 /slug 一次性注入：扫描真正的用户输入，命中 user-invocable
+        # 技能后渲染完整 <skill_content>，轮内只追加一次。
+        context.skill_event_content = self._build_and_log_skill_event(
+            context, fallback_text=user_message)
         # 三通道分离 C：轮始重置 FC runner 跨批跟踪（阶段边界只认本轮）
         self._fc_runner.reset_turn_tracking()
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
@@ -820,14 +707,9 @@ class Planner:
             self.state_manager,
             selected_draft_id=context.selected_draft_id,
             selected_type=context.selected_type,
-            # Skill 流程激活时打开提示词结构闸机（写入即校验，不合格打回重写）；
-            # 旧工厂签名不认 gate_enabled 时静默回退（兼容测试 stub）
         )
-        if context.skill_name:
-            try:
-                executor.gate_enabled = True
-            except Exception as _e:
-                logger.debug("[planner] 忽略异常: {}", _e)
+        # 2026-11-12 宽权限批：提示词结构闸退役——写入只做工具自身 schema
+        # 校验，不由平台按 Skill 章节拦「提示词写得够不够」。
 
         # 会话层一次性豁免（§2.4）：按钮路径登记单次消费即清除（留痕）；
         # 无显式豁免时回落正则意图识别兜底（委托 planner_gate_session）
@@ -845,14 +727,12 @@ class Planner:
         # 流程顺序改由模型读 planner 散文自主执行。）
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 轮始轻量确保（批 3 · B3：run 已存在即直接返回，不空跑全量探针；
-            # 重算唯一触发点 = 写动作落账）+ 输入类 decision 消费
-            # （waiting_user→ready，DecisionResolved 入事件账本）。
+            # 重算唯一触发点 = 写动作落账 + 轮末审计同步）+ 输入类 decision
+            # 消费（waiting_user→ready，DecisionResolved 入事件账本）。
             try:
                 _rt = workflow_runtime.WorkflowRuntime(
                     self.state_manager, context.skill_name)
                 _run0 = _rt.ensure_run()
-                # 轮末阶段闸快照（2026-09-06）：供轮末对比本轮阶段翻转
-                context.workflow_run0 = dict(_run0 or {})
                 if str(context.advance_signal or "").strip():
                     _pend = _run0.get("pending_decision") or {}
                     if ((_pend.get("schema") or {}).get("type")) == "input":
@@ -864,22 +744,9 @@ class Planner:
                 record_degradation("planner.run_sync")
                 logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
 
-        # 轮始闸预检只装配兜底卡（原料闸/规格闸，层 9 由代码执行不依赖
-        # 模型自觉）；其余交接模型循环。
-        # （C1b 裁决 2026-08-31：越阶硬闸退役，顺序由模型自主。）
-        if settings.pipeline_orchestrator_enabled and context.skill_name:
-            # 闸预检只认用户原话——user_message 可能是多模态拼装
-            # （附件预览含剧本对白问号，不得参与豁免/回执意图判定）
-            try:
-                _orch = await self._run_gate_precheck(
-                    context, context.raw_user_text or user_message)
-            except Exception as _e:
-                # 承重接线遥测：预检失败 fail-open 不阻断对话
-                record_degradation("planner.gate_precheck")
-                logger.warning("[ControlFlow] 闸预检失败（交接模型循环）: {}", _e)
-                _orch = None
-            if _orch is not None:
-                return _orch
+        # 轮始闸预检已退役（2026-11-12 宽权限批）：规范/原料前置闸属业务判断，
+        # 归 Skill 散文 + 模型自觉；轮内只保留工具调用点的暂停纪律、风险与
+        # 花钱确认三条安全闸（fc_gates.run_gate_chain）。
 
         # 单轮执行委托 TurnExecutor：收集器在此定义、跨多步
         # 共享，轮末由 assemble_response 统一合并
@@ -941,6 +808,8 @@ class Planner:
             # 轮首状态事件正文（二期 G3）：组装时追加在 user 消息后
             # （与日志 seq 同序，回放=请求逐字节）
             state_event_content=str(getattr(context, "state_event_content", "") or ""),
+            # 用户 /slug 一次性 Skill 注入（dsh user-explicit 同形）
+            skill_event_content=str(getattr(context, "skill_event_content", "") or ""),
             # 子代理深度（R6 fakestop 豁免）：透传至 agent_loop 轮末策略
             subagent_depth=context.subagent_depth,
         )
@@ -976,11 +845,24 @@ class Planner:
         # 问即停：发行点签发的 pause_id 透传，供 _issue_pause 幂等
         response.pause_id = str(getattr(loop_result, "pause_id", "") or "")
 
-        # 轮末阶段闸（2026-09-06 对齐批）：确认档下里程碑完成机械签发
-        # 暂停卡（档位 > Skill 散文），非确认档仅做账本轮末同步；
-        # 暂停卡结构化签发（汇流点一）：FC workflow_pause / 轮末策略卡 /
-        # 阶段闸卡在此汇流，经 _issue_pause 单一链登记
-        self._apply_stage_gate(response, context)
+        # 轮末账本审计同步（**非闸机**）：completed_nodes/current_node 按客观
+        # 探针全量重算，仅供 done 载荷的 workflow 投影与审计回放，不签发任何
+        # 卡片、不改暂停槽位。轮末阶段闸 `_apply_stage_gate` 已整段退役
+        # （2026-11-12 宽权限批：阶段推进不再由平台机械拦停，暂停卡唯一发行
+        # 主体 = 模型 workflow_pause），本块只保留其原有「全档位账本重算」职能。
+        if settings.pipeline_orchestrator_enabled and context.skill_name:
+            try:
+                workflow_runtime.sync_run(
+                    self.state_manager.state_dict or {}, context.skill_name)
+            except Exception as _e:
+                # 承重接线遥测：账本同步失败 fail-open 不阻断对话
+                record_degradation("planner.run_sync")
+                logger.warning("[WorkflowRuntime] 轮末 run 同步跳过: {}", _e)
+
+        # 暂停卡结构化签发（汇流点一，单一实现）：FC workflow_pause 与轮末
+        # 策略卡在此汇流，经 _issue_pause 登记 interaction.active_pause。
+        # （阶段闸已退役：暂停卡唯一发行主体 = 模型 workflow_pause；
+        # 阶段名只作展示标签。）
         self._issue_pause(response)
 
         return response
@@ -1227,19 +1109,45 @@ class Planner:
                 content, source=session_log.SOURCE_STATE)
         return content
 
-    # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
-    #
-    # 轮始只装配原料闸/规格闸兜底卡（由代码执行不依赖模型自觉）；提醒类不占
-    # 暂停槽（正文注入 + quick-actions 芯片）；其余交接模型循环；越阶/越暂停
-    # 由闸机在工具调用点否决。
+    def _build_and_log_skill_event(
+        self, context: "PlannerContext", fallback_text: Any = "",
+    ) -> str:
+        """用户 `/slug` 一次性注入构建 + 落流（dsh user-explicit 同形）。
 
-    async def _run_gate_precheck(
-        self, context: "PlannerContext", user_message: Any = "",
-    ) -> Optional["PlannerResponse"]:
-        """轮始闸预检；返回 None = 交接模型循环（实现体 planner_triage）。"""
-        return await planner_triage.run_gate_precheck(
-            self.state_manager, context.skill_name, user_message,
-            PlannerResponse)
+        只扫描 `raw_user_text`（真正的用户键入），不扫描附件拼装文本；
+        命中 user-invocable 技能后渲染完整 `<skill_content>`，作为
+        user 角色上下文追加在 state 之后。子代理不消费用户手势。
+        """
+        if context.subagent_depth:
+            return ""
+        text = str(getattr(context, "raw_user_text", "") or fallback_text or "")
+        if "/" not in text:
+            return ""
+        try:
+            entries, content = skill_invocation.render_user_skills(text)
+        except Exception as _e:  # 注入失败不阻断对话（降级为仅目录）
+            logger.warning(f"[Planner] 用户 Skill 注入解析失败（本轮零注入）: {_e}")
+            return ""
+        if not content or not entries:
+            return ""
+        # 本次第一个用户触发技能作为上下文归属（UI/生成确认闸消费）；
+        # 不再据此裁剪工具面。
+        if not context.skill_name:
+            context.skill_name = entries[0].name
+        if context.session_conversation_id:
+            session_log.append_user_message(
+                self.state_manager, context.session_conversation_id,
+                content, source=session_log.SOURCE_SKILL)
+        return content
+
+    # ---------- 闸预检已整链退役（2026-11-12 宽权限批） ----------
+    #
+    # 轮始闸预检三件套同批删除：planner_triage 委托壳（整模块）、
+    # planner._run_gate_precheck 空壳、stage_probes.gate_precheck 兜底卡壳。
+    # 原料闸/规格闸机械兜底卡自 2026-08-31 用户裁决起就已退役，壳恒返 None，
+    # 保留它只会留下一条永不可达的降级遥测点（planner.gate_precheck）。
+    # 轮内只剩工具调用点三条安全闸（fc_gates.run_gate_chain：
+    # 暂停纪律 / 工具风险 / 生成确认），全部保留。
 
     async def _handle_fc_response(
         self,

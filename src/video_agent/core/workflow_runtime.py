@@ -15,8 +15,10 @@ Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
   **仅本模块 reducer 可改**（StateManager 仍唯一写入点，Rule3）；
   interaction 全域经 reducer 族（reduce_interaction / reduce_session_summary /
   reduce_gate_overrides / reduce_drafts_presented）单一写入；
-- 完成度只认客观探针（stage_done，fail-closed）；账本产物只服务审计与
-  机械停闸（_apply_stage_gate）判据，不接 UI、不判「流程完成」；
+- 完成度只认客观探针（stage_done，fail-closed）；账本产物只服务审计回放与
+  只读投影，不接 UI 决策、不判「流程完成」，也不再驱动任何机械停闸
+  （`_apply_stage_gate` 已随 2026-11-12 宽权限批退役：暂停卡唯一发行主体
+  = 模型 workflow_pause，平台不按阶段推进机械发卡）；
 - 「不暂停连跑」语义归自主性档位。
 """
 import copy
@@ -28,13 +30,9 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import stage_probes as po
-from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
-from src.video_agent.core.workflow_contract import (
-    DEFAULT_V2_REVIEW_NODES,
-)
 from src.video_agent.core.workflow_events import EventLedger
 from src.video_agent.core.turn_commit import (
     TurnCommit, TurnResult, WorkflowCommitError, commit_turn,
@@ -97,13 +95,13 @@ _REVIEW_NODE_PREREQ = {
     "review_audio": ("audio_assets",),
     "review_assembly": ("assembly",),
 }
-_REVIEW_NODES = tuple(_REVIEW_NODE_PREREQ)
 
 # 平铺节点清单（无 DAG）：16 节点 workflow 契约退役后不再编译节点拓扑，
-# 本清单只提供**确定性的进度扫描顺序**（节点 id 词表与 6 步评审清单
+# 本清单只提供**确定性的审计扫描顺序**（节点 id 词表与 6 步评审清单
 # ``workflow_contract.DEFAULT_V2_REVIEW_NODES`` 断言对齐）。扫描顺序把
 # 每个产出节点紧随其审批节点，使 current_node 在产物齐备时即指向待评审
-# 里程碑（机械停闸 _apply_stage_gate 的「本轮翻转」判据来源）。
+# 里程碑（**纯审计/投影语义**：机械停闸 `_apply_stage_gate` 已随
+# 2026-11-12 宽权限批退役，current_node 不再驱动任何发卡判定）。
 _FLAT_NODES: Tuple[str, ...] = (
     "analyze_script",
     "write_spec",
@@ -173,9 +171,10 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     2026-09-10 阶段规则去代码化批：16 节点 workflow 契约退役，
     ``compile_definition`` 恒 None ⇒ 平台不再编译节点拓扑/前置关系；
     账本改按平铺节点清单（``_FLAT_NODES``）逐个跑客观探针重算
-    completed_nodes（账本无自报），current_node = 清单中首个未完成节点，
-    供机械停闸（``_apply_stage_gate``）判「本轮是否发生里程碑翻转」。
-    全部完成时 current_node 置空 ⇒ 闸不触发。
+    completed_nodes（账本无自报），current_node = 清单中首个未完成节点。
+    产物只服务审计回放与 done 载荷的 workflow 投影（**纯只读派生**）：
+    机械停闸 ``_apply_stage_gate`` 已随 2026-11-12 宽权限批退役，
+    current_node 不再驱动任何发卡判定。
     不置 failure_state（「无 DAG」是常态不是失败）。
     run 块为 reducer 单一写入点。"""
     run = state.setdefault("workflow_run", {})
@@ -439,8 +438,8 @@ class WorkflowRuntime:
 
     def ensure_run(self) -> Dict[str, Any]:
         """轮始轻量确保（批 3 · B3）：run 已存在且未失败时直接返回，不做
-        全量探针重算——账本重算的唯一触发点收敛到写动作落账
-        （commit_turn / resolve_decision）与轮末阶段闸 sync_run。
+        全量探针重算——账本重算的触发点收敛到写动作落账（commit_turn /
+        resolve_decision）与 planner 轮末审计同步（sync_run）。
         （2026-09-10 阶段规则去代码化批：DAG 不再编译，run 存在即视为有效，
         不再按 definition_hash 比对；「无 DAG」不置 failure_state。）"""
         run = self.state.get("workflow_run") or {}

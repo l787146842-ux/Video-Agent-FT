@@ -19,8 +19,9 @@ agent_loop 保留 re-export 壳（测试 patch/导入路径不变）。
 - 闸机自愈策略：文本轨退役后拦截列表恒空、执行计数恒 0，生产路径
   永不可达；FC 轨闸机拦截已由 fc_gates reject_message 结构化回喂闭环。
   防复活见 scripts/check_legacy_orchestration.py FORBIDDEN。
-- 结构审阅卡死副本：getattr 反射已退役 executor 零写入点字段（恒假）；
-  活实现唯一 = fc_reconcile._reconcile_stage_review_card（消费 BatchLedger）。
+- 结构审阅卡死副本：getattr 反射已退役 executor 零写入点字段（恒假）。
+  注：`fc_reconcile._reconcile_stage_review_card` 曾是该语义的活实现，
+  已随 2026-11-12 宽权限批退役（阶段探针不再决定暂停）；此条只留历史。
 - 轮末工具失败汇总策略（同口径退役）：生产唯一构造点
   ledger 恒 None、FC 批轮永不到轮末，恒不可达；工具部分失败已由 FC 轨
   fc_feedback.compose_failure_feedback 逐步回喂承接，退役不改变任何
