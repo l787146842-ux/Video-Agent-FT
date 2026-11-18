@@ -59,10 +59,16 @@ def test_role_line_drops_creator_identity():
 def test_role_line_declares_dispatch_position():
     """首句改为调度层定位（对齐 flova：主代理是调度层，不是创作者）；
     2026-10-20 晚间撤销 A2：素材分析回子代理，首句不再声明文本分析例外
-    （主代理读分析全文经只读工具 read_analysis，不进角色声明）。"""
+    （主代理读分析全文经只读工具 read_analysis，不进角色声明）。
+
+    2026-11-12 宽权限批（用户裁决，计划 §5/§6）：工具面已放宽为主代理可直接
+    做各阶段创作，"各阶段专业创作你不亲做"从结构约束降级为普通流程判断，
+    首句不再声明该禁令（否则与已放宽的工具面互相打架）。"""
     first = _protocol_text().splitlines()[0]
     assert "制片调度" in first, "protocol.md 首句缺调度层定位（制片调度）"
-    assert "不亲做" in first, "首句未声明「专业创作由执行环节完成、你不亲做」"
+    assert "不亲做" not in first, (
+        "首句回潮「专业创作你不亲做」——2026-11-12 宽权限批已放宽主代理工具面，"
+        "该禁令与现有工具面矛盾")
     assert "文本剧本" not in first, (
         "首句回潮文本分析例外——2026-10-20 晚间已撤销 A2（分析归子代理）")
 
@@ -238,12 +244,12 @@ def test_task_brief_is_optional_supplement():
     目标由平台按阶段生成（`build_subagent_task`）。
     """
     policy = _policy()
-    assert "任务书原则上**不用写**" in policy, "缺「任务书原则上不用写」契约"
-    assert "目标由系统按阶段生成" in policy, "缺「带 stage 时目标由平台生成」"
+    assert "任务书按需写" in policy, "缺「任务书按需写」契约"
+    assert "系统按阶段生成" in policy, "缺「带 stage 时目标由平台生成」"
     assert "用得上" in policy and "读不到" in policy, \
         "缺补充槽判据：只有这个子代理用得上、而它自己读不到的东西"
-    assert "不存在" not in policy or "自己都拿得到" in policy, \
-        "缺正向读取授权认知（子代理自己拿得到）"
+    assert "技能内容由你在 task 里提供" in policy, \
+        "缺「技能正文由主代理提供」的新事实"
 
 
 def test_task_brief_drops_stale_spec_relative_criterion():
@@ -281,9 +287,9 @@ def test_task_brief_bans_restating_spec_params_and_downstream():
     「下游用途」换了位置回来。
     """
     policy = _policy()
-    assert "一律不复述" in policy, "缺「一律不复述」"
-    assert "会过期的第二份事实源" in policy, \
-        "缺因果说明（复述 = 会过期的第二份事实源）"
+    assert "不要把主文档整篇抄进 task" in policy, "缺「不要整篇抄」约束"
+    assert "子代理是独立上下文" in policy, \
+        "缺因果说明（子代理是独立上下文，不会自动拿到主对话技能）"
 
 
 def test_task_brief_drops_downstream_use():
@@ -330,8 +336,8 @@ def test_task_brief_points_at_section_as_the_basis():
     from src.video_agent.core.subagent import build_subagent_task
 
     policy = _policy()
-    assert "Skill 主文档子代理自己都拿得到" in policy, \
-        "缺「主文档已随委派注入」事实"
+    assert "技能内容由你在 task 里提供" in policy, \
+        "缺「技能正文由主代理提供」事实"
     # 结构侧兑现：目标行由平台生成且逐字指向该章节
     generated = build_subagent_task("", stage="script_analyze")
     assert "执行所选 Skill 的「素材分析」章节" in generated
@@ -346,9 +352,10 @@ def test_task_brief_states_why_not_just_forbids():
     又把同样内容列一遍（第二份事实源）。
     """
     policy = _policy()
-    assert "你复述只会和章节打架" in policy, \
-        "缺因果说明「你复述只会和章节打架」（防退化成纯禁令）"
-    assert "会过期的第二份事实源" in policy, "缺第二份事实源的因果说明"
+    assert "子代理是独立上下文" in policy, \
+        "缺因果说明「子代理是独立上下文」"
+    assert "看不到主对话里注入的技能正文" in policy, \
+        "缺「子代理看不到主对话技能正文」的因果说明"
 
 
 def test_task_brief_carries_spec_write_principle_reference():
@@ -454,8 +461,8 @@ def test_stage_description_is_dynamic_not_hardcoded():
 
     hint = _stage_hint()
     assert "留空 = 通用委派" in hint, "缺「留空 = 通用委派」语义"
-    assert "主文档全文" in hint, "缺主文档全文注入事实说明"
-    assert "read_skill" in hint, "缺分册自读说明"
+    assert "技能内容由你在 task 里提供" in hint, "缺「技能正文由主代理提供」说明"
+    assert "read_file" in hint, "缺子代理自读技能文件说明"
 
 
 def test_stage_fail_loud_validation_still_present():

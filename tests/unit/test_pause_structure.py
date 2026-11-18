@@ -91,20 +91,21 @@ class TestLoopConfluenceIssuesPause:
 class TestOrchestratorConfluenceSlotFree:
     """汇流点二：提醒类兜底卡出槽（批 B）——不签发 pause_id、不登记
     active_pause；提醒文案归正文通道（下一轮经 history 模型可见），
-    候选项降级为 quick-actions 芯片（点击 = 普通用户消息）。"""
+    候选项降级为 quick-actions 芯片（点击 = 普通用户消息）。
 
-    async def test_handoff_returns_none(self, svc, monkeypatch):
+    2026-11-12 宽权限批：兜底卡装配入口（`stage_probes.gate_precheck` 与
+    `planner._run_gate_precheck` 空壳）已整体退役——规格/原料前置闸属业务
+    判断，交给模型按 Skill 散文执行。原「无兜底卡 → 交接 None」用例随实现
+    一并退役；此处保留「不再存在该入口」的防复活断言。"""
+
+    async def test_precheck_entry_retired(self, svc):
         from src.video_agent.core import stage_probes as po
 
-        async def fake_precheck(state_manager, skill, user_message=""):
-            return None
-
-        monkeypatch.setattr(po, "gate_precheck", fake_precheck)
-        planner = Planner(state_manager=svc, llm_adapter=None)
-
-        resp = await planner._run_gate_precheck(
-            PlannerContext(skill_name="AI-短剧一站式生成"), "继续")
-        assert resp is None
+        assert not hasattr(po, "gate_precheck"), (
+            "stage_probes.gate_precheck 回潮：规格/原料前置兜底卡已于"
+            "2026-11-12 宽权限批退役")
+        assert not hasattr(Planner, "_run_gate_precheck"), (
+            "planner._run_gate_precheck 回潮：该空壳已随同批删除")
 
 
 class TestConsumePauseResponse:

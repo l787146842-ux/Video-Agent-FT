@@ -67,20 +67,22 @@ def test_resolve_kind_shot_and_audio_prefixes():
 
 
 # ---------- ⑥/⑤ 已随语言闸退役删除（2026-09-06 用户裁决，见模块 docstring） ----------
+# 2026-11-12 宽权限批：`present_structure_kinds`（审阅卡文案用）随阶段审阅卡
+# 一并退役，对应用例删除；`storyboard_stage_complete` 只保留「有没有结构」
+# 这一条客观事实（音频完整性判定已删）。
 
 
-def test_present_structure_kinds_full():
-    state = {"keyElements": [{}], "shots": [{}], "audioItems": [{}]}
-    assert pg.present_structure_kinds(state) == ["keyElement", "shot", "audio"]
-
-
-def test_storyboard_stage_complete_registry_exception_degraded(monkeypatch):
-    """registry.resolve_entry 抛异常：音频需求判定回落 False，不阻断"""
-    import src.video_agent.skill_runtime.registry as reg
-    monkeypatch.setattr(reg, "resolve_entry",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    state = {"keyElements": [{}], "shots": [{}]}
-    assert pg.storyboard_stage_complete(state, skill_name="demo") is True
+def test_storyboard_stage_complete_ignores_audio():
+    """结构齐即完成：音频做不做由模型按 Skill 散文判断，平台不查音频完整性
+    （2026-11-12 宽权限批删去音频维度）。"""
+    assert pg.storyboard_stage_complete(
+        {"keyElements": [{}], "shots": [{}]}, skill_name="demo") is True
+    # 缺分镜 → 未完成
+    assert pg.storyboard_stage_complete(
+        {"keyElements": [{}]}, skill_name="demo") is False
+    # 有音频但缺结构 → 仍未完成（音频不参与判定）
+    assert pg.storyboard_stage_complete(
+        {"audioItems": [{}]}, skill_name="demo") is False
 
 
 def test_drafts_confirmed_empty_is_false():

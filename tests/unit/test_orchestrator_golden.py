@@ -78,25 +78,13 @@ def test_current_stage_progression():
     # 断言随该推进口径退役删除
 
 
-# ---------- ③ 闸预检：只装配兜底卡，永不执行/抢先 ----------
-
-@pytest.mark.asyncio
-async def test_precheck_handoff_at_creative_stage(tmp_path):
-    """创作型阶段就绪 → None = 交接模型循环（模型持主动权）"""
-    from src.video_agent.state.manager import StateManager
-
-    StateManager.reset_instance()
-    svc = StateManager(str(tmp_path / "ws"))
-    StateManager._instance = svc
-    svc.state_dict["analysis"] = {"summary": "x"}
-    svc.state_dict["documents"] = [
-        {"name": "Final_Video_Spec.md", "content": "- 画幅：16:9\n"}]
-    svc.state_dict["keyElements"] = [{"id": "ke1", "drafts": []}]
-    svc.state_dict["shots"] = [{"id": "s1", "drafts": []}]
-    svc.state_dict["audioItems"] = [{"id": "a1", "drafts": [{"prompt": "BGM：低沉"}]}]
-    outcome = await po.gate_precheck(svc, SKILL, "继续")
-    assert outcome is None
-    StateManager.reset_instance()
+# ---------- ③ 闸预检已退役（2026-11-12 宽权限批）----------
+#
+# 原「闸预检：只装配兜底卡，永不执行/抢先」用例随 `stage_probes.gate_precheck`
+# 与 `planner._run_gate_precheck` 一并退役：规格/原料前置闸属业务判断，
+# 计划 §5 要求删除，平台只在工具调用点保留暂停纪律/风险/花钱确认三闸。
+# 防复活断言见 test_deterministic_triage::test_preemption_symbols_deleted
+# 与 test_pause_structure::test_precheck_entry_retired。
 
 
 # ---------- ④⑤ planner 主路径：主体回归后一律交接模型循环 ----------

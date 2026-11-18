@@ -28,16 +28,19 @@ def svc(tmp_path):
 # ---------- 防复活：抢先权符号禁止回到控制流 ----------
 
 def test_preemption_symbols_deleted():
-    """分诊/快路径驱动/步间收权符号禁止复活（批 12 已下账）"""
+    """分诊/快路径驱动/步间收权符号禁止复活（批 12 已下账；
+    2026-11-12 宽权限批再删 planner_triage 整个模块——其唯一函数
+    run_gate_precheck 已随规格/原料前置闸退役）。"""
     assert not hasattr(Planner, "_triage_control")
     assert not hasattr(Planner, "_run_orchestrator_path")
     assert not hasattr(po, "run_deterministic_stage")
     assert not hasattr(po, "orchestrate_turn")
     assert not hasattr(po, "compose_pause_card")
-    from src.video_agent.core import agent_loop, planner_triage
+    from src.video_agent.core import agent_loop
     assert "between_steps" not in inspect.signature(agent_loop.run_agent_loop).parameters
-    assert not hasattr(planner_triage, "make_reclaim_hook")
-    assert not hasattr(planner_triage, "triage_control")
+    # planner_triage 整模块已删除（2026-11-12 宽权限批）：禁复活
+    with pytest.raises(ImportError):
+        __import__("src.video_agent.core.planner_triage")
 
 
 def test_pause_window_gate_present():
@@ -47,18 +50,13 @@ def test_pause_window_gate_present():
     assert "paused_this_batch" in inspect.getsource(fc_tool_runner)  # 执行段接线
 
 
-# ---------- 闸预检语义：只装配兜底卡，永不执行/抢先 ----------
-
-@pytest.mark.asyncio
-async def test_precheck_handoff_when_no_gate_fires(svc):
-    """无兜底卡触发 → None = 交接模型循环（模型持主动权）"""
-    svc.state_dict["interaction"] = {"script_waived": True}
-    svc.state_dict["analysis"] = {"summary": "一句话"}
-    svc.state_dict["documents"] = [{
-        "name": "Final_Video_Spec.md", "content": "规格", "confirmed": True,
-    }]
-    out = await po.gate_precheck(svc, _SKILL, "继续")
-    assert out is None
+# ---------- 闸预检已退役（2026-11-12 宽权限批）----------
+#
+# 原 `stage_probes.gate_precheck`（轮始只装配规格/原料兜底卡）与
+# `planner._run_gate_precheck` 空壳同批删除：计划 §5 要求删除规格/原料
+# 前置业务预检，平台只在工具调用点保留暂停纪律/风险/花钱确认三闸。
+# 相应「无兜底卡触发 → None 交接模型循环」用例随实现一并退役，
+# 不再单独断言（删掉的功能不该继续由测试要求它存在）。
 
 
 # ---------- 轮内暂停纪律：问即停——发行后同批不续执行 ----------

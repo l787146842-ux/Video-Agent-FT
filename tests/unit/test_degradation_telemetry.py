@@ -100,42 +100,27 @@ async def test_event_emit_degradation_visible(svc_env):
     assert "agent_loop.event_emit" in _points()
 
 
-async def test_gate_precheck_degradation_visible(monkeypatch, tmp_path):
-    """闸预检失败 fail-open：降级计数 + 交接模型循环（批 12 接替收权点）"""
-    from src.video_agent.core.planner import Planner, PlannerContext
-    from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
-    from src.video_agent.state.manager import StateManager
+async def test_gate_precheck_not_applied(monkeypatch, tmp_path):
+    """闸预检已于 2026-11-12 宽权限批整体退役（计划 §5：删除
+    `planner_triage.run_gate_precheck` 调用）——Planner 不再持有该入口，
+    规格/原料前置闸归模型按 Skill 散文判断，平台只在工具调用点保留
+    暂停纪律/风险/花钱确认三闸。
 
-    class ProbeAdapter(BaseChatAdapter):
-        def __init__(self):
-            self.calls = 0
+    本用例守卫「退役不复活」：Planner 一旦重新长出 `_run_gate_precheck`
+    或 `planner_triage` 模块，说明有人在业务闸上回潮。"""
+    from src.video_agent.core.planner import Planner
 
-        @property
-        def supports_function_calling(self):
-            return False
-
-        async def chat(self, messages, **kwargs):
-            self.calls += 1
-            return ChatResponse(content="ok", finish_reason="stop")
-
-        async def chat_stream(self, messages, **kwargs):
-            self.calls += 1
-            yield ChatResponse(content="ok", finish_reason="stop")
-
-    async def boom(self, context, user_message=""):
-        raise RuntimeError("precheck down")
-
-    monkeypatch.setattr(Planner, "_run_gate_precheck", boom)
-
-    StateManager.reset_instance()
-    svc = StateManager(str(tmp_path / "ws"))
-    StateManager._instance = svc
-    adapter = ProbeAdapter()
-    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=None)
-    await planner.handle_message("开始", PlannerContext(skill_name="AI-短剧一站式生成"))
-    assert adapter.calls >= 1, "预检失败必须 fail-open 交接模型循环"
-    assert "planner.gate_precheck" in _points()
-    StateManager.reset_instance()
+    assert not hasattr(Planner, "_run_gate_precheck"), (
+        "闸预检入口回潮：2026-11-12 宽权限批已删除该业务型预检"
+        "（规格/原料前置闸归模型按 Skill 散文判断）")
+    try:
+        import src.video_agent.core.planner_triage as _triage  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        raise AssertionError(
+            "planner_triage 模块回潮：其唯一函数 run_gate_precheck 已随"
+            "2026-11-12 宽权限批退役，模块应保持删除状态")
 
 
 @pytest.fixture

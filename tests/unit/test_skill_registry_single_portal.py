@@ -10,11 +10,10 @@
 ④ 磁盘直增未注册包不进目录，sync_all 后才可加载（发现→注册边界）；
 ⑤ 注册表空（全部失败）降级：目录空段跳过、read_skill 优雅报错、对话不阻断；
 ⑥ /api/skills 不返回被拒包；/api/skills/docs 仍磁盘全量（工作台供修复）；
-⑦ 16 包字节级目录快照：空停用+全注册时与改造前磁盘口径基线逐字节相等。
-（2026-09-05 用户删除「剧本生视频需上传剧本」，存量 15 包，基线同步重采。）
+⑦ 存量包模型目录为空：2026-11-12 迁移后存量全部 user-only，
+模型目录（build_skill_catalog）输出为空串（原字节级目录快照随之退役）。
 """
 import json
-import pathlib
 
 import pytest
 
@@ -26,8 +25,6 @@ from src.video_agent.tools.document_tools import (
     ListSkillsInput, ListSkillsTool, ReadSkillInput, ReadSkillTool,
 )
 from src.video_agent.web.chat_opening import _resolve_skill_name_for_injection
-
-GOLDEN = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "skill_catalog_golden.json"
 
 GOOD_DOC = (
     "---\nname: 好包\ndescription: M3 好包测试桩\n---\n"
@@ -236,14 +233,16 @@ def test_api_skills_excludes_rejected_but_docs_keeps_full(portal_env):
     assert "bad-pack" in failed and "name" in failed["bad-pack"]
 
 
-# ---------- ⑦ 存量包字节级目录快照 ----------
+# ---------- ⑦ 存量包模型目录为空（原字节级快照已随 user-only 迁移退役） ----------
 
 
-def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
-    """空停用 + 全注册：build_skill_catalog 的**存量包**输出与磁盘口径基线逐字节相等
-    （基线固化 tests/fixtures/skill_catalog_golden.json；2026-09-05 存量 15 包
-    重采；2026-09-09 随用户新增「新-Skill」包重采为 16 包）。
-    用户后续新增的 Skill 不参与存量快照（只过滤非存量条目，新增包仍须可加载）。
+def test_stock_pack_model_catalog_is_empty(tmp_path, monkeypatch):
+    """空停用 + 全注册：存量 16 包全部 user-only ⇒ 模型目录为空串。
+
+    历史：本用例原为「build_skill_catalog 与磁盘基线逐字节相等」的 golden
+    快照（tests/fixtures/skill_catalog_golden.json，2026-09-05 存量 15 包、
+    2026-09-09 重采 16 包）。2026-11-12 dsh 对齐批把存量全部迁移为
+    user-only 后，模型目录恒为空，golden 快照失去意义并已删除。
     数据面临时回挂真实 data/skills，避开测试镜像夹具桩。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
@@ -252,18 +251,8 @@ def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
     registry.sync_all(force=True)
     try:
         assert len(registry.loadable_entries()) >= 16, "存量 16 包须全注册（允许用户新增）"
-        golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-        actual = _pb(_base_state()).build_skill_catalog(_ctx())
-        stock_names = {
-            line[2:].split("：", 1)[0].strip()
-            for line in golden["catalog"].splitlines() if line.startswith("- ")
-        }
-        # 只比对存量条目：用户新增 Skill 的行不进入快照（新增不影响存量字节基线）
-        actual_lines = [
-            line for line in actual.splitlines()
-            if not line.startswith("- ")
-            or line[2:].split("：", 1)[0].strip() in stock_names
-        ]
-        assert "\n".join(actual_lines) == golden["catalog"], "存量包目录段发生字节级漂移"
+        # 2026-11-12 迁移：存量全部 user-only，模型目录为空
+        assert registry.model_catalog_entries() == []
+        assert _pb(_base_state()).build_skill_catalog(_ctx()) == ""
     finally:
         registry.reset_registry()
