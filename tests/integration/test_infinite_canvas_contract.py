@@ -9,7 +9,7 @@
 - 协议版本：/config 与 /health 的 protocolVersion 必须等于代码钉住值（PROTOCOL_VERSION）；
 - 工具白名单：项目使用的工具必须全部属于 schemas.ts 34 工具闭集；
 - ops 闭集：canvas_apply_ops 的 op 类型集合与 canvas_schema.py 一致；
-- adapter 读路径：用 httpx.MockTransport 重放夹具，验证解析逻辑。
+- adapter 读路径：用假会话重放夹具，验证解析逻辑（L2 后适配层走进程内会话）。
 
 夹具录制：连上画布页后通过 HTTP 调用录制（/health、/config、canvas_list_projects、
 canvas_get_state、canvas_apply_ops(add/update/delete)、canvas_get_selection、
@@ -20,7 +20,6 @@ canvas-agent/src/canvas/schemas.ts 的 toolNames/canvasOpSchema 转录。
 import json
 from pathlib import Path
 
-import httpx
 import pytest
 
 from src.video_agent.adapters.canvas_schema import (
@@ -31,6 +30,7 @@ from src.video_agent.adapters.infinite_canvas_backend import (
     PROTOCOL_VERSION,
     InfiniteCanvasBackend,
 )
+from tests.fakes import FakeCanvasSession
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "infinite_canvas"
 
@@ -75,7 +75,7 @@ class TestProtocolVersion:
 
 class TestToolWhitelist:
     def test_closed_set_size(self, tool_spec):
-        assert len(set(tool_spec["toolNames"])) == 34, "schemas.ts toolNames 闭集应为 34 个"
+        assert len(set(tool_spec["toolNames"])) == 36, "schemas.ts toolNames 闭集应为 36 个"
 
     def test_used_tools_all_registered(self, tool_spec):
         registered = set(tool_spec["toolNames"])
@@ -151,30 +151,20 @@ class TestFixtureContract:
         assert isinstance(result.get("nodes"), list)
 
 
-# ---------- adapter 读路径（MockTransport 重放夹具） ----------
+# ---------- adapter 读路径（假会话重放夹具；L2 后不再有 HTTP sidecar） ----------
 
 def _backend_with_fixtures() -> InfiniteCanvasBackend:
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/health":
-            return httpx.Response(200, json=_load("health.json"))
-        if path == "/config":
-            return httpx.Response(200, json=_load("config.json"))
-        if path == "/api/tools":
-            body = json.loads(request.content)
-            name = body.get("name") or ""
-            if name == "canvas_apply_ops":
-                op_type = ((body.get("input") or {}).get("ops") or [{}])[0].get("type", "")
-                fx_name = f"tools/canvas_apply_ops_{op_type}.json"
-            else:
-                fx_name = f"tools/{name}.json"
-            return httpx.Response(200, json=_load(fx_name)["response"])
-        return httpx.Response(404, json={"ok": False, "error": "not found"})
+    def handler(name: str, payload: dict):
+        if name == "canvas_apply_ops":
+            op_type = ((payload.get("ops") or [{}])[0]).get("type", "")
+            fx_name = f"tools/canvas_apply_ops_{op_type}.json"
+        else:
+            fx_name = f"tools/{name}.json"
+        return _load(fx_name)["response"].get("result")
 
-    backend = InfiniteCanvasBackend(base_url="http://fixture.local", token="t", timeout=5)
-    backend.client = lambda: httpx.AsyncClient(  # type: ignore[method-assign]
-        base_url="http://fixture.local", transport=httpx.MockTransport(handler), timeout=5
-    )
+    session = FakeCanvasSession(handler, has_canvas=bool(_load("health.json")["hasCanvas"]))
+    backend = InfiniteCanvasBackend(token="t", timeout=5)
+    backend._session_override = session
     return backend
 
 
@@ -195,26 +185,12 @@ class TestAdapterReadPaths:
 
     @pytest.mark.asyncio
     async def test_get_canvas_ttl_cache(self):
-        """TTL 内重复读命中缓存（只发一次 canvas_get_state）"""
-        calls = []
+        """TTL 内重复读命中缓存（只向会话要一次 canvas_get_state）"""
         backend = _backend_with_fixtures()
-        raw_client = backend.client
-
-        def counting_client():
-            client = raw_client()
-            original_post = client.post
-
-            async def post(url, **kwargs):
-                calls.append(url)
-                return await original_post(url, **kwargs)
-
-            client.post = post  # type: ignore[method-assign]
-            return client
-
-        backend.client = counting_client  # type: ignore[method-assign]
         await backend.get_canvas("")
         await backend.get_canvas("")
-        assert len(calls) == 1
+        names = [c["name"] for c in backend._session_override.calls]
+        assert names.count("canvas_get_state") == 1
 
     @pytest.mark.asyncio
     async def test_get_selection_parsing(self):
@@ -239,19 +215,10 @@ class TestAdapterReadPaths:
         assert info["protocolVersion"] == PROTOCOL_VERSION
 
     @pytest.mark.asyncio
-    async def test_check_version_drift_records(self, tmp_path, monkeypatch):
-        import src.video_agent.adapters.infinite_canvas_backend as mod
-        record = tmp_path / "canvas_integration.json"
-        monkeypatch.setattr(mod, "_CANVAS_VERSION_FILE", record)
+    async def test_check_version_drift_is_noop_after_l2(self):
+        """L2：画布产物与后端同仓发布，不存在外部协议漂移。"""
         backend = _backend_with_fixtures()
-        assert await backend.check_version_drift() is None  # 首次无漂移
-        saved = json.loads(record.read_text(encoding="utf-8"))
-        assert saved["infinite_canvas"]["protocol_version"] == str(PROTOCOL_VERSION)
-        # 记录改为旧版本 → 漂移告警
-        saved["infinite_canvas"]["protocol_version"] = "0"
-        record.write_text(json.dumps(saved), encoding="utf-8")
-        msg = await backend.check_version_drift()
-        assert msg and "已更新" in msg
+        assert await backend.check_version_drift() is None
 
     @pytest.mark.asyncio
     async def test_save_canvas_applies_ops_replay(self):

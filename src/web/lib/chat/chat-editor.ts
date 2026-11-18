@@ -60,10 +60,12 @@ export function useChatEditor() {
       if (req.kind === 'media') {
         insertNodeAtCursor(el, createMediaChip(req.media), savedRange);
       } else if (req.kind === 'skill') {
-        // 同名 Skill 块已存在时不重复插入
+        // 同一 Skill 块已存在时不重复插入（按 slug 判重）
         const exists = Array.from(el.querySelectorAll('.skill-chip'))
-          .some((n) => (n as HTMLElement).dataset.skillName === req.name);
-        if (!exists) insertNodeAtCursor(el, createSkillChip(req.name), savedRange);
+          .some((n) => (n as HTMLElement).dataset.skillSlug === req.slug);
+        if (!exists) {
+          insertNodeAtCursor(el, createSkillChip(req.name, req.slug), savedRange);
+        }
       } else {
         insertTextAtCursor(el, req.text, savedRange);
       }

@@ -9,10 +9,10 @@ import json
 from pathlib import Path
 
 import pytest
-import httpx
 from unittest.mock import AsyncMock, patch
 
 from src.video_agent.adapters.canvas_adapter import reset_canvas_adapter
+from tests.fakes import FakeCanvasSession
 from src.video_agent.adapters.infinite_canvas_backend import (
     InfiniteCanvasBackend,
     _resolve_drop_point,
@@ -33,27 +33,23 @@ def _reset_singleton():
 
 
 def _ic_backend_with_recorder():
-    """MockTransport 重放夹具，并记录 /api/tools 请求体"""
+    """假会话重放夹具，并记录每次 call_tool({name,input})。"""
     calls = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/api/tools":
-            body = json.loads(request.content)
-            calls.append(body)
-            name = body.get("name") or ""
-            if name == "canvas_apply_ops":
-                op_type = ((body.get("input") or {}).get("ops") or [{}])[0].get("type", "")
-                fx = f"tools/canvas_apply_ops_{op_type}.json"
-            else:
-                fx = f"tools/{name}.json"
-            return httpx.Response(200, json=_load(fx)["response"])
-        return httpx.Response(404, json={"ok": False, "error": "not found"})
+    def handler(name: str, payload: dict):
+        if name == "canvas_apply_ops":
+            op_type = ((payload.get("ops") or [{}])[0]).get("type", "")
+            fx = f"tools/canvas_apply_ops_{op_type}.json"
+        else:
+            fx = f"tools/{name}.json"
+        return _load(fx)["response"].get("result")
 
-    backend = InfiniteCanvasBackend(base_url="http://fixture.local", token="t", timeout=5)
-    backend.client = lambda: httpx.AsyncClient(  # type: ignore[method-assign]
-        base_url="http://fixture.local", transport=httpx.MockTransport(handler), timeout=5
-    )
+    def recording_handler(name: str, payload: dict):
+        calls.append({"name": name, "input": payload})
+        return handler(name, payload)
+
+    backend = InfiniteCanvasBackend(token="t", timeout=5)
+    backend._session_override = FakeCanvasSession(recording_handler)
     return backend, calls
 
 

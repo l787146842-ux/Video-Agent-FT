@@ -116,8 +116,9 @@ _SKILL_FLOW_OFF = (
 
 
 def test_real_skills_manifest_snapshot(monkeypatch):
-    """真实 data/skills 快照（2026-08-31 用户裁决 外部标杆对齐后）：
-    存量包 frontmatter 只留 name/description/source，机械开关键清零。"""
+    """真实 data/skills 快照（2026-11-12 dsh 调用策略迁移后）：
+    存量包 frontmatter 只留 name/description/source/disable-model-invocation，
+    且全部为 user-only。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", REAL_DIR)
@@ -128,8 +129,11 @@ def test_real_skills_manifest_snapshot(monkeypatch):
             entry = registry.get_entry(slug)
             assert entry is not None, f"Skill 未注册: {slug}"
             assert entry.manifest is not None, f"Skill 缺 manifest: {slug}"
-            extra = set(entry.manifest.keys()) - {"name", "description", "source"}
+            extra = set(entry.manifest.keys()) - {
+                "name", "description", "source", "disable-model-invocation"}
             assert not extra, f"{slug} frontmatter 应只剩最小键，实际多出: {sorted(extra)}"
+            assert entry.model_invocable is False, f"{slug} 应为 user-only"
+            assert entry.user_invocable is True, f"{slug} 应可由用户触发"
         # ke-prog 测试残留：允许无 manifest
     finally:
         registry.reset_registry()

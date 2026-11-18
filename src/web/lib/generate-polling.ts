@@ -9,7 +9,7 @@
 import { studioActions } from '@/stores/studio';
 import { findDraftRecord } from '@/stores/studio-core';
 import { showToast } from '@/stores/toast';
-import { getImageTaskStatus, getVideoTaskStatus } from '@/api/generate';
+import { getImageTaskStatus, getVideoTaskStatus, getAudioTaskStatus } from '@/api/generate';
 import { buildAuthHeaders } from '@/api/client';
 import { pumpSseBody } from '@/lib/reconnecting-sse';
 import type { DraftType, TaskResult } from '@/types';
@@ -149,6 +149,9 @@ export async function pollAndPreviewImage(taskId: string, draftId: string): Prom
         audioUrl: '',
         tag: '已生成',
       });
+      // 2026-10-26 用户裁决：出图成功自动绑定（同组同类型唯一）
+      const rec = findDraftRecord(draftId);
+      if (rec) studioActions.bindDraftLocal(rec.type, rec.group.id, draftId, true);
       const sec = data.elapsed || finishGeneration(draftId);
       finishGeneration(draftId);
       showToast(`图片渲染完成！耗时 ${sec}s`, 'success');
@@ -174,6 +177,9 @@ export async function pollAndPreviewVideo(taskId: string, draftId: string): Prom
     const url = data.video_url || data.result?.images?.[0];
     if ((data.status === 'succeeded' || data.status === 'completed') && url) {
       patchDraft(draftId, t, { mediaType: 'video', genType: 'video', videoUrl: url, imgUrl: '', audioUrl: '', tag: '已生成' });
+      // 2026-10-26 用户裁决：视频出片成功同样自动绑定（同组同类型唯一）
+      const rec = findDraftRecord(draftId);
+      if (rec) studioActions.bindDraftLocal(rec.type, rec.group.id, draftId, true);
       const sec = data.elapsed || finishGeneration(draftId);
       finishGeneration(draftId);
       showToast(`视频渲染完成！耗时 ${sec}s`, 'success');
@@ -189,4 +195,38 @@ export async function pollAndPreviewVideo(taskId: string, draftId: string): Prom
   if (result) { apply(result); return; }
   finishGeneration(draftId);
   showToast('视频生成超时（10 分钟），请检查供应商状态后重试', 'error');
+}
+
+// ---------- 音频轮询 ----------
+
+export async function pollAndPreviewAudio(taskId: string, draftId: string): Promise<void> {
+  const apply = (data: TaskResult) => {
+    const t = findDraftRecord(draftId)?.type || 'audio';
+    const url = data.result?.audio || data.audio_url || '';
+    if (data.status === 'succeeded' && url) {
+      const patch: Record<string, unknown> = {
+        mediaType: 'audio', genType: 'audio', audioUrl: url,
+        imgUrl: '', videoUrl: '', tag: '已生成',
+      };
+      // 音色设计：voice_id 与卡上的 audioModel 强绑定，必须随卡持久化
+      if (data.result?.voice_id) patch.voiceId = data.result.voice_id;
+      patchDraft(draftId, t, patch);
+      const rec = findDraftRecord(draftId);
+      if (rec) studioActions.bindDraftLocal(rec.type, rec.group.id, draftId, true);
+      const sec = data.elapsed || finishGeneration(draftId);
+      finishGeneration(draftId);
+      showToast(`音频生成完成！耗时 ${sec}s`, 'success');
+    } else if (data.status === 'failed') {
+      patchDraft(draftId, t, { tag: '生成失败' });
+      const sec = data.elapsed || finishGeneration(draftId);
+      finishGeneration(draftId);
+      showToast(`音频生成失败（${sec}s）: ${data.error || '未知错误'}`, 'error');
+    }
+  };
+
+  // 音乐生成可能持续数分钟（Fun-Music 整曲同步返回），与视频同档 10 分钟
+  const result = await sseFirstThenPoll(taskId, () => getAudioTaskStatus(taskId), 600);
+  if (result) { apply(result); return; }
+  finishGeneration(draftId);
+  showToast('音频生成超时（10 分钟），请检查供应商状态后重试', 'error');
 }

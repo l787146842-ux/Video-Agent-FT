@@ -62,23 +62,20 @@ def _pb(raw_state):
     )
 
 
-def test_selected_block_injects_full_generic_doc():
-    """通用口径：选中 Skill 后注入主文档全文（含流程与各节正文），
-    不再只给 <planner> 段；分册仍走 read_skill。
-
-    2026-11-11 Flova 六节骨架：断言的正文锚点随之改为新骨架标题/内容。
-    """
+def test_selected_block_is_pointer_only_for_user_only_skill():
+    """2026-11-12：现存 Skill 全部 user-only；选中块只给用户触发说明，
+    不注入正文（正文只在用户消息带 /slug 时一次性注入）。"""
     from src.video_agent.skill_runtime import registry
 
-    registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
+    registry.reset_registry()
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
-    assert "当前选中 Skill" in block and "read_skill" in block
-    # 第四节（创作流程规划）正文在注入块里
-    assert "依赖关系" in block
-    # 第六节（Reference 路由）正文在注入块里 —— 分册可发现性依赖这一段
-    assert "references/媒体生成.md" in block
+    assert "当前主 Skill" in block
+    assert "用户专用" in block
+    assert "read_file" in block
+    assert "依赖关系" not in block
+    assert "references/媒体生成.md" not in block
     assert "<planner>" not in block
     assert "已注册独立执行器" not in block
 

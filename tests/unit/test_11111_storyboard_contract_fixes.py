@@ -22,32 +22,18 @@ from src.video_agent.tools.storyboard_tools import CreateGroupInput, _DRAFT_FIEL
 # ---------- R3：主代理必须看得见「阶段建卡限定」 ----------
 
 
-def test_11111_stage_hint_declares_card_limits():
-    """R3：`run_subagent.stage` 描述必须包含各阶段的建卡限定。
-
-    11111 现场：父级按 SUBAGENT_POLICY「只补子代理读不到的东西」写下
-    「补齐场景/道具 keyElement 草稿」，子代理照办、5 次 add_draft(image)
-    全被阶段媒体闸拒收（单步 188.0s / 42,340 字推理）。根因 = 该限定只下发到
-    子级 GateContext，父级 prompt 从无此表。本钉防止再度失明。
-    """
+def test_11111_stage_hint_no_longer_declares_card_limits():
+    """2026-11-12 宽权限批：建卡白名单退役，stage 描述只作展示。"""
     hint = _stage_hint()
-    assert "新建草稿卡可用媒体类型" in hint
     assert "故事板设计" in hint
-    # 必须点出 audio 允许集（2026-10-21 裁决：只剩音色卡；
-    # image/video 不在内 = 父级不该安排建图卡或分镜视频壳卡）
-    assert "可用媒体类型=audio" in hint
-    assert "audio/video" not in hint, "video 已移出允许集（2026-10-21 裁决）"
-    assert "voice" in hint
+    assert "新建草稿卡可用媒体类型" not in hint
+    assert "可用媒体类型=audio" not in hint
 
 
-def test_11111_stage_card_contract_single_source():
-    """R3：渲染源必须与两张白名单表**同源**（P1 单一事实源，禁第二份名单）。"""
-    for stage in ("storyboard_design",):
-        contract = subagent_mod.stage_card_contract(stage)
-        for media in subagent_mod.STAGE_CARD_MEDIA.get(stage, frozenset()):
-            assert media in contract
-        for kind in subagent_mod.STAGE_CARD_AUDIO_TYPES.get(stage, frozenset()):
-            assert kind in contract
+def test_11111_stage_card_contract_retired():
+    """建卡限定声明整体退役（空串）。"""
+    for stage in ("storyboard_design", "media_generate", "script_analyze", ""):
+        assert subagent_mod.stage_card_contract(stage) == ""
 
 
 def test_11111_stage_card_contract_empty_for_unrestricted_stage():

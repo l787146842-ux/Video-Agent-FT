@@ -20,49 +20,17 @@
 「同名节点两条展示链必须一致」。改标签值本身是允许的（纯文案），
 但回潮旧术语或与前端分叉会立即失败。
 """
-from pathlib import Path
-
-import pytest
-
 from src.video_agent.core import stage_probes as po
 from src.video_agent.core import workflow_contract as wc
 from src.video_agent.skill_runtime.registry import STAGE_LABELS
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_SKILL_STRUCTURE = PROJECT_ROOT / "src" / "web" / "lib" / "skill-structure.ts"
 
 # 已退役的自造术语（回潮即失败）：
 # - 「关键元素拆解」：用户口头术语被误写进代码（批I）；
 # - 「媒体提示词编写」：同批一并收成直译「提示词编写」（批I）；
 # - 「剧本分析」：批J 用户裁决改为「素材分析」——该阶段收的不只是剧本
-#   （Skill 名即为「素材分析」：`SECTION_META` 与多个 Skill 的章节都这么叫，
+#   （Skill 名即为「素材分析」：多个 Skill 的章节都这么叫，
 #   且支持上传参考图/视频等非剧本文本），「剧本分析」是以偏概全的旧叫法。
 _RETIRED_LABELS = ("关键元素拆解", "媒体提示词编写", "剧本分析")
-
-# STAGE_LABELS 键 → 前端 SECTION_META 的对应键（两侧同源 tag，值必须一致）
-# 注：`script_analyze` 前端本就叫「素材分析」，后端批J 才对齐过去。
-_STAGE_TO_FRONTEND_KEY = {
-    "script_analyze": "script_analyze",
-    "storyboard_key_elements": "storyboard_key_elements",
-    "storyboard_shots": "storyboard_shots",
-    "storyboard_audio": "storyboard_audio",
-    "video_assembler": "video_assembler",
-}
-
-
-def _frontend_section_labels() -> dict:
-    """从 skill-structure.ts 抽 SECTION_META 的 tag → label（源码级读取）。
-
-    不 import TS（跨语言）：按行正则抓 `tag: { label: '...'` 形态。
-    """
-    import re
-
-    text = FRONTEND_SKILL_STRUCTURE.read_text(encoding="utf-8")
-    start = text.index("const SECTION_META")
-    end = text.index("};", start)
-    body = text[start:end]
-    pairs = re.findall(r"^\s*([a-z_]+):\s*\{\s*label:\s*'([^']+)'", body, re.M)
-    return {k: v for k, v in pairs}
 
 
 # ---------- ① 不得回潮自造术语 ----------
@@ -89,26 +57,7 @@ def test_workflow_node_titles_do_not_use_retired_terms():
                 f"NODE_TITLES[{key!r}] 回潮「{retired}」（批I 已对齐直译口径）")
 
 
-# ---------- ② 前后端不得漂移（同一 tag 一个名字） ----------
-
-def test_stage_labels_match_frontend_section_meta():
-    """后端 `STAGE_LABELS` 与前端 `SECTION_META` 对同源 tag 必须同名。
-
-    批I 前的实况：前端叫「关键元素」「音频层」「组装导出」，后端叫
-    「关键元素拆解」「音频层设计」「时间线组装」——**同一阶段两个名字**，
-    用户看到的卡片标题与章节名分叉。
-    """
-    fe = _frontend_section_labels()
-    assert fe, "前端 SECTION_META 解析失败（结构变了，请同步本测试的抽取逻辑）"
-    for stage_key, fe_key in _STAGE_TO_FRONTEND_KEY.items():
-        assert fe_key in fe, f"前端 SECTION_META 缺 {fe_key!r}"
-        assert STAGE_LABELS[stage_key] == fe[fe_key], (
-            f"前后端标签漂移：STAGE_LABELS[{stage_key!r}]="
-            f"{STAGE_LABELS[stage_key]!r} vs SECTION_META={fe[fe_key]!r}"
-            f"（同一 Skill 章节 tag，两侧必须同名）")
-
-
-# ---------- ③ 同名节点在两条展示链上必须一致 ----------
+# ---------- ② 同名节点在两条展示链上必须一致 ----------
 
 def test_same_named_nodes_agree_across_tables():
     """与 Skill 阶段同名的 workflow 节点，标题须与 `STAGE_LABELS` 一致。

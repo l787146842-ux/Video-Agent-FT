@@ -2,19 +2,20 @@ import { Show, Switch, Match, createEffect, untrack } from 'solid-js';
 import { state, findDraftRecord, studioActions } from '@/stores/studio';
 import { globalSettings } from '@/stores/global-settings';
 import {
-  apiProvidersFor, providerModels, preferredProviderIdForKind,
+  apiProvidersFor, providerModels, preferredProviderIdForKind, audioModelsFor, audioProvidersFor,
 } from '@/lib/providers';
+import { audioChannelFor } from '@/lib/audio-channel';
 import { ImageParams } from './params/ImageParams';
 import { VideoParams } from './params/VideoParams';
 import { AudioParams } from './params/AudioParams';
 import type { Draft, DraftType } from '@/types';
 
-/** 根据草稿类型与生成类型推导供应商种类（image/video/chat） */
-function providerKindFor(type: DraftType, genType: string): 'image' | 'video' | 'chat' {
-  if (type === 'audio') return 'chat';
+/** 根据草稿类型与生成类型推导供应商种类（image/video/chat/audio） */
+function providerKindFor(type: DraftType, genType: string): 'image' | 'video' | 'chat' | 'audio' {
+  if (type === 'audio') return 'audio';
   // 关键元素 / 分镜：跟随当前生成类型 genType（图片/视频/音频生成）
   if (genType === 'video') return 'video';
-  if (genType === 'audio') return 'chat';
+  if (genType === 'audio') return 'audio';
   return 'image';
 }
 
@@ -70,6 +71,15 @@ export function ParamControls() {
       // 生成类型（genType 优先，回退 mediaType）决定供应商种类
       const genType = r.draft.genType || r.draft.mediaType || 'image';
       const kind = providerKindFor(type, genType);
+      // 音频按「通道」过滤模型（音色设计/音乐/音效各自的模型集）；
+      // 其他种类直接读供应商对应模型表。
+      const audioChannel = kind === 'audio' ? audioChannelFor(r.draft) : '';
+      // 音频可用池：已接适配器 + 该通道有模型；未接的厂商不参与回填与校正
+      const audioPool = kind === 'audio' ? audioProvidersFor(audioChannel) : [];
+      const modelsOf = (pid: string): string[] => {
+        if (kind !== 'audio') return providerModels(pid, kind);
+        return audioPool.some((p) => p.id === pid) ? audioModelsFor(pid, audioChannel) : [];
+      };
       // 按种类参数隔离（2026-08-15）：三个生成器各自读写本种类字段；
       // 旧数据无本种类字段时回退旧共享字段（仅当其对当前种类有效），
       // 选中即愈合写回本种类字段
@@ -77,22 +87,24 @@ export function ParamControls() {
         ? (r.draft.imageProviderId || '')
         : kind === 'video' ? (r.draft.videoProviderId || '') : (r.draft.audioProviderId || '');
       const legacyPid = r.draft.providerId || '';
-      let pid = curPid || (providerModels(legacyPid, kind).length ? legacyPid : '');
-      if (!providerModels(pid, kind).length) {
+      let pid = curPid || (modelsOf(legacyPid).length ? legacyPid : '');
+      if (!modelsOf(pid).length) {
         // 全局设置默认渠道优先于首选供应商回填（草稿无值时参数栏按全局设置跳转）
         const gpid = kind === 'image'
           ? (gs?.default_image_provider_id || '')
           : kind === 'video' ? (gs?.default_video_provider_id || '') : '';
-        pid = (gpid && providerModels(gpid, kind).length ? gpid : '')
-          || preferredProviderIdForKind(kind, apiProvidersFor(kind));
+        // 音频按通道筛供应商（避免首选供应商在该通道下无模型）
+        const pool = kind === 'audio' ? audioPool : apiProvidersFor(kind);
+        pid = (gpid && modelsOf(gpid).length ? gpid : '')
+          || preferredProviderIdForKind(kind, pool);
       }
-      const models = providerModels(pid, kind);
+      const models = modelsOf(pid);
       // 模型列表为空（供应商未就绪）时跳过：patch.model='' 会永不收敛地循环写回
       if (!models.length) return;
       const curModel = kind === 'image'
         ? (r.draft.imageModel || '')
         : kind === 'video' ? (r.draft.videoModel || '') : (r.draft.audioModel || '');
-      const legacyModel = providerModels(r.draft.model || '', kind).length ? (r.draft.model || '') : '';
+      const legacyModel = modelsOf(r.draft.model || '').includes(r.draft.model || '') ? (r.draft.model || '') : '';
       const currentModel = curModel || legacyModel;
       const gmodel = kind === 'image'
         ? (gs?.default_image_model || '')

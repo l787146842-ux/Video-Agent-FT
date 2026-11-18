@@ -5,14 +5,15 @@
 import { state, setState } from '@/stores/studio';
 import { putProviders } from '@/api/providers';
 import { showToast } from '@/stores/toast';
-import type { ApiProvider, ChatModelMeta } from '@/types';
+import type { ApiProvider, AudioCapability, ChatModelMeta } from '@/types';
 
-export type ProviderKind = 'image' | 'video' | 'chat';
+export type ProviderKind = 'image' | 'video' | 'chat' | 'audio';
 
-const MODEL_FIELD: Record<ProviderKind, 'image_models' | 'video_models' | 'chat_models'> = {
+const MODEL_FIELD: Record<ProviderKind, 'image_models' | 'video_models' | 'chat_models' | 'audio_models'> = {
   image: 'image_models',
   video: 'video_models',
   chat: 'chat_models',
+  audio: 'audio_models',
 };
 
 /** 拥有指定类型模型列表的启用供应商 */
@@ -30,6 +31,33 @@ export function providerModels(providerId: string, kind: ProviderKind): string[]
   return p[MODEL_FIELD[kind]] || [];
 }
 
+/** 指定供应商在音频通道下可选的模型。
+ *  能力清单由后端推导（audio_models_meta），前端只过滤不重算；
+ *  旧响应无 meta 时回退全部音频模型（后端仍会校验通道/模型组合）。 */
+export function audioModelsFor(providerId: string, channel: string): string[] {
+  const p = state.apiProviders.find((x) => x.id === providerId);
+  if (!p) return [];
+  const meta = p.audio_models_meta || [];
+  if (meta.length) {
+    // 有 meta 就只认该通道的模型；通道下无可用模型时返回空（不拿别的通道凑数）
+    return meta
+      .filter((m) => (m.capabilities || []).includes(channel as AudioCapability))
+      .map((m) => m.model);
+  }
+  return p.audio_models || [];
+}
+
+/** 指定音频通道下**真正可用**的供应商（已接适配器 + 该通道有模型）。
+ *
+ *  未接适配器的厂商一律不进下拉、不参与兜底选择：列出来只会让用户选中后
+ *  在提交时收到「尚未接入音频适配器」（与 API 设置页一样，能配置≠能用）。 */
+export function audioProvidersFor(channel: string): ApiProvider[] {
+  return state.apiProviders.filter(
+    (p) => p.enabled !== false && !!p.audio_adapter
+      && audioModelsFor(p.id, channel).length > 0,
+  );
+}
+
 /** 首选供应商（对齐旧版偏好顺序） */
 export function preferredProviderIdForKind(
   kind: ProviderKind,
@@ -38,6 +66,7 @@ export function preferredProviderIdForKind(
   const preferences =
     kind === 'video'
       ? ['volcengine', 'jimeng', 'apimart']
+      : kind === 'audio' ? ['custom-api-8']
       : ['custom-api', 'gemini-cli', 'custom-api-6'];
   for (const id of preferences) {
     if (providers.some((p) => p.id === id)) return id;

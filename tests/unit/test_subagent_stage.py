@@ -16,8 +16,8 @@ import src.video_agent.tools.document_tools  # noqa: F401  触发工具注册
 from src.video_agent.core import planner as pmod
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.subagent import (
-    MAIN_AGENT_DENY, PIPELINE_STAGE_KINDS, STAGE_TOOL_DENY_EXTRA, SUBAGENT_TOOL_DENY,
-    build_subagent_task, child_deny_set, resolve_stage, stage_tools,
+    PIPELINE_STAGE_KINDS, SUBAGENT_TOOL_DENY,
+    build_subagent_task, child_deny_set, resolve_stage,
 )
 from src.video_agent.state.manager import StateManager
 
@@ -111,14 +111,8 @@ def test_merged_stage_keeps_three_chapter_mapping():
     assert CAPABILITY_TOOL_STAGES["storyboard_key_elements"] == ("storyboard_ke",)
     assert CAPABILITY_TOOL_STAGES["storyboard_shots"] == ("storyboard_shot",)
     assert CAPABILITY_TOOL_STAGES["storyboard_audio"] == ("storyboard_audio",)
-    # 合并阶段的工具集 = 三原子阶段并集 ⇒ 一次委派内三件事都落得了账
-    # 2026-09-23 批2（Q3）：并入 delete_draft（建错卡可撤销）。
-    # 2026-09-23 批10（事故 4444/P1-1）：并入 patch_group（改引用不必删光重建）。
-    merged = stage_tools("storyboard_design")
-    assert merged == frozenset({
-        "storyboard_create_group", "storyboard_delete_group",
-        "storyboard_delete_draft", "storyboard_patch_group",
-        "storyboard_add_draft", "storyboard_patch_draft"})
+    # 2026-11-12 宽权限批：阶段工具集不再驱动委派面；能力映射保留供
+    # lint/stage_probes 旧探针读取，行为已不消费。
 
 
 def test_merged_stage_card_media_only_voice_card():
@@ -182,42 +176,24 @@ def test_registry_full_content_contains_all_generic_sections():
     assert "<planner>" not in entry.content
 
 
-def test_stage_deny_drops_read_skill_only():
-    """2026-09-15 1111 批（对齐 dsh inherit∩restrict）：子级面 = 主代理面 − deny。
-    stage 追加 deny read_skill（断跨阶段预读）+ 本阶段未声明的委派专属写入工具
-    （2026-09-21 批0，事故 2222/Q5）；四条硬约束两面均 deny；
-    本阶段落点工具（script_analysis_report 等）不在 deny ⇒ 子代理拿得到。"""
-    # 2026-09-21 批0：带 stage 的子级额外 deny 的 = read_skill + 本阶段未声明的
-    # MAIN_AGENT_DENY 工具（交互类 confirm/media_to_chat 无阶段认领，恒 deny）。
-    assert child_deny_set("media_generate") == (
-        SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
-        | (MAIN_AGENT_DENY - stage_tools("media_generate")))
-    # 通用委派（无 stage）不并入 MAIN_AGENT_DENY：无阶段即无阶段边界
+def test_child_deny_is_safety_only():
+    """2026-11-12 宽权限批：stage 不再裁剪工具面；子级只剩安全 deny。"""
     assert child_deny_set("") == SUBAGENT_TOOL_DENY
+    assert child_deny_set("media_generate") == SUBAGENT_TOOL_DENY
     assert child_deny_set("未知阶段") == SUBAGENT_TOOL_DENY
     for deny in (child_deny_set(""), child_deny_set("media_generate")):
         assert "run_subagent" in deny            # 防递归
         assert "image_generate" in deny and "generate_video" in deny  # 花钱留主线程
         assert "workflow_pause" in deny          # 子级不确认
-    # 阶段落点工具必须授予子代理（1111 实证 script_analysis_report 未授予断链）
-    assert "script_analysis_report" not in child_deny_set("script_analyze")
-    # 本阶段**声明**的工具必须授予
-    assert "storyboard_add_draft" not in child_deny_set("media_generate")
-    assert "storyboard_patch_draft" not in child_deny_set("media_generate")
-    # 未声明的则收走：media_generate 不建组（提示词写进既有草稿卡）
-    assert "storyboard_create_group" in child_deny_set("media_generate")
-    # 2026-09-22 批6（Q5）：合并阶段持有三原子阶段工具并集 ⇒ 建组/建卡/改卡
-    # 三件事在一次委派内全拿得到（此前分三趟派，工具面也分三份）。
-    # 2026-09-23 批2（Q3）：delete_draft 一并授予（建错卡可撤销）。
-    # 2026-09-23 批10（事故 4444/P1-1）：patch_group 一并授予（改引用不必删光重建）。
-    merged_deny = child_deny_set("storyboard_design")
-    for t in ("storyboard_create_group", "storyboard_delete_group",
-              "storyboard_delete_draft", "storyboard_patch_group",
-              "storyboard_add_draft", "storyboard_patch_draft"):
-        assert t not in merged_deny, f"合并阶段断链：{t} 被 deny"
-    # 交互类工具（面向用户动作）无任何阶段认领 → 带 stage 一律 deny
-    assert "storyboard_confirm_draft" in merged_deny
-    assert "storyboard_media_to_chat" in merged_deny
+        assert "video_assembler" in deny         # 成片导出留主线程
+        assert "storyboard_confirm_draft" in deny
+        assert "storyboard_media_to_chat" in deny
+    # 所有创作/执行工具都不再被阶段 deny
+    for t in ("script_analysis_report", "storyboard_create_group",
+              "storyboard_delete_group", "storyboard_delete_draft",
+              "storyboard_patch_group", "storyboard_add_draft",
+              "storyboard_patch_draft", "read_skill", "read_file"):
+        assert t not in child_deny_set("media_generate"), f"{t} 不应被阶段 deny"
 
 
 def test_build_subagent_task_stage_header():
@@ -229,9 +205,8 @@ def test_build_subagent_task_stage_header():
     # P1-D/R3（2026-09-16）：阶段标注只留事实行，旧解释性括号措辞退役
     assert "章节即产出规范的全部依据" not in msg
     assert "（系统已注入该阶段 Skill 章节全文" not in msg
-    # 定位语保留「方法参考」（措辞唯一源 = subagent.md DELEGATION_CONTEXT）；
-    # 2026-09-17 裁决（desc 零引导）：平台引导子句退役，产出形态归 Skill 章节
-    assert "方法参考" in msg
+    # 2026-11-12 dsh 对齐：技能内容不自动注入，由主代理在 task 里提供
+    assert "技能内容不自动注入" in msg
     assert "不得照抄章节字段小标题或清单骨架" not in msg
     assert "消化进你自己的产出内容" not in msg
     # 旧事实错误子句退役（工作台状态实为经读工具按需获取）
@@ -303,8 +278,8 @@ def test_generic_delegation_without_task_still_builds():
 
 # ---------- _launch_subagent 装配 ----------
 
-async def test_launch_stage_injects_full_main_doc(svc, monkeypatch):
-    """带 stage：注入 Skill 主文档全文（不再按阶段切章节）。"""
+async def test_launch_stage_does_not_inject_skill_doc(svc, monkeypatch):
+    """dsh 口径：带 stage 也不自动注入 Skill 主文档；主代理在 task 里写。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
     sd = _FakeSkillDocs(content="# 主文档\n\n## 制作流程\n" + "X" * 9000)
@@ -314,21 +289,18 @@ async def test_launch_stage_injects_full_main_doc(svc, monkeypatch):
         stage="media_generate")
 
     msg = captured["msg"]
-    assert sd.calls == 1
-    assert f"Skill 主文档（{SKILL}）" in msg
-    assert "## 制作流程" in msg
-    assert "章节内容截断" not in msg
+    assert sd.calls == 0
+    assert "Skill 主文档" not in msg
+    assert "## 制作流程" not in msg
     assert "本次委派阶段：媒体生成" in msg
-    # 工具面 deny + 子会话 meta 记 stage（read_skill 已解禁）
     assert captured["ctx"].subagent_deny == child_deny_set("media_generate")
-    assert "read_skill" not in captured["ctx"].subagent_deny
     child_cid = captured["ctx"].session_conversation_id
     assert svc.get_conversation_scope(child_cid).get("subagent_kind") \
         == "stage:media_generate"
 
 
-async def test_launch_oversized_doc_truncates_with_read_hint(svc, monkeypatch):
-    """主文档超预算：截断并提示子代理 read_skill 续读（委派不阻断）。"""
+async def test_launch_oversized_doc_is_not_read(svc, monkeypatch):
+    """主文档再长也不自动读取/注入；子代理拿到的只有 task。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
     sd = _FakeSkillDocs(content="Y" * 25000)
@@ -337,13 +309,13 @@ async def test_launch_oversized_doc_truncates_with_read_hint(svc, monkeypatch):
         "拆解", PlannerContext(subagent_depth=0, skill_name=SKILL),
         stage="media_generate")
     msg = captured["msg"]
-    assert sd.calls == 1
-    assert "已截断" in msg and "read_skill" in msg
-    assert len(msg) < 25000
+    assert sd.calls == 0
+    assert "Y" * 100 not in msg
+    assert len(msg) < 20000
 
 
-async def test_launch_without_stage_injects_same_full_doc(svc, monkeypatch):
-    """不带 stage（含未知 stage）：注入行为与带 stage 一致，都拿主文档全文。"""
+async def test_launch_without_stage_does_not_inject_doc(svc, monkeypatch):
+    """不带 stage（含未知 stage）：同样不自动注入主文档。"""
     captured = {}
     monkeypatch.setattr(pmod.Planner, "handle_message", _fake_child(captured))
     sd = _FakeSkillDocs(content="# 主文档\n\n## 制作流程\n" + "Z" * 9000)
@@ -352,8 +324,8 @@ async def test_launch_without_stage_injects_same_full_doc(svc, monkeypatch):
         "自由任务", PlannerContext(subagent_depth=0, skill_name=SKILL),
         stage="不存在的阶段")
     msg = captured["msg"]
-    assert sd.calls == 1
-    assert f"Skill 主文档（{SKILL}）" in msg
+    assert sd.calls == 0
+    assert "Skill 主文档" not in msg
     assert "本次委派阶段" not in msg
     assert captured["ctx"].subagent_deny == SUBAGENT_TOOL_DENY
     child_cid = captured["ctx"].session_conversation_id

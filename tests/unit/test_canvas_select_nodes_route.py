@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.video_agent.adapters.canvas_agent_session import LOCAL_AGENT_TOKEN
 from src.video_agent.config import settings
 from src.video_agent.web.routes import canvas as canvas_routes
 from src.video_agent.web.routes import config as config_routes
@@ -64,16 +65,14 @@ def config_client(tmp_path, monkeypatch):
 
 
 def test_config_embed_delivered(config_client):
-    _set_setting("infinite_canvas_url", "http://127.0.0.1:3000")
-    _set_setting("canvas_agent_url", "http://127.0.0.1:17371")
+    """L2：画布同域挂载（/canvas-app）+ 本进程 agent 端点（绝对地址）+ 本机令牌。"""
     r = config_client.get("/api/config")
     assert r.status_code == 200
     embed = r.json()["infinite_canvas_embed"]
-    assert embed == {
-        "canvas_url": "http://127.0.0.1:3000",
-        "agent_url": "http://127.0.0.1:17371",
-        "agent_token": "tok-test",
-    }
+    assert embed["canvas_url"] == "/canvas-app"
+    assert embed["agent_url"].startswith("http")
+    assert embed["agent_url"].endswith("/api/canvas/agent")
+    assert embed["agent_token"] == LOCAL_AGENT_TOKEN
     # 基础下发字段不回归
     assert "canvas_url" in r.json() and "model_fallback_enabled" in r.json()
 

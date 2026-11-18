@@ -265,9 +265,9 @@ def test_generate_video_always_resident(svc, monkeypatch):
     # 媒体生成例外：全量常驻留主代理（不受状态/纯编排裁剪影响）
     assert "generate_video" not in excluded
     assert "image_generate" not in excluded
-    # 主代理纯编排（2026-09-19）：故事板结构写入工具被结构性裁掉
-    assert "storyboard_create_group" in excluded
-    assert "storyboard_add_draft" in excluded
+    # 2026-11-12 宽权限：主代理保留故事板结构写入工具（不再纯编排裁剪）
+    assert "storyboard_create_group" not in excluded
+    assert "storyboard_add_draft" not in excluded
     # 阶段边界注释与裁剪解释已退役
     assert not getattr(ctx, "stage_note", "")
 

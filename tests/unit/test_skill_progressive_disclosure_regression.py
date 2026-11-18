@@ -81,15 +81,15 @@ def test_probe_phrase_positions():
     assert content.find(TAIL_PROBE) > 6000
 
 
-def test_system_prompt_long_skill_truncates_with_outline():
-    """通用口径：超预算主文档注入开头 + 标题目录，尾部正文靠 read_skill 续读。"""
+def test_system_prompt_long_skill_does_not_inject_body():
+    """dsh 口径：选中 Skill 只留加载指针，正文不进 system prompt。"""
     text = _pb(_base_state()).build_system_prompt(_ctx(LONG_SKILL_NAME))
-    assert BODY_PROBE in text
+    assert BODY_PROBE not in text
     assert TAIL_PROBE not in text
-    assert "Skill 目录" in text and LONG_SKILL_NAME in text
-    assert f"当前选中 Skill「{LONG_SKILL_NAME}」" in text
+    assert LONG_SKILL_NAME in text
+    assert f"当前主 Skill「{LONG_SKILL_NAME}」" in text
     assert "read_skill" in text
-    assert "标题目录" in text
+    assert "标题目录" not in text
     assert "<planner>" not in text
     # 历史注入形态措辞全部退役（压制性包壳同批退役）
     assert "【执行基准声明】" not in text
@@ -97,18 +97,15 @@ def test_system_prompt_long_skill_truncates_with_outline():
     assert "以后者为准" not in text
 
 
-def test_truncated_inject_still_surfaces_references():
-    """截断注入必须补分册清单：指针在正文后段也不能失联（2026-11-11 事故）。"""
+def test_selected_pointer_mentions_read_file_for_resources():
+    """分册不再随正文注入；指针改用 read_file（dsh read 同构）。"""
     text = _pb(_base_state()).build_system_prompt(_ctx(LONG_SKILL_NAME))
-    assert REF_PATH in text, "分册指针必须出现在注入块中（从全文提取的清单）"
+    assert "read_file" in text
+    assert "references/xxx.md" in text
 
 
-def test_style_layers_stay_out_of_context():
-    """组合激活：风格层正文零注入，只在目录段以名称可见。
-
-    注意本用例走**真实** skill 目录（风格层来自 data/skills），
-    与预算切分用例的临时目录互不影响。
-    """
+def test_stock_skills_are_user_only():
+    """2026-11-12 迁移：现存 16 个 Skill 全部 user-only。"""
     import src.video_agent.web.skill_docs as real_sd
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
@@ -116,29 +113,12 @@ def test_style_layers_stay_out_of_context():
     real_sd.SKILL_DOCS_DIR = REAL_DIR
     registry.reset_registry()
     try:
-        ctx = _ctx(PRIMARY_SKILL)
-        ctx.style_names = list(STYLE_SKILLS)
-        text = _pb(_base_state()).build_system_prompt(ctx)
-        for name in STYLE_SKILLS:
-            assert name in text, f"目录段应可见风格层「{name}」"
+        registry.sync_all(force=True)
+        entries = registry.loadable_entries()
+        assert entries, "真实 Skill 目录应有可加载条目"
+        assert all(not e.model_invocable for e in entries)
+        assert all(e.user_invocable for e in entries)
+        assert registry.model_catalog_entries() == []
     finally:
         real_sd.SKILL_DOCS_DIR = orig
         registry.reset_registry()
-
-
-def test_stock_skills_all_within_budget():
-    """存量 16 包主文档必须全部落在注入预算内（Flova 六节形态的核心理由）。
-
-    直接读真实 data/skills，不受本文件临时目录夹具影响。
-    """
-    from src.video_agent.config import settings
-    from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
-
-    limit = int(settings.skill_selected_inject_max_chars)
-    over = []
-    for doc in sorted(REAL_DIR.glob("*/SKILL.md")):
-        raw = doc.read_text(encoding="utf-8-sig")
-        _, body, _ = frontmatter.split_frontmatter(raw)
-        if len(body) > limit:
-            over.append((doc.parent.name, len(body)))
-    assert not over, f"以下主文档超注入预算 {limit}: {over}"

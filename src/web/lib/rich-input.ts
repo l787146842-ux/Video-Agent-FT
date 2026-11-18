@@ -18,13 +18,15 @@ export const SKILL_CHIP_CLASS = 'skill-chip';
 
 /**
  * 创建 Skill 引用块节点：闪电图标 + 名称的圆角块（整体选中/删除）。
- * 序列化时作为纯文本（Skill 名称）拼入消息，供后端识别与文档面板定位。
+ * 序列化为 dsh 的 `/slug` 手势（空白分隔 token），后端据此一次性注入；
+ * 不发送持久 skill_name/skill_slug，避免每轮重复注入。
  */
-export function createSkillChip(name: string): HTMLSpanElement {
+export function createSkillChip(name: string, slug: string): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = SKILL_CHIP_CLASS;
   span.contentEditable = 'false';
   span.dataset.skillName = name;
+  span.dataset.skillSlug = slug;
   span.title = `Skill：${name}`;
   const icon = document.createElement('span');
   icon.className = 'skill-chip-icon';
@@ -238,8 +240,13 @@ export function serializeEditorToParts(editor: HTMLElement): RichContentPart[] {
     }
     if (!(node instanceof HTMLElement)) return;
     if (node.classList.contains(SKILL_CHIP_CLASS)) {
-      // Skill 引用块 → 纯文本（名称）拼入消息，保证发送时携带 Skill 名称
-      textBuf += node.dataset.skillName || '';
+      // Skill 引用块 → dsh `/slug` 手势（空白分隔 token）；后端只按这个
+      // 一次性注入，不再读持久 skill_name/skill_slug。
+      const slug = node.dataset.skillSlug || node.dataset.skillName || '';
+      if (slug) {
+        const token = `/${slug}`;
+        textBuf += (textBuf && !/\s$/.test(textBuf) ? ' ' : '') + token + ' ';
+      }
       return;
     }
     if (node.classList.contains(INLINE_MEDIA_CLASS)) {

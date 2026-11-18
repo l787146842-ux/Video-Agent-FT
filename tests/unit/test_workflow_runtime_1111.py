@@ -124,5 +124,7 @@ async def test_read_skill_canonical_identity(tmp_path):
     tool = ReadSkillTool()
     params = tool.get_input_schema()(name="AI短剧一站式生成")
     result = await tool.aexecute(params)
-    assert result.success, f"canonical 归一应命中：{result.error}"
-    assert (result.data or {}).get("content")
+    # canonical 归一仍命中该技能；但现存技能全部 user-only，模型不能加载
+    assert not result.success
+    assert "not available for model invocation" in (result.error or "")
+    assert "未找到" not in (result.error or "")

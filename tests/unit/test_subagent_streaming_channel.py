@@ -152,7 +152,7 @@ def test_child_deny_set_unchanged_by_streaming():
     deny = sub.child_deny_set(_STAGE)
     assert "run_subagent" in deny, "结构防递归被破坏"
     assert "workflow_pause" in deny, "子级不该持有确认工具"
-    assert "read_skill" in deny, "stage 模式的跨阶段预读隔离被破坏"
+    assert "read_skill" not in deny, "通用 skill 迁移后子代理应可读分册"
 
 
 def test_planner_still_constructs_for_launch():

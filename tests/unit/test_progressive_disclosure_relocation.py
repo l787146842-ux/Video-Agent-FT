@@ -71,7 +71,7 @@ def test_non_tool_clauses_kept(protocol_text: str):
     工具描述，拆解建组归 storyboard_create_group 描述 D-17 既有承载。）"""
     for kept in (
         "完成声称必须真的调用了对应工具",
-        "由所选 Skill 文档规定",
+        "由 Skill 文档规定",
         "渐进式披露总纲",
     ):
         assert kept in protocol_text, f"平台层条款丢失: {kept}"

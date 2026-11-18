@@ -9,8 +9,9 @@ import { apiPost, apiFetch } from './client';
 import type { TaskResult } from '@/types';
 import type {
   AddGenerationLogResponse,
+  AudioGenRequest,
   BatchImageGenRequest, GenLogRequest, GenerationLogEntry, GenerationLogsResponse,
-  ImageGenRequest, VideoGenRequest,
+  ImageGenRequest, VideoGenRequest, VoiceCloneRequest,
 } from '@/types/api.generated';
 
 // ===== 请求体（以生成物为唯一来源；必填收窄与精化字段用交集登记） =====
@@ -54,6 +55,22 @@ export interface VideoTaskResponse {
   images?: string[];
 }
 
+/** 音频生成请求：生成物字段全可选，前端语义必填收窄 */
+export type GenerateAudioRequest = AudioGenRequest & {
+  channel: string;
+  provider_id: string;
+  model: string;
+  draft_id: string;
+  draft_type: string;
+  references?: Array<{ url: string }>;
+};
+
+export interface AudioTaskResponse {
+  task_id?: string;
+  status?: string;
+  audio_url?: string;
+}
+
 // ===== API 调用 =====
 
 /** 提交生图任务 */
@@ -76,12 +93,55 @@ export function getVideoTaskStatus(taskId: string) {
   return apiFetch<TaskResult>(`/api/tasks/${encodeURIComponent(taskId)}`);
 }
 
+/** 提交音频生成任务（音色设计/语音合成/背景音乐/音效） */
+export function submitAudioTask(body: GenerateAudioRequest) {
+  return apiPost<AudioTaskResponse>('/api/generate/audio', body);
+}
+
+/** 查询音频任务状态 */
+export function getAudioTaskStatus(taskId: string) {
+  return apiFetch<TaskResult>(`/api/generate/audio/${encodeURIComponent(taskId)}`);
+}
+
+export interface VoiceCloneResponse {
+  voice_id?: string;
+  preview_url?: string;
+  target_model?: string;
+  provider_id?: string;
+}
+
+/** 上传参考音频创建音色（声音复刻）；音色与 target_model（后续合成模型）绑定 */
+export function cloneVoice(body: VoiceCloneRequest & {
+  provider_id: string;
+  target_model: string;
+  audio_url: string;
+}) {
+  return apiPost<VoiceCloneResponse>('/api/audio/voices', body);
+}
+
+/** 平台音色条目（列表接口自带试听地址；无则前端禁用试听） */
+export interface VoiceOption {
+  voice_id: string;
+  name?: string;
+  preview_url?: string;
+  category?: string;
+}
+
+/** 拉取平台账号下的音色清单（当前仅 ElevenLabs 接通；其他平台后端明确报错） */
+export function listVoices(params: { provider_id: string; model: string }) {
+  const qs = new URLSearchParams({
+    provider_id: params.provider_id,
+    model: params.model,
+  });
+  return apiFetch<{ voices: VoiceOption[] }>(`/api/audio/voices?${qs.toString()}`);
+}
+
 // ===== 处理中任务（刷新后恢复读秒用） =====
 
 export interface ActiveGenTask {
   task_id: string;
   draft_id: string;
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio';
   created_at: number;
 }
 

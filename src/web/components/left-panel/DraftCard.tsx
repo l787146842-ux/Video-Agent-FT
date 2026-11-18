@@ -1,5 +1,8 @@
-import { Show, createSignal, onMount, onCleanup } from 'solid-js';
-import { FiLogOut, FiMessageSquare, FiTrash2, FiVideo, FiMusic } from 'solid-icons/fi';
+import { Show, Switch, Match, createSignal, onMount, onCleanup } from 'solid-js';
+import {
+  FiCheck, FiCheckCircle, FiImage, FiLogOut, FiMessageSquare, FiMusic, FiTrash2, FiVideo,
+  FiVolume2, FiXCircle,
+} from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { showContextMenu } from '@/components/shared/ContextMenu';
@@ -8,6 +11,7 @@ import { checkpointHistory, performUndo } from '@/stores/history';
 import { requestInsertMedia, requestInsertText } from '@/lib/chat/chat-input-bridge';
 import { draftToInlineMedia } from '@/lib/rich-input';
 import { safeUrl } from '@/lib/utils';
+import { DraftCardGenRing } from './DraftCardGenRing';
 import type { Draft, DraftType } from '@/types';
 
 /**
@@ -30,6 +34,8 @@ export function DraftCard(props: {
   onDragEnd?: () => void;
   /** 悬停回调（分组级微调框定位用） */
   onHover?: (hovering: boolean) => void;
+  /** 所属分组是否含图片/视频卡（绑定音频「变小」的判定：图5 形态只在图文组内） */
+  groupHasVisual?: boolean;
 }) {
   // 选中判定必须同时匹配 id 与类型：防止跨 tab 同 id 卡双高亮
   const selected = () => state.selectedDraftId === props.draft.id && state.selectedType === props.type;
@@ -58,13 +64,30 @@ export function DraftCard(props: {
   });
   onCleanup(() => observer?.disconnect());
 
-  const bgStyle = () => {
+  /** 卡片底图地址：图片媒体用 imgUrl；视频尚无 videoUrl 时用 imgUrl 作首帧占位
+   *  （与 bgStyle 同一判定，防「有底图又叠占位符号」两层打架） */
+  const backdropUrl = () => {
     const d = props.draft;
     const imgUrl = safeUrl(d.imgUrl || '');
-    // 图片媒体用图片背景；视频尚无 videoUrl 时用首帧图片占位
-    const showImgBg = imgUrl && (d.mediaType === 'image' || (d.mediaType === 'video' && !d.videoUrl));
-    if (showImgBg) {
-      return { 'background-image': `url('${imgUrl}')` };
+    if (!imgUrl) return '';
+    if (d.mediaType === 'image') return imgUrl;
+    if (d.mediaType === 'video' && !d.videoUrl) return imgUrl;
+    return '';
+  };
+
+  /** 是否已有可展示的媒体本体（图片底图 / 视频首帧 / 音频文件）：
+   *  决定占位符号是否退场与边框实线/虚线（两态分形的唯一判据） */
+  const hasVisual = () => {
+    const d = props.draft;
+    if (d.mediaType === 'audio') return !!d.audioUrl;
+    if (d.mediaType === 'video') return !!d.videoUrl || !!backdropUrl();
+    return !!backdropUrl();
+  };
+
+  const bgStyle = () => {
+    const url = backdropUrl();
+    if (url) {
+      return { 'background-image': `url('${url}')` };
     }
     // 分镜紫灰 / 其他深蓝（对齐旧版配色）
     return {
@@ -79,23 +102,44 @@ export function DraftCard(props: {
     return u.includes('#') ? u : `${u}#t=0.1`;
   };
 
-  /** 是否已有媒体文件（上传/生成后）：有则隐藏所有文字标识 */
-  const hasMedia = () => {
-    const d = props.draft;
-    if (d.mediaType === 'video') return !!d.videoUrl;
-    if (d.mediaType === 'audio') return !!d.audioUrl;
-    return !!d.imgUrl;
+  /** 生成失败态：卡面文字已摘除，状态改由非文字信号承载
+   *  （危险色窄边 + 危险色占位符号），否则「失败」与「还没生成」视觉上无法区分
+   *  ——真实数据里 `生成失败` 卡 11 张，是空卡上原本唯一的状态出口 */
+  const failed = () => (props.draft.tag ?? '').trim() === '生成失败';
+
+  /** 关键元素组内的角色音色卡（对齐 flova 小图标子卡）：半尺寸、卡面只留音频符号；
+   *  2026-10-26 绑定批：图文组内「已绑定」的音频卡同样缩为小卡（图5 形态），
+   *  纯音频组（音频页签）保持原尺寸（用户裁决：仅图文组内）。 */
+  const isVoiceCard = () => props.draft.mediaType === 'audio' && (
+    props.type === 'keyElement' || (!!props.draft.bound && !!props.groupHasVisual));
+  /** 可绑定判定：卡上有任意媒体才允许绑定（空卡无可绑定对象） */
+  const hasAnyMedia = () => !!(props.draft.imgUrl || props.draft.videoUrl || props.draft.audioUrl);
+
+  /** 悬停 title：卡面文字已全部摘除，名称+描述都走 title 兜底（信息不丢只换载体）；
+   *  生成失败态在 title 头部点明，补足「非文字信号」读不出的语义 */
+  const cardTitle = () => {
+    const label = (props.draft.label ?? '').trim();
+    const desc = (props.draft.desc ?? '').trim();
+    const head = failed() ? '生成失败' : '';
+    return [head, label, desc].filter(Boolean).join('　') || undefined;
   };
 
-  /** 关键元素组内的角色音色卡（对齐 flova 小图标子卡）：半尺寸、卡面只留音频符号、
-   *  不渲染名称/描述文字（内容经悬停 title 与中间预览框承载）；音频 tab 的 BGM/旁白卡不受影响 */
-  const isVoiceCard = () => props.type === 'keyElement' && props.draft.mediaType === 'audio';
+  /** 未生成媒体的占位符号（图片/视频/音频各一，替代原卡面文字，一眼分类型） */
+  const placeholderIcon = () => {
+    const size = isVoiceCard() ? 11 : 15;
+    switch (props.draft.mediaType) {
+      case 'video': return <FiVideo size={size} />;
+      case 'audio': return <FiVolume2 size={size} />;
+      default: return <FiImage size={size} />;
+    }
+  };
 
-  /** 悬停 title：音色卡文字已隐藏，名称+描述都走 title 兜底；其余卡保持原 desc 兜底 */
-  const cardTitle = () => {
-    const desc = (props.draft.desc ?? '').trim();
-    if (isVoiceCard()) return [props.draft.label, desc].filter(Boolean).join('　') || undefined;
-    return desc || undefined;
+  /** 可访问名称：卡面零文字后，按钮的可读名不能依赖卡面文本（读屏会读成空按钮）；
+   *  title 只负责鼠标悬停，aria-label 负责读屏——两者同源不同通道 */
+  const cardAriaLabel = () => {
+    const label = (props.draft.label ?? '').trim() || '未命名草稿';
+    const state = failed() ? '生成失败' : hasVisual() ? '已生成' : '未生成';
+    return `${label}（${state}）`;
   };
 
   function addToChat() {
@@ -138,8 +182,22 @@ export function DraftCard(props: {
     studioActions.moveDraftToAssets(props.type, props.groupId, props.draft.id);
   }
 
+  function toggleBound() {
+    const next = !props.draft.bound;
+    studioActions.bindDraftLocal(props.type, props.groupId, props.draft.id, next);
+    showToast(next ? '已绑定为分组媒体（后续生成只认它）' : '已取消绑定', 'success');
+  }
+
   function onContextMenu(e: MouseEvent) {
+    const bindItem = hasAnyMedia()
+      ? [{
+        label: props.draft.bound ? '取消绑定' : '绑定为分组媒体',
+        icon: props.draft.bound ? FiXCircle : FiCheckCircle,
+        onClick: toggleBound,
+      }]
+      : [];
     showContextMenu(e, [
+      ...bindItem,
       { label: '添加到对话', icon: FiMessageSquare, onClick: addToChat },
       { label: '删除此草稿', icon: FiTrash2, danger: true, onClick: handleDelete },
       { label: '移除到未归类素材', icon: FiLogOut, onClick: handleMoveOut },
@@ -167,7 +225,8 @@ export function DraftCard(props: {
       <div
         role="button"
         tabIndex={0}
-        class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''} ${isVoiceCard() ? 'draft-card--voice' : ''}`}
+        aria-label={cardAriaLabel()}
+        class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''} ${isVoiceCard() ? 'draft-card--voice' : ''} ${hasVisual() ? 'draft-card--filled' : 'draft-card--empty'} ${failed() ? 'draft-card--failed' : ''}`}
         style={bgStyle()}
         title={cardTitle()}
         onClick={() => studioActions.selectDraftOnCard(props.draft.id, props.type)}
@@ -189,35 +248,37 @@ export function DraftCard(props: {
             <FiVideo size={11} />
           </span>
         </Show>
-        {/* 音频媒体：音符 + 波形标识（音色卡缩小图标） */}
+        {/* 音频媒体：已生成 → 音符+波形；未生成 → 广播符号占位（图4 口径） */}
         <Show when={props.draft.mediaType === 'audio'}>
-          <div class="draft-card-audio-indicator" title="音频">
-            <FiMusic size={isVoiceCard() ? 11 : 15} />
-            <div class="draft-card-wave">
-              <span /><span /><span /><span /><span />
-            </div>
+          <Switch>
+            <Match when={props.draft.audioUrl}>
+              <div class="draft-card-audio-indicator" title="音频">
+                <FiMusic size={isVoiceCard() ? 11 : 15} />
+                <div class="draft-card-wave">
+                  <span /><span /><span /><span /><span />
+                </div>
+              </div>
+            </Match>
+            <Match when={!props.draft.audioUrl}>
+              <div class="draft-card-audio-indicator is-empty" title="音频（未生成）">
+                <FiVolume2 size={isVoiceCard() ? 12 : 17} />
+              </div>
+            </Match>
+          </Switch>
+        </Show>
+        {/* 图片 / 视频未生成：卡面只留类型占位符号（不再渲染名称/描述/状态文字） */}
+        <Show when={!hasVisual() && props.draft.mediaType !== 'audio'}>
+          <div class="draft-card-placeholder-icon" title="尚未生成">
+            {placeholderIcon()}
           </div>
         </Show>
-        {/* 文字标识（状态标签 + 名称 + 描述）仅在空卡片时显示；有媒体后隐藏；音色卡恒隐藏 */}
-        <Show when={!hasMedia() && !isVoiceCard()}>
-          <Show when={props.draft.tag}>
-            <span
-              class="draft-card-tag"
-              style={{
-                background: props.type === 'shot'
-                  ? 'color-mix(in srgb, var(--accent-purple) 85%, transparent)'
-                  : 'color-mix(in srgb, var(--accent-blue) 85%, transparent)',
-              }}
-            >
-              {props.draft.tag}
-            </span>
-          </Show>
-          <span class="draft-card-label">
-            {props.draft.label}
+        {/* 生成中读秒环（2026-10-26 用户裁决：左栏卡片与中间预览框同源同形态） */}
+        <DraftCardGenRing draft={props.draft} />
+        {/* 绑定绿勾（细黑边框保证可见）：该卡媒体为分组同类媒体的采用媒体 */}
+        <Show when={props.draft.bound}>
+          <span class="draft-card-bound-badge" title="已绑定为分组媒体（后续生成只认它）">
+            <FiCheck size={9} />
           </span>
-          <Show when={(props.draft.desc ?? '').trim()}>
-            <span class="draft-card-desc">{props.draft.desc}</span>
-          </Show>
         </Show>
       </div>
       {/* 小标编号：组号-卡序号（拖动排序后自动重排，Agent 可按此定位） */}

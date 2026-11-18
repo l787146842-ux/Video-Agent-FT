@@ -36,6 +36,19 @@ export function ParamSelect(props: {
   let selectRef: HTMLSelectElement | undefined;
   const currentLabel = () =>
     props.options.find((o) => o.value === props.value)?.label || props.value || '';
+  // 选项被重建时，原生 select 会丢掉选中项并自动回到首项；而 props.value 未变时
+  // Solid 不会再写 value ⇒ 界面显示首项、状态却是另一项（实证：选好音频厂商后
+  // 一动模型，厂商下拉跳回第一项「阿里百炼」）。选项落定后再把选中值对齐一次。
+  createEffect(() => {
+    const value = props.value;
+    const options = props.options;
+    queueMicrotask(() => {
+      const el = selectRef;
+      if (!el || el.value === value) return;
+      // 值不在选项里（模型列表待收敛）时不强行写，交给上层收敛逻辑
+      if (options.some((o) => o.value === value)) el.value = value;
+    });
+  });
   // 选中项变化时重新测量：短名字框就短，长名字框跟着变长，永不裁半截。
   // rAF 延后到下一帧再量：组件处于 <Show>/<Switch> 动态分支内时，effect 首跑时
   // 元素尚未插入文档，测得的宽度恒为 0（曾导致宽度永远落在 64px 下限，文字被裁）

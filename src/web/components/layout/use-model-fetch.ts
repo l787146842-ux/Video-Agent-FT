@@ -54,6 +54,8 @@ export function useModelFetch(
         total: all.length,
         protocol: data.protocol ?? 'openai',
       });
+      // 平台无 /models 时后端回填预置清单：这不是失败，要让用户知道清单来源
+      if (data.note) showToast(data.note, 'info', 5000);
     } catch (e) {
       showToast(`拉取模型失败：${(e as Error).message}`, 'error');
     }

@@ -240,6 +240,8 @@ _STRICT_INPUTS = [
     "src.video_agent.tools.canvas_tools:CanvasAddNodeInput",
     "src.video_agent.tools.canvas_tools:CanvasUpdateNodeInput",
     "src.video_agent.tools.canvas_tools:CanvasDeleteNodeInput",
+    "src.video_agent.tools.canvas_tools:CanvasGroupNodesInput",
+    "src.video_agent.tools.canvas_tools:CanvasUngroupNodesInput",
     "src.video_agent.tools.canvas_tools:CanvasBatchUpdateInput",
     "src.video_agent.tools.canvas_tools:CanvasBatchNodeInput",
 ]

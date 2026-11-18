@@ -31,6 +31,7 @@ def _fake_backend() -> MagicMock:
     fake = MagicMock(name="CanvasBackend")
     fake.base_url = "http://canvas-fixture:3000"
     fake.is_online = AsyncMock(return_value=True)
+    fake.is_site_reachable = AsyncMock(return_value=True)
     fake.list_canvases = AsyncMock(return_value=[
         {"id": "c1", "title": "画布A", "kind": "smart", "updated_at": 100, "deleted_at": None},
     ])
@@ -200,11 +201,25 @@ class TestCanvasListRoute:
         assert resp.status_code == 200
         data = resp.json()
         assert data["canvas_online"] is True
+        assert data["canvas_reachable"] is True
         assert data["canvases"][0]["id"] == "c1"
         assert data["canvases"][0]["kind"] == "smart"
 
-    def test_list_offline(self, client, fake):
+    def test_list_agent_offline_but_service_reachable(self, client, fake):
+        """画布页未连 agent：功能标志 False，但画布仍可加载（reachable True）"""
         fake.is_online = AsyncMock(return_value=False)
         resp = client.get("/api/canvas/list")
         assert resp.status_code == 200
-        assert resp.json() == {"canvases": [], "canvas_online": False}
+        assert resp.json() == {
+            "canvases": [], "canvas_online": False, "canvas_reachable": True,
+        }
+
+    def test_list_service_unreachable(self, client, fake):
+        """未同域挂载且外部站点探测失败 → 不可达（回退分支）。"""
+        fake.is_site_reachable = AsyncMock(return_value=False)
+        with patch("src.video_agent.web.routes.canvas._canvas_app_bundled", return_value=False):
+            resp = client.get("/api/canvas/list")
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "canvases": [], "canvas_online": False, "canvas_reachable": False,
+        }

@@ -522,8 +522,14 @@ async def test_launch_subagent_shares_parent_state_manager(svc, monkeypatch):
 def test_generic_deny_invariants():
     """通用 deny 不变式（dsh inherit∩restrict）：deny 只收硬约束且均为真实在册工具。"""
     from src.video_agent.core.subagent import SUBAGENT_TOOL_DENY
+    from src.video_agent.tools import (
+        register_assembly_tools, register_document_tools,
+    )
     from src.video_agent.tools.manager import ToolManager
 
+    # 与用例顺序解耦：前置用例可能清理过全局 ToolManager
+    register_document_tools()
+    register_assembly_tools()
     deny = SUBAGENT_TOOL_DENY
     assert deny
     assert "run_subagent" in deny

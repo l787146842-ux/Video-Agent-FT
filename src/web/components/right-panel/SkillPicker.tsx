@@ -52,10 +52,17 @@ export function SkillPicker() {
     setOpen(!open());
   }
 
-  /** 「+」/卡片点击：激活（写项目态 + 后端留痕，批 C）并把名称以引用块插入输入框 */
+  /** Skill.id 形如 `doc:<slug>`；老数据兜底读 skill.slug。 */
+  function slugOf(skill: Skill): string {
+    if (skill.id.startsWith('doc:')) return skill.id.slice(4);
+    return String((skill as { slug?: string }).slug || '');
+  }
+
+  /** 「+」/卡片点击：把 `/slug` 芯片插入输入框（只随下一条消息发送一次）；
+   * 同时保留 activeSkill 作为 UI 展示，不再驱动后端每轮注入。 */
   function insertSkillToInput(skill: Skill) {
     void activateSkill(skill.id, 'user');
-    requestInsertSkill(skill.name);
+    requestInsertSkill(skill.name, slugOf(skill));
     setOpen(false);
     showToast(t('rp.skill.inserted', { name: skill.name }), 'success');
   }

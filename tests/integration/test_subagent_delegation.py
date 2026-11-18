@@ -236,14 +236,11 @@ async def test_stage_delegation_injects_full_main_doc(svc, fakestop_off):
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
     assert "本次委派阶段：媒体生成" in task_text
-    # Flova 六节骨架（2026-11-11）：主文档全文注入；「提示词写法/媒体生成」的
-    # 长细节已下沉 references/ 分册，子代理据主文档的路由段自行 read_skill。
-    assert "内切镜时长估算" in task_text, "主文档提示词路由未注入"
-    assert "## 六、Reference 路由" in task_text
-    assert "references/媒体生成.md" in task_text
-    assert "references/提示词写作.md" in task_text
+    # dsh 口径：平台不再自动注入 Skill 正文；主代理在 task 里写
+    assert "内切镜时长估算" not in task_text
+    assert "## 六、Reference 路由" not in task_text
+    assert "references/媒体生成.md" not in task_text
     assert "<media_generator>" not in task_text
-    assert "章节内容截断" not in task_text
 
 
 async def test_stage_delegation_storyboard_design(svc, fakestop_off):
@@ -257,8 +254,8 @@ async def test_stage_delegation_storyboard_design(svc, fakestop_off):
     planner = Planner(state_manager=svc, llm_adapter=None, tool_manager=ToolManager)
     main_excluded = planner._compute_excluded_tools(
         PlannerContext(skill_name=SKILL, use_studio_context=True))
-    assert "storyboard_create_group" in main_excluded
-    assert "storyboard_patch_draft" in main_excluded
+    assert "storyboard_create_group" not in main_excluded
+    assert "storyboard_patch_draft" not in main_excluded
 
     adapter = _ScriptedAdapter([
         # 1) 父：委派故事板设计阶段（关键元素+分镜+音频一次做完，批6/Q5）
@@ -296,25 +293,16 @@ async def test_stage_delegation_storyboard_design(svc, fakestop_off):
     task_text = next(str(m.get("content") or "") for m in child_first
                      if m.get("role") == "user")
     assert "本次委派阶段：故事板设计" in task_text
-    # Flova 六节骨架（2026-11-11）：故事板设计干货在第五节，结构骨架在第二节。
-    assert "分镜语法三件套" in task_text, "故事板设计干货未注入"
-    assert "## 二、项目结构规划" in task_text
-    assert "章节内容截断" not in task_text
+    # dsh 口径：平台不自动注入技能正文
+    assert "分镜语法三件套" not in task_text
+    assert "## 二、项目结构规划" not in task_text
 
 
-async def test_key_elements_child_can_build_voice_card_but_not_image_card(
+async def test_key_elements_child_can_build_voice_and_image_cards(
         svc, fakestop_off):
-    """批4 端到端（用户裁决）/ 批6 阶段改名：故事板设计子代理**能**建音色卡、
-    **不能**建图像卡。
+    """2026-11-12 宽权限：故事板设计子代理可同时建音色卡与图像卡。
 
-    真过闸机链、真写工作台（只把模型换成脚本）：
-    ① 子代理建 mediaType=audio 的音色卡 → 放行落账（该阶段的正经产出，
-       Skill 明文「声音特征单独登记为 key_element_audio」）；
-    ② 子代理建 mediaType=image 的图像卡 → **被建卡媒体闸拒收**、不落账
-       （用户裁决：图像卡含壳与提示词均归 write_media_prompt 阶段）；
-    ③ 拒收文案要告诉模型"去哪里做"，防其原地重试。
-    批6（Q5）后本阶段名 = storyboard_design；允许集 2026-10-21 用户裁决
-    收窄为 {audio}（只剩角色音色卡，分镜视频壳卡同归媒体生成阶段）。
+    阶段建卡白名单退役；只保留工具自身 schema（mediaType/audioType 枚举）。
     """
     adapter = _ScriptedAdapter([
         # 1) 父：委派故事板设计阶段
@@ -355,17 +343,12 @@ async def test_key_elements_child_can_build_voice_card_but_not_image_card(
     ke = svc.state_dict.get("keyElements") or []
     assert any(g.get("title") == "Element_程心" for g in ke), "元素组未落账"
     drafts = [d for g in ke for d in (g.get("drafts") or [])]
-    assert len(drafts) == 1, f"应只落 1 张音色卡，实际 {len(drafts)} 张：{drafts}"
-    assert drafts[0].get("mediaType") == "audio", "落账的应是音色卡"
-    assert drafts[0].get("timbre"), "音色卡应带音色描述"
-    # ② 图像卡未落账（被拒）
-    assert not [d for d in drafts if d.get("mediaType") == "image"], \
-        "图像卡被拒收后不得落账"
+    assert len(drafts) == 2, f"音色卡与图像卡都应落账，实际 {len(drafts)} 张：{drafts}"
+    audio = [d for d in drafts if d.get("mediaType") == "audio"]
+    image = [d for d in drafts if d.get("mediaType") == "image"]
+    assert audio and audio[0].get("timbre"), "音色卡应落账并带音色描述"
+    assert image, "宽权限下图像卡不再被阶段闸拒收"
     assert "关键元素已完成" in (result.text or "")
-
-    # ③ 拒收文案指向正确阶段（回喂给子代理的 tool 结果里可见）
-    #    子代理被拒后会带着 tool 结果再发一轮，故在**全部**调用里搜（索引不稳）
-    #    2026-10-21 裁决后允许集收窄为 audio，文案随之变化
+    # 业务型建卡媒体闸已退役：回喂里不应再出现旧拒收文案
     blob = json.dumps(adapter.calls, ensure_ascii=False)
-    assert "只允许 mediaType=audio" in blob, "建卡媒体闸未生效（图像卡未拒收）"
-    assert "media_generate" in blob, "拒收文案须告诉模型去哪里建图像卡"
+    assert "只允许 mediaType=audio" not in blob

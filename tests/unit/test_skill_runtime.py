@@ -95,9 +95,9 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("演示防虚报")
-    # 防虚报条款（纪律第 9 条）随选中块挂回在场；planner 段探针经按需注入在场（B1）
+    # 防虚报条款（纪律第 3 条）随选中块在场；正文不常驻
     assert "必须真的调用" in block and "才可声称完成" in block
-    assert "UNIQUE_BODY_MARK_FX" in block
+    assert "UNIQUE_BODY_MARK_FX" not in block
     # 防虚报条款外置单家仍在场（宪法 Rule 6 单一事实源）
     discipline = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
     assert "必须真的调用" in discipline and "才可声称完成" in discipline
@@ -130,10 +130,11 @@ def test_selected_block_flow_body_budget_injection():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("流程")
-    # 正文头部预算注入：阶段逻辑在场；执行器形态专属段保持退役
-    assert "阶段逻辑" in block
-    assert "script_analyze" in block
-    assert "== 当前 Skill 的流程基线" not in block  # 执行器形态专属段已退役
+    # dsh 口径：正文不常驻，只给 read_skill 指针
+    assert "阶段逻辑" not in block
+    assert "script_analyze" not in block
+    assert "read_skill" in block
+    assert "== 当前 Skill 的流程基线" not in block
 
 
 # test_add_group_badge_label_persisted_and_patchable 已随 Q2 裁决 2026-09-01 退役删除：

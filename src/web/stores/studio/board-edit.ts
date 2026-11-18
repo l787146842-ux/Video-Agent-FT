@@ -225,4 +225,29 @@ export const boardEditActions = {
     }));
     persistBoard();
   },
+
+  /** 绑定/解绑卡媒体（2026-10-26 用户裁决）：绑定后该卡为所属分组「同类媒体」的
+   *  采用媒体（后续生成只认它）；同组同类型唯一——绑新卡自动解绑旧卡；
+   *  右键菜单与出图成功自动绑定共用本入口；仅对有媒体的卡生效。 */
+  bindDraftLocal(type: DraftType, groupId: string, draftId: string, bound: boolean) {
+    const field = fieldForType(type);
+    const kindOf = (d: Draft) => d.mediaType
+      || (d.imgUrl ? 'image' : d.videoUrl ? 'video' : d.audioUrl ? 'audio' : '');
+    setState(field, (prev: AnyGroup[]) => prev.map((g) => {
+      if (g.id !== groupId) return g;
+      const target = (g.drafts || []).find((d) => d.id === draftId);
+      if (!target) return g;
+      const kind = kindOf(target);
+      return {
+        ...g,
+        drafts: (g.drafts || []).map((d) => {
+          if (d.id === draftId) return d.bound === bound ? d : { ...d, bound };
+          // 绑定唯一性：同组同类型旧绑定自动解除
+          if (bound && d.bound && kind && kindOf(d) === kind) return { ...d, bound: false };
+          return d;
+        }),
+      };
+    }));
+    persistBoard();
+  },
 };

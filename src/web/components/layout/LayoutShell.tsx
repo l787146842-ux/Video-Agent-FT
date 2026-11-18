@@ -137,7 +137,6 @@ export function LayoutShell(props: ParentProps) {
       chatModels: cfg?.chat_models,
       imageModels: cfg?.image_models,
       videoModels: cfg?.video_models,
-      canvasUrl: cfg?.canvas_url,
       // 仅保留启用的供应商（对齐旧逻辑）
       providers: (provs?.providers || []).filter((p) => p.enabled !== false),
       skills: skills ?? undefined,

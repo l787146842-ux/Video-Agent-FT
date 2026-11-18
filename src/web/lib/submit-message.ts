@@ -186,12 +186,11 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
   // 前端不再发送 body.messages 窗口——窗口滑动每轮改写 history 首条字节，
   // 是前缀缓存第一层击穿根因（展示源本就是服务端 chatMessages 快照）
 
-  // Skill 写入文档：仅当消息中携带了 Skill 引用块（名称在消息里）时才登记。
-  let skillSlug = '';
-  if (skill && skill.name && message.includes(skill.name) && skill.id.startsWith('doc:')) {
-    skillSlug = skill.id.slice(4);
-    studioActions.markSkillUsed(skillSlug);
-  }
+  // Skill 使用登记：只有消息里真的带了 `/slug` 手势时才记 usedSkills；
+  // 不再靠“选中态”每轮登记（dsh 用户手势是一次性的）。
+  const _skillSlug = skill && skill.id.startsWith('doc:') ? skill.id.slice(4) : '';
+  const skillSlug = _skillSlug && message.includes(`/${_skillSlug}`) ? _skillSlug : '';
+  if (skillSlug) studioActions.markSkillUsed(skillSlug);
   const skillBlocks = skillSlug ? [skill!.name] : [];
 
   // 暂停回应结构化标记本地同点回填（2026-09-21 A 批）：实时路径此前只走后端
@@ -235,9 +234,8 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
     context_mode: 'studio',
     attachments,
     content_parts: parts,
+    // 仅当本条消息带 `/slug` 时上报，供 usedSkills 登记；不再作为注入依据
     skill_slug: skillSlug,
-    // 渐进式披露：后端只注入 Skill 目录，选中项仅作相关性标注
-    skill_name: skill?.name || '',
     // 引用块随消息持久化，刷新后气泡里的文档/Skill 块可重建
     doc_blocks: docBlocks,
     skill_blocks: skillBlocks,

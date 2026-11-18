@@ -75,6 +75,8 @@ export async function generateImage(): Promise<void> {
       void pollAndPreviewImage(data.task_id, draft.id);
     } else if (data.images?.length) {
       patchDraft(draft.id, draftType, { mediaType: 'image', genType: 'image', imgUrl: data.images[0], videoUrl: '', audioUrl: '', tag: '已生成' });
+      // 2026-10-26 用户裁决：出图成功自动绑定（同组同类型唯一）
+      studioActions.bindDraftLocal(rec?.type || draftType, rec?.group.id || '', draft.id, true);
       showToast('图片已生成！', 'success');
     } else {
       showToast('提交成功，等待异步生成', 'info');
@@ -149,6 +151,8 @@ export async function generateVideo(): Promise<void> {
     const videoUrl = data.video_url || data.videos?.[0] || data.images?.[0];
     if (videoUrl) {
       patchDraft(draft.id, draftType, { mediaType: 'video', genType: 'video', videoUrl, imgUrl: '', audioUrl: '', tag: '已生成' });
+      // 2026-10-26 用户裁决：视频出片成功同样自动绑定（同组同类型唯一）
+      studioActions.bindDraftLocal(rec?.type || draftType, rec?.group.id || '', draft.id, true);
       showToast('视频已生成！', 'success');
     } else if (data.task_id) {
       registerManualTask(data.task_id); // 手动路径自行轮询写回，全局事件总线跳过
@@ -198,10 +202,10 @@ function selectedAudioGroup(): { group: AnyGroup; type: DraftType } | null {
  *      情绪/配器）根本不参与规划。
  *
  * 新口径：**以音频组的 desc 为输入**；组内没有卡时自动建一张承接卡（承载规划结果
- * 与后续音频模型产出），已有卡则写回该卡。生成通道打通后（用户将接入音频模型），
- * 只需把 `canvasLlm` 换成真实音频生成调用，本条链路的输入输出契约不变。
+ * 与后续音频模型产出），已有卡则写回该卡。真实音频生成（音色设计/音乐/音效/合成）
+ * 走 `lib/audio-actions.ts` → `/api/generate/audio`；本函数只产出规划文本。
  */
-export async function generateAudio(): Promise<void> {
+export async function generateAudioPlan(): Promise<void> {
   const target = selectedAudioGroup();
   if (!target) {
     showToast('请先在左侧「音频」页签选中一个音频组', 'warning');

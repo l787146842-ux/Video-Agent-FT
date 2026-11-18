@@ -82,6 +82,21 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+/** POST 并返回原始 Response（SSE 流式端点用）：鉴权头与错误信封同源，
+ * 帧流解析交调用方（响应体不是单个 JSON）。 */
+export async function apiPostStream(
+  path: string, body: unknown, signal?: AbortSignal,
+): Promise<Response> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...buildAuthHeaders() },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw await readError(res);
+  return res;
+}
+
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, {
     method: 'PUT',

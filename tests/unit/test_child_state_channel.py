@@ -121,7 +121,7 @@ async def test_no_prune_param_and_main_path_unchanged(svc, monkeypatch):
         "分析剧本", PlannerContext(subagent_depth=0, skill_name=SKILL),
         stage="script_analyze")
     assert captured["ctx"].subagent_deny == child_deny_set("script_analyze")
-    assert "注入 Skill 章节" in captured["msg"]
+    assert "Skill 主文档" not in captured["msg"], "平台不再自动转发技能全文"
 
 
 def test_prompt_sections_key_order_unchanged():

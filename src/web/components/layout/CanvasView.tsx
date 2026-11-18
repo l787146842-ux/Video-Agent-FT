@@ -1,5 +1,5 @@
 import {
-  createSignal, createEffect, onMount, Show,
+  createSignal, createEffect, onMount, onCleanup, Show,
 } from 'solid-js';
 import {
   FiChevronLeft, FiChevronRight, FiImage, FiRefreshCw,
@@ -7,8 +7,9 @@ import {
 import { useSplitter } from '@/hooks/use-splitter';
 import RightPanel from '@/components/right-panel/RightPanel';
 import {
-  getCanvasIframe, canvasError, setCanvasError, setCanvasOverlayDragging,
-  canvasImageDrag, endCanvasImageDrag, probeCanvasOnline, canvasSiteUrl,
+  reloadCanvasIframe, stopCanvasProbe, canvasError, setCanvasError,
+  setCanvasOverlayDragging, canvasImageDrag, endCanvasImageDrag,
+  probeCanvasOnline, canvasSiteUrl,
 } from '@/stores/canvas';
 import { showToast } from '@/stores/toast';
 import { dropImageToCanvas } from '@/api/canvas';
@@ -38,10 +39,10 @@ export default function CanvasView() {
   // 拖拽时禁用 iframe pointer-events，防止 iframe 吐掉 mousemove 事件
   createEffect(() => setCanvasOverlayDragging(panelSplit.dragging()));
 
-  // 进入画布视图时探测画布服务在线状态（离线则显示错误覆盖层，而非永久空白 iframe）。
-  // 首次探测带宽限重探：画布编辑器客户端尚未接入 canvas-agent 时后端会短暂误报离线，
-  // 直接亮失败覆盖层会闪现误导（宽限后重探一次再判定）。
-  onMount(() => { void probeCanvasOnline(2500); });
+  // 进入画布视图时探测画布服务可达性：轮询自愈（1s×12），任一轮可达即自动收起
+  // 覆盖层；连续两轮不可达才提示。卸载时停掉在途轮询，防旧轮次回写覆盖层。
+  onMount(() => { void probeCanvasOnline(); });
+  onCleanup(stopCanvasProbe);
 
   /**
    * 对话栏图片拖进画布：原生拖拽事件无法投递进跨域 iframe（实证），
@@ -71,11 +72,10 @@ export default function CanvasView() {
 
   function retryLoad() {
     setCanvasError(false);
-    try {
-      getCanvasIframe()?.contentWindow?.location.reload();
-    } catch { /* 忽略跨域异常 */ }
-    // 重新探测：重载后编辑器需数秒重连，同样给宽限；仍离线时覆盖层回来
-    void probeCanvasOnline(2500);
+    // 跨源 iframe 访问 contentWindow.location 会抛 SecurityError（旧实现点重试等于空转），
+    // 改 src 才能真正重新导航；随后轮询探测，仍不可达时覆盖层回来。
+    reloadCanvasIframe();
+    void probeCanvasOnline();
   }
 
   function dismissError() {
@@ -107,8 +107,8 @@ export default function CanvasView() {
           <FiImage size={48} />
           <p>画布加载失败</p>
           <p class="canvas-fallback-hint">
-            检查画布是否在 <code>{canvasSiteUrl()}</code> 启动，
-            且 X-Frame-Options 允许被嵌入
+            检查画布产物是否已构建（<code>python scripts/build_canvas.py</code>），
+            并确认服务已重启；挂载入口 <code>{canvasSiteUrl()}</code>
           </p>
           <div class="canvas-fallback-actions">
             <button type="button" class="btn-primary" onClick={retryLoad}>

@@ -154,6 +154,48 @@ class TestFormatToolResults:
         assert "storyboard_patch_draft：执行成功" in msg, "写入类工具只报成功，不携带大 JSON"
         assert "read_project_doc：执行失败" in msg
 
+    def test_model_view_takes_precedence(self):
+        """工具自述的模型可见渲染优先于 data 字段（2026-11-11 dsh output/render 对齐）。"""
+        msg = format_tool_results([{
+            "name": "canvas_list", "ok": True,
+            "data": {"canvases": [{"id": "c1"}], "count": 1},
+            "model_view": "可用画布 1 块：c1《测试画布》0 节点",
+        }])
+        assert "可用画布 1 块：c1《测试画布》0 节点" in msg
+
+    def test_data_without_model_view_is_never_silent(self):
+        """有 data、无 model_view：兜底原始返回，不得只剩「执行成功」。
+
+        6666（2026-11-10）实证：canvas_list 的 data 被整包丢弃，模型只收到
+        「执行成功」，拿不到 canvas_id 后停轮向用户索要。
+        """
+        msg = format_tool_results([{
+            "name": "canvas_list", "ok": True,
+            "data": {"canvases": [{"id": "c1", "title": "测试画布", "node_count": 0}],
+                     "count": 1},
+        }])
+        assert "- canvas_list：执行成功" in msg
+        assert "c1" in msg, "成功结果的数据不得对模型静默消失"
+
+    def test_fallback_data_truncated(self):
+        """兜底只保底可见：超大 data 限长，不把整包 JSON 灌进上下文。"""
+        from src.video_agent.core.fc_feedback import (
+            MODEL_VIEW_FALLBACK_MAX_CHARS, MODEL_VIEW_TRUNCATED,
+        )
+        msg = format_tool_results([{
+            "name": "canvas_read_nodes", "ok": True,
+            "data": {"nodes": [{"id": "n" * 50} for _ in range(200)]},
+        }])
+        assert MODEL_VIEW_TRUNCATED in msg
+        assert len(msg) < MODEL_VIEW_FALLBACK_MAX_CHARS + 200
+
+    def test_empty_data_stays_brief(self):
+        """纯动作工具无 data：保持一行「执行成功」，不凭空造内容。"""
+        msg = format_tool_results([{
+            "name": "canvas_delete_node", "ok": True, "data": {},
+        }])
+        assert "- canvas_delete_node：执行成功" in msg
+
     def test_read_draft_renders_each_card(self):
         msg = format_tool_results([{
             "name": "read_draft", "ok": True,

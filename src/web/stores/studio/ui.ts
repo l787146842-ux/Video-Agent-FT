@@ -98,7 +98,7 @@ export const uiActions = {
     setState('pendingAttachments', (prev) => prev.filter((a) => a.id !== id));
   },
 
-  startGeneration(draftId: string, kind: 'image' | 'video', fromEpoch?: number) {
+  startGeneration(draftId: string, kind: 'image' | 'video' | 'audio', fromEpoch?: number) {
     // fromEpoch：刷新页面后从后端 processing 任务恢复读秒时，
     // 用任务创建时间回填，避免已耗时被重置为 0
     setState('activeGenerations', draftId, { start: fromEpoch || Date.now(), kind });
@@ -133,8 +133,7 @@ export const uiActions = {
     setState('availableChatModels', config.chatModels ?? state.availableChatModels);
     setState('availableImageModels', config.imageModels ?? state.availableImageModels);
     setState('availableVideoModels', config.videoModels ?? state.availableVideoModels);
-    setState('canvasUrl', config.canvasUrl ?? state.canvasUrl);
-  },
+    },
 
   /** Agent 联动更新故事板后调用，驱动左面板闪烁提示 */
   markBoardApplied() {

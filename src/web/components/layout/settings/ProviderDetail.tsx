@@ -59,6 +59,15 @@ export function ProviderDetail(props: { api: SettingsApi }) {
             <FiPlus size={12} /> 模型
           </button>
         </div>
+        {/* 音频适配器状态：与参数栏同一口径——未接入的平台即使登记了音频模型，
+            也不会出现在音频参数栏的「音频 API」下拉里（避免选了才发现报错）。 */}
+        <Show when={cardProps.kind === 'audio_models'}>
+          <div class="aps-keynote">
+            {api().current()!.audio_adapter
+              ? `音频适配器：已接入（${api().current()!.audio_adapter}）`
+              : '音频适配器：未接入——此处模型仅作登记，音频参数栏不会列出该平台'}
+          </div>
+        </Show>
         <Show when={(api().current()?.[cardProps.kind] || []).length > 0} fallback={<div class="aps-empty">暂无模型</div>}>
           <For each={api().current()?.[cardProps.kind] || []}>
             {(m, idx) => (

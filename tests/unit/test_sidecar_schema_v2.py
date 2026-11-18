@@ -58,9 +58,8 @@ def test_step_stages_declaration_is_authoritative(decl_env):
     assert deps.get("audio_assets") == ["structure"]
 
 
-def test_step_stages_declared_absent_is_absorbed(monkeypatch):
-    """声明阶段不在当前阶段表（无 video_assembler → 无 assembly 阶段）：
-    边被吸收，不回退任何启发式（声明权威）。"""
+def test_stage_table_always_contains_assembly(monkeypatch):
+    """2026-11-12：阶段表不再按 Skill 章节能力裁剪，assembly 恒在（纯展示）。"""
     manifest = {
         "flow": {
             "steps": {"1": "分析剧本", "2": "组装时间线剪辑输出"},
@@ -70,9 +69,8 @@ def test_step_stages_declared_absent_is_absorbed(monkeypatch):
     }
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: manifest)
     monkeypatch.setattr(registry, "resolve_entry", lambda name: _ENTRY)
-    assert "assembly" not in {s.key for s in po.stage_table("任意Skill")}
-    deps = po._stage_dependencies("任意Skill")
-    assert "assembly" not in deps
+    keys = {s.key for s in po.stage_table("任意Skill")}
+    assert "analysis" in keys and "assembly" in keys
 
 
 # ---------- ② manifest_schema 全键校验（frontmatter 合一） ----------

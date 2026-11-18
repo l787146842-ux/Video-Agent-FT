@@ -38,14 +38,16 @@ def _pb():
     )
 
 
-def test_generic_skill_registers_and_injects_full_doc(skills_dir):
+def test_generic_skill_registers_and_injects_pointer_only(skills_dir):
     sd.save_skill_doc("通用演示", DOC)
     entry = registry.get_entry("通用演示")
     assert entry is not None
-    assert entry.available_tools  # 标题可推导阶段探针
+    assert entry.available_tools  # 标题仍可推导探针（纯展示）
     block = _pb().build_selected_skill_block("通用演示")
-    assert "GENERIC_FLOW" in block
-    assert "## 二、参考资料" in block
+    assert "当前主 Skill" in block
+    assert "read_skill" in block
+    assert "GENERIC_FLOW" not in block
+    assert "## 二、参考资料" not in block
     assert "<planner>" not in block
 
 

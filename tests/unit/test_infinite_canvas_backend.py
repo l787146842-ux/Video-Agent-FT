@@ -18,6 +18,7 @@ from src.video_agent.adapters.infinite_canvas_backend import (
     reset_infinite_canvas_backend,
 )
 from src.video_agent.exceptions import AdapterError
+from tests.fakes import FakeCanvasSession
 
 
 @pytest.fixture(autouse=True)
@@ -57,14 +58,14 @@ class TestListCanvases:
         assert len(result) == 1 and result[0]["id"] == "p1"
 
     @pytest.mark.asyncio
-    async def test_connect_error(self, backend):
-        with patch(
-            "httpx.AsyncClient.post",
-            new_callable=AsyncMock,
-            side_effect=httpx.ConnectError("refused"),
-        ):
-            with pytest.raises(AdapterError, match="无法连接 canvas-agent"):
-                await backend.list_canvases()
+    async def test_no_canvas_connection_raises(self, backend):
+        """L2：无浏览器连接时直接报错（不再有 HTTP sidecar 可连）"""
+        backend._session_override = FakeCanvasSession(connected=False, has_canvas=False)
+        backend._session_override.call_tool = AsyncMock(  # type: ignore[method-assign]
+            side_effect=AdapterError("当前没有已连接画布")
+        )
+        with pytest.raises(AdapterError, match="没有已连接画布"):
+            await backend.list_canvases()
 
     @pytest.mark.asyncio
     async def test_tool_error_maps_adapter_error(self, backend):
@@ -112,13 +113,12 @@ class TestGetCanvas:
 
     @pytest.mark.asyncio
     async def test_timeout_raises_adapter_error(self, backend):
-        with patch(
-            "httpx.AsyncClient.post",
-            new_callable=AsyncMock,
-            side_effect=httpx.ReadTimeout("timed out"),
-        ):
-            with pytest.raises(AdapterError, match="响应超时"):
-                await backend.get_canvas("p1")
+        """L2：会话等待浏览器回执超时 → AdapterError（不再有 HTTP 读超时）"""
+        backend._session_override = FakeCanvasSession(
+            lambda name, payload: AdapterError("画布操作超时")
+        )
+        with pytest.raises(AdapterError, match="超时"):
+            await backend.get_canvas("p1")
 
 
 class TestSaveCanvasBatching:
@@ -192,13 +192,64 @@ class TestToInfiniteNode:
         assert ic["nodeType"] == "text"
         assert ic["metadata"]["content"] == "赛博朋克"
 
+    def test_video_maps_to_video_with_abs_content(self):
+        ic = _to_infinite_node({
+            "id": "v1", "type": "video", "title": "成片",
+            "url": "/workspace/assets/final.mp4", "x": 10, "y": 20,
+        })
+        assert ic["nodeType"] == "video"
+        assert ic["metadata"]["content"].startswith("http")
+        assert ic["metadata"]["content"].endswith("/workspace/assets/final.mp4")
+        assert ic["position"] == {"x": 10.0, "y": 20.0}
+
     def test_unknown_type_rejected(self):
         with pytest.raises(AdapterError, match="不支持的节点类型"):
-            _to_infinite_node({"id": "v1", "type": "video"})
+            _to_infinite_node({"id": "x1", "type": "unsupported"})
 
     def test_image_without_url_rejected(self):
         with pytest.raises(AdapterError, match="缺少 url"):
             _to_infinite_node({"id": "s2", "type": "smart-image", "images": []})
+
+    def test_video_without_url_rejected(self):
+        with pytest.raises(AdapterError, match="缺少 url"):
+            _to_infinite_node({"id": "v2", "type": "video"})
+
+
+class TestAddVideoNode:
+    @pytest.mark.asyncio
+    async def test_places_below_existing_nodes(self, backend):
+        backend.get_canvas = AsyncMock(return_value=STATE)
+        backend._get_state = AsyncMock(return_value=STATE)
+        captured = []
+
+        async def fake_apply(ops):
+            captured.extend(ops)
+            return []
+
+        backend._apply_ops = fake_apply
+        res = await backend.add_video_node(
+            "p1", url="/workspace/assets/final.mp4", name="成片")
+        assert res["canvas_id"] == "p1" and res["node_id"]
+        op = captured[0]
+        assert op["type"] == "add_node"
+        assert op["nodeType"] == "video"
+        assert op["metadata"]["content"].endswith("/workspace/assets/final.mp4")
+        assert op["position"]["y"] == -2000 + 260  # 现有节点最下方之外
+
+    @pytest.mark.asyncio
+    async def test_explicit_position_used_as_is(self, backend):
+        backend.get_canvas = AsyncMock(return_value=STATE)
+        captured = []
+
+        async def fake_apply(ops):
+            captured.extend(ops)
+            return []
+
+        backend._apply_ops = fake_apply
+        await backend.add_video_node(
+            "p1", url="/workspace/assets/f.mp4", position=(12.0, 34.0))
+        op = captured[0]
+        assert op["position"] == {"x": 12.0, "y": 34.0}
 
 
 class TestUploadFiles:
@@ -324,54 +375,91 @@ class TestAddImageNode:
 class TestIsOnline:
     @pytest.mark.asyncio
     async def test_online_requires_has_canvas(self, backend):
-        backend._get_json = AsyncMock(return_value={"ok": True, "hasCanvas": True})
+        backend._session_override = FakeCanvasSession(has_canvas=True)
         assert await backend.is_online() is True
 
     @pytest.mark.asyncio
     async def test_service_online_but_canvas_closed(self, backend):
-        """服务在线但画布页未开 → is_online False（health() 仍可区分）"""
-        backend._get_json = AsyncMock(return_value={"ok": True, "hasCanvas": False})
+        """会话在但画布页未上报快照 → is_online False（health() 仍可区分）"""
+        backend._session_override = FakeCanvasSession(has_canvas=False)
         assert await backend.is_online() is False
         h = await backend.health()
         assert h["ok"] is True
+        assert h["hasCanvas"] is False
 
     @pytest.mark.asyncio
     async def test_offline(self, backend):
-        backend._get_json = AsyncMock(side_effect=AdapterError("无法连接"))
+        backend._session_override = FakeCanvasSession(connected=False, has_canvas=False)
         assert await backend.is_online() is False
 
 
-class TestHealthProbeTimeout:
-    """/health 快探独立 2s 超时，不复用写路径 canvas_timeout"""
+class TestIsSiteReachable:
+    """画布“能否嵌入加载”口径：只探站点本体，不看画布页是否已连 agent"""
+
+    @staticmethod
+    def _patch_site_client(monkeypatch, handler):
+        """把站点探测用的 httpx.AsyncClient 换成 MockTransport（其余参数原样透传）"""
+        orig = httpx.AsyncClient
+        monkeypatch.setattr(
+            icb.httpx, "AsyncClient",
+            lambda **kw: orig(transport=httpx.MockTransport(handler), **kw),
+        )
+
+    @staticmethod
+    def _set_site_url(value: str):
+        """临时设置画布站点地址（frozen dataclass 须走 object.__setattr__）。"""
+        original = icb.settings.infinite_canvas_url
+        object.__setattr__(icb.settings, "infinite_canvas_url", value)
+        return original
 
     @pytest.mark.asyncio
-    async def test_health_uses_short_probe_timeout(self, backend):
-        backend._get_json = AsyncMock(return_value={"ok": True, "hasCanvas": True})
-        await backend.health()
-        backend._get_json.assert_awaited_once_with("/health", timeout=icb._HEALTH_PROBE_TIMEOUT)
-        assert icb._HEALTH_PROBE_TIMEOUT == 2.0
+    async def test_any_http_response_means_reachable(self, backend, monkeypatch):
+        """站点返回 404 也说明服务在跑（只判可达，不判内容）"""
+        self._patch_site_client(monkeypatch, lambda req: httpx.Response(404))
+        original = self._set_site_url("http://localhost:3000")
+        try:
+            assert await backend.is_site_reachable() is True
+        finally:
+            self._set_site_url(original)
 
     @pytest.mark.asyncio
-    async def test_get_json_passes_per_request_timeout(self, backend):
-        """timeout 参数透传到 httpx 请求（本次请求独立超时）"""
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json={"ok": True})
-        )
-        client = httpx.AsyncClient(
-            base_url="http://fixture.local", transport=transport, timeout=30
-        )
-        recorded = {}
-        orig_get = client.get
+    async def test_connect_error_unreachable(self, backend, monkeypatch):
+        def _refused(req):
+            raise httpx.ConnectError("connection refused")
 
-        async def spy_get(path, **kwargs):
-            recorded.update(kwargs)
-            return await orig_get(path, **kwargs)
+        self._patch_site_client(monkeypatch, _refused)
+        original = self._set_site_url("http://localhost:3000")
+        try:
+            assert await backend.is_site_reachable() is False
+        finally:
+            self._set_site_url(original)
 
-        client.get = spy_get  # type: ignore[method-assign]
-        backend._client = client
-        await backend._get_json("/health", timeout=2.0)
-        assert recorded.get("timeout") == 2.0
-        await client.aclose()
+    @pytest.mark.asyncio
+    async def test_blank_site_url_unreachable(self, backend):
+        orig = icb.settings.infinite_canvas_url
+        object.__setattr__(icb.settings, "infinite_canvas_url", "")
+        try:
+            assert await backend.is_site_reachable() is False
+        finally:
+            object.__setattr__(icb.settings, "infinite_canvas_url", orig)
+
+
+class TestOnlineCached:
+    """planner 工具裁剪口径（L2 后为内存事实，无 TTL/网络）：
+    None = 从未有画布页连过（保持现状、不裁剪）；True/False = 当前会话可用性。
+    """
+
+    def test_none_before_first_connection(self, backend):
+        backend._session_override = FakeCanvasSession(connected=False, has_canvas=False)
+        assert backend.online_cached() is None
+
+    def test_true_when_canvas_connected(self, backend):
+        backend._session_override = FakeCanvasSession(has_canvas=True)
+        assert backend.online_cached() is True
+
+    def test_false_when_connected_but_no_snapshot(self, backend):
+        backend._session_override = FakeCanvasSession(connected=True, has_canvas=False)
+        assert backend.online_cached() is False
 
 
 class TestStateCacheGeneration:
@@ -464,33 +552,143 @@ class TestImageTasks:
 
 class TestVersionDrift:
     @pytest.mark.asyncio
-    async def test_records_and_detects_drift(self, backend, tmp_path, monkeypatch):
-        record = tmp_path / "canvas_integration.json"
-        monkeypatch.setattr(icb, "_CANVAS_VERSION_FILE", record)
-        backend._get_json = AsyncMock(return_value={"ok": True, "protocolVersion": 6, "url": "u"})
+    async def test_noop_after_l2(self, backend):
+        """L2：画布产物与后端同仓同版本发布，外部漂移不存在。"""
         assert await backend.check_version_drift() is None
-        saved = json.loads(record.read_text(encoding="utf-8"))
-        assert saved["infinite_canvas"]["protocol_version"] == "6"
-        # 模拟对端升级
-        backend._get_json = AsyncMock(return_value={"ok": True, "protocolVersion": 7, "url": "u"})
-        msg = await backend.check_version_drift()
-        assert msg and "已更新" in msg
+        info = await backend.get_app_info()
+        assert info["protocolVersion"] == icb.PROTOCOL_VERSION
+
+
+class TestGroupNodes:
+    """打组/解散组：对端工具转发与本地前置校验"""
 
     @pytest.mark.asyncio
-    async def test_preserves_existing_record_sections(self, backend, tmp_path, monkeypatch):
-        record = tmp_path / "canvas_integration.json"
-        record.write_text(json.dumps({"version": "1.2.3"}), encoding="utf-8")
-        monkeypatch.setattr(icb, "_CANVAS_VERSION_FILE", record)
-        backend._get_json = AsyncMock(return_value={"ok": True, "protocolVersion": 6, "url": "u"})
-        await backend.check_version_drift()
-        saved = json.loads(record.read_text(encoding="utf-8"))
-        assert saved["version"] == "1.2.3"  # 既有段保留不覆盖
-        assert saved["infinite_canvas"]["protocol_version"] == "6"
+    async def test_group_forwards_ids(self, backend):
+        backend.get_canvas = AsyncMock(return_value=STATE)
+        backend._call_tool = AsyncMock(return_value={"ok": True})
+        result = await backend.group_nodes("p1", node_ids=["n1", "n2", "n3"])
+        backend._call_tool.assert_awaited_once_with(
+            "canvas_group_nodes", {"ids": ["n1", "n2", "n3"]})
+        assert result == {"canvas_id": "p1", "grouped": 3}
 
     @pytest.mark.asyncio
-    async def test_offline_returns_none(self, backend):
-        backend._get_json = AsyncMock(side_effect=AdapterError("无法连接"))
-        assert await backend.check_version_drift() is None
+    async def test_group_rejects_less_than_two(self, backend):
+        """画布无空分组：不足 2 个节点在本地就拒，不打扰对端"""
+        backend.get_canvas = AsyncMock(return_value=STATE)
+        with pytest.raises(AdapterError, match="至少需要 2 个节点"):
+            await backend.group_nodes("p1", node_ids=["n1"])
+
+    @pytest.mark.asyncio
+    async def test_ungroup_forwards_ids(self, backend):
+        backend.get_canvas = AsyncMock(return_value=STATE)
+        backend._call_tool = AsyncMock(return_value={"ok": True})
+        result = await backend.ungroup_nodes("p1", node_ids=["g1"])
+        backend._call_tool.assert_awaited_once_with(
+            "canvas_ungroup_nodes", {"ids": ["g1"]})
+        assert result == {"canvas_id": "p1", "ungrouped": 1}
+
+    @pytest.mark.asyncio
+    async def test_ungroup_rejects_empty(self, backend):
+        backend.get_canvas = AsyncMock(return_value=STATE)
+        with pytest.raises(AdapterError, match="至少 1 个节点"):
+            await backend.ungroup_nodes("p1", node_ids=[])
+
+
+class TestContainerRefit:
+    """大类容器：按成员包围盒重算组位置/宽高（2026-11-11）。"""
+
+    @staticmethod
+    def _state(group_pos):
+        return {
+            "projectId": "p1", "title": "测试画布",
+            "nodes": [
+                {"id": "g1", "type": "group", "title": "关键元素",
+                 "position": dict(group_pos), "width": 360, "height": 220,
+                 "metadata": {"container": True}},
+                {"id": "n1", "type": "text", "title": "说明",
+                 "position": {"x": 100, "y": 100}, "width": 320, "height": 120,
+                 "metadata": {"groupId": "g1"}},
+                {"id": "n2", "type": "image", "title": "图",
+                 "position": {"x": 500, "y": 100}, "width": 340, "height": 240,
+                 "metadata": {"groupId": "g1"}},
+            ],
+            "connections": [], "selectedNodeIds": [],
+            "viewport": {"x": 0, "y": 0, "k": 1},
+        }
+
+    @pytest.mark.asyncio
+    async def test_moves_frame_and_restores_members(self, backend):
+        state = self._state({"x": 0, "y": 0})
+        applied = []
+
+        async def fake_call(name, payload=None):
+            if name == "canvas_get_state":
+                return state
+            applied.append((name, payload))
+            return {"ok": True}
+
+        backend._call_tool = fake_call
+        out = await backend.refit_container("p1", "g1")
+        # bbox: x 100..840 / y 100..340 → x=76, y=48, w=788, h=316
+        assert out == {"canvas_id": "p1", "group_id": "g1",
+                       "x": 76.0, "y": 48.0, "width": 788.0, "height": 316.0,
+                       "members": 2}
+        ops = applied[-1][1]["ops"]
+        assert ops[0]["id"] == "g1"
+        assert ops[0]["patch"]["position"] == {"x": 76.0, "y": 48.0}
+        assert ops[0]["patch"]["width"] == 788.0
+        restored = {op["id"]: op["patch"]["position"] for op in ops[1:]}
+        assert restored == {"n1": {"x": 100.0, "y": 100.0},
+                            "n2": {"x": 500.0, "y": 100.0}}
+
+    @pytest.mark.asyncio
+    async def test_size_only_when_anchor_unchanged(self, backend):
+        state = self._state({"x": 76, "y": 48})
+        applied = []
+
+        async def fake_call(name, payload=None):
+            if name == "canvas_get_state":
+                return state
+            applied.append((name, payload))
+            return {"ok": True}
+
+        backend._call_tool = fake_call
+        out = await backend.refit_container("p1", "g1")
+        assert out["width"] == 788.0 and out["height"] == 316.0
+        ops = applied[-1][1]["ops"]
+        assert len(ops) == 1, "位置未变时不得产生成员补偿 op"
+        assert "position" not in ops[0]["patch"]
+
+    @pytest.mark.asyncio
+    async def test_no_members_is_noop(self, backend):
+        state = {"projectId": "p1", "nodes": [
+            {"id": "g1", "type": "group", "title": "空容器",
+             "position": {"x": 0, "y": 0}, "width": 360, "height": 220,
+             "metadata": {"container": True}},
+        ], "connections": []}
+        backend._call_tool = AsyncMock(return_value=state)
+        assert await backend.refit_container("p1", "g1") is None
+        # get_canvas + refit 各读一次快照；不产生任何写 op
+        assert backend._call_tool.await_count == 2
+        assert all(call.args[0] == "canvas_get_state"
+                   for call in backend._call_tool.await_args_list)
+
+
+class TestGroupNodeTranslation:
+    def test_group_node_and_membership_metadata(self):
+        group = _to_infinite_node({
+            "id": "g1", "type": "group", "title": "关键元素",
+            "x": 100, "y": 100, "width": 360, "height": 220, "container": True,
+        })
+        assert group["nodeType"] == "group"
+        assert group["width"] == 360 and group["height"] == 220
+        assert group["metadata"]["container"] is True
+
+        member = _to_infinite_node({
+            "id": "n1", "type": "text", "title": "说明",
+            "x": 124, "y": 152, "content": "本区说明", "group_id": "g1",
+        })
+        assert member["metadata"]["groupId"] == "g1"
 
 
 class TestSingleton:

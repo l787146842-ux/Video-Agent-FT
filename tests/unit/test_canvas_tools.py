@@ -23,6 +23,12 @@ from src.video_agent.tools.canvas_tools import (
     CanvasDeleteNodeInput,
     CanvasListAssetsInput,
     CanvasBatchUpdateInput,
+    CanvasGroupNodesTool,
+    CanvasUngroupNodesTool,
+    CanvasGroupNodesInput,
+    CanvasUngroupNodesInput,
+    CanvasCreateContainerTool,
+    CanvasCreateContainerInput,
     register_canvas_tools,
 )
 from src.video_agent.tools.manager import ToolManager
@@ -75,10 +81,18 @@ def _mock_backend() -> MagicMock:
     async def _add_nodes_batch(canvas_id, *, nodes):
         return [str(n.get("id") or "") for n in nodes]
 
+    async def _group_nodes(canvas_id, *, node_ids):
+        return {"canvas_id": canvas_id, "grouped": len(node_ids)}
+
+    async def _ungroup_nodes(canvas_id, *, node_ids):
+        return {"canvas_id": canvas_id, "ungrouped": len(node_ids)}
+
     backend.add_node = AsyncMock(side_effect=_add_node)
     backend.update_node = AsyncMock(side_effect=_update_node)
     backend.delete_node = AsyncMock(side_effect=_delete_node)
     backend.add_nodes_batch = AsyncMock(side_effect=_add_nodes_batch)
+    backend.group_nodes = AsyncMock(side_effect=_group_nodes)
+    backend.ungroup_nodes = AsyncMock(side_effect=_ungroup_nodes)
     return backend
 
 
@@ -115,7 +129,7 @@ class TestCanvasReadNodesTool:
         assert result.data["node_count"] == 2
         img, txt = result.data["nodes"]
         assert img["id"] == "n1" and img["type"] == "image"
-        assert (img["x"], img["y"]) == (10, 20)  # 坐标不再恒 0（旧熊布顶层 x/y 已退役）
+        assert (img["x"], img["y"]) == (10, 20)  # 坐标不再恒 0（旧画布顶层 x/y 已退役）
         assert img["images_count"] == 1
         assert img["first_image"] == "http://a/output/a.png"
         assert txt["content"] == "赛博朋克"  # 文本正文读 metadata.content，不再丢失
@@ -311,6 +325,259 @@ class TestCanvasListAssetsTool:
         assert result.data["has_more"] is True
 
 
+class TestCanvasGroupNodesTool:
+    @pytest.mark.asyncio
+    async def test_group_two_nodes(self, backend):
+        tool = CanvasGroupNodesTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasGroupNodesInput(
+                canvas_id="c1", node_ids=["n1", "n2"]
+            ))
+        assert result.success
+        assert result.data["grouped"] == 2
+        backend.group_nodes.assert_called_once_with("c1", node_ids=["n1", "n2"])
+
+    @pytest.mark.asyncio
+    async def test_group_keeps_three_nodes(self, backend):
+        tool = CanvasGroupNodesTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasGroupNodesInput(
+                canvas_id="c1", node_ids=["n1", "n2", "n3"]
+            ))
+        assert result.success
+        assert result.data["grouped"] == 3
+
+    def test_group_requires_two_nodes(self):
+        """画布没有空分组：少于 2 个节点在入参层即拒收"""
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            CanvasGroupNodesInput(canvas_id="c1", node_ids=["n1"])
+
+
+class TestCanvasUngroupNodesTool:
+    @pytest.mark.asyncio
+    async def test_ungroup_group_node(self, backend):
+        tool = CanvasUngroupNodesTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasUngroupNodesInput(
+                canvas_id="c1", node_ids=["g1"]
+            ))
+        assert result.success
+        assert result.data["ungrouped"] == 1
+        backend.ungroup_nodes.assert_called_once_with("c1", node_ids=["g1"])
+
+    def test_ungroup_requires_one_node(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            CanvasUngroupNodesInput(canvas_id="c1", node_ids=[])
+
+
+class TestCanvasModelView:
+    """模型可见输出契约（2026-11-11）：画布写操作依赖的 id 必须回喂给模型。
+
+    6666（2026-11-10）实证：canvas_list 返回了画布列表，但回喂层只按
+    data["detail"] 转发，模型只看到「执行成功」，拿不到 canvas_id 后只能停下
+    向用户索要画布 ID。
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_view_carries_canvas_id(self, backend):
+        tool = CanvasListTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasListInput())
+        view = tool.model_view(result.data)
+        assert "c1" in view and "测试画布" in view
+        assert "2 节点" in view
+
+    @pytest.mark.asyncio
+    async def test_read_nodes_view_carries_node_ids(self, backend):
+        tool = CanvasReadNodesTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasReadNodesInput(canvas_id="c1"))
+        view = tool.model_view(result.data)
+        assert "n1" in view and "n2" in view
+        assert "共 2 个节点" in view
+
+    @pytest.mark.asyncio
+    async def test_batch_add_view_carries_new_node_ids(self, backend):
+        """打组需要 node_ids：建完占位牌必须让模型拿到新节点 id。"""
+        tool = CanvasBatchUpdateTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasBatchUpdateInput(
+                canvas_id="c1",
+                nodes=[{"node_type": "text", "title": "占位", "x": 0, "y": 0}],
+            ))
+        view = tool.model_view(result.data)
+        assert result.data["node_ids"][0] in view
+        assert "1 个节点" in view
+
+    @pytest.mark.asyncio
+    async def test_group_and_ungroup_views(self, backend):
+        group = CanvasGroupNodesTool()
+        with _patch_adapter(backend):
+            grouped = await group.aexecute(CanvasGroupNodesInput(
+                canvas_id="c1", node_ids=["n1", "n2"]))
+        assert "c1" in group.model_view(grouped.data)
+        assert "2 个节点打成 1 组" in group.model_view(grouped.data)
+
+        ungroup = CanvasUngroupNodesTool()
+        with _patch_adapter(backend):
+            ungrouped = await ungroup.aexecute(CanvasUngroupNodesInput(
+                canvas_id="c1", node_ids=["g1"]))
+        assert "1 个节点" in ungroup.model_view(ungrouped.data)
+
+    @pytest.mark.asyncio
+    async def test_update_delete_view_carries_ids(self, backend):
+        update = CanvasUpdateNodeTool()
+        with _patch_adapter(backend):
+            updated = await update.aexecute(CanvasUpdateNodeInput(
+                canvas_id="c1", node_id="n1", title="新标题"))
+        assert "c1" in update.model_view(updated.data)
+        assert "n1" in update.model_view(updated.data)
+
+        delete = CanvasDeleteNodeTool()
+        with _patch_adapter(backend):
+            deleted = await delete.aexecute(CanvasDeleteNodeInput(
+                canvas_id="c1", node_id="n2"))
+        assert "n2" in delete.model_view(deleted.data)
+
+    @pytest.mark.asyncio
+    async def test_list_assets_view_carries_names(self, backend):
+        tool = CanvasListAssetsTool()
+        port = _mock_assets_port([
+            {"id": "a.png", "name": "角色设定图", "kind": "image"},
+            {"id": "b.png", "name": "场景图", "kind": "image"},
+        ])
+        with _patch_adapter(backend), \
+             patch("src.video_agent.tools.canvas_tools.assets_port", return_value=port):
+            result = await tool.aexecute(CanvasListAssetsInput())
+        view = tool.model_view(result.data)
+        assert "角色设定图" in view and "场景图" in view
+        assert "共 2 项" in view
+
+
+class TestCanvasContainer:
+    """大类容器（2026-11-11）：原生组 + 常驻说明节点 + 成员自动 refit。"""
+
+    @pytest.mark.asyncio
+    async def test_create_container_auto_places_and_refits(self, backend):
+        state = {"projectId": "c1", "nodes": [
+            {"id": "g0", "type": "group", "title": "已有容器",
+             "position": {"x": 100, "y": 100}, "width": 400, "height": 300,
+             "metadata": {"container": True}},
+        ], "connections": []}
+        backend.get_canvas = AsyncMock(return_value=state)
+        backend.add_nodes_batch = AsyncMock(return_value=["g1", "note1"])
+        backend.refit_container = AsyncMock(return_value={
+            "x": 620.0, "y": 100.0, "width": 368.0, "height": 196.0, "members": 1,
+        })
+        tool = CanvasCreateContainerTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasCreateContainerInput(
+                canvas_id="c1", title="关键元素"))
+        assert result.success
+        nodes = backend.add_nodes_batch.call_args.kwargs["nodes"]
+        group_node, note_node = nodes
+        assert group_node["type"] == "group" and group_node["container"] is True
+        assert group_node["x"] == 620  # 已有容器右边 500 + 间距 120
+        assert group_node["width"] == 360 and group_node["height"] == 220
+        assert note_node["group_id"] == group_node["id"]
+        assert note_node["content"] == "关键元素（本区容器）"
+        backend.refit_container.assert_awaited_once_with("c1", group_node["id"])
+        assert result.data["group_id"] == group_node["id"]
+        assert result.data["width"] == 368.0
+
+    @pytest.mark.asyncio
+    async def test_add_node_into_container_auto_slot(self, backend):
+        state = {"projectId": "c1", "nodes": [
+            {"id": "g1", "type": "group", "title": "关键元素",
+             "position": {"x": 100, "y": 100}, "width": 400, "height": 300,
+             "metadata": {"container": True}},
+            {"id": "note", "type": "text", "title": "说明",
+             "position": {"x": 124, "y": 152}, "width": 320, "height": 120,
+             "metadata": {"groupId": "g1"}},
+        ], "connections": []}
+        backend.get_canvas = AsyncMock(return_value=state)
+        backend.add_node = AsyncMock(return_value={"node_id": "n1", "canvas_id": "c1"})
+        backend.refit_container = AsyncMock(return_value={})
+        tool = CanvasAddNodeTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasAddNodeInput(
+                canvas_id="c1", node_type="image", title="角色A",
+                image_url="/a.png", group_id="g1"))
+        node = backend.add_node.call_args.kwargs["node"]
+        # 说明节点占第 0 格；新节点第 1 格 → x=100+24+360, y=100+52
+        assert node["x"] == 484 and node["y"] == 152
+        assert node["group_id"] == "g1"
+        backend.refit_container.assert_awaited_once_with("c1", "g1")
+        assert result.data["group_id"] == "g1"
+
+    @pytest.mark.asyncio
+    async def test_batch_into_container_places_grid_and_refits_once(self, backend):
+        state = {"projectId": "c1", "nodes": [
+            {"id": "g1", "type": "group", "title": "分镜",
+             "position": {"x": 100, "y": 100}, "width": 400, "height": 300,
+             "metadata": {"container": True}},
+            {"id": "note", "type": "text", "title": "说明",
+             "position": {"x": 124, "y": 152}, "width": 320, "height": 120,
+             "metadata": {"groupId": "g1"}},
+        ], "connections": []}
+        backend.get_canvas = AsyncMock(return_value=state)
+        backend.add_nodes_batch = AsyncMock(return_value=["n1", "n2"])
+        backend.refit_container = AsyncMock(return_value={})
+        tool = CanvasBatchUpdateTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasBatchUpdateInput(
+                canvas_id="c1",
+                nodes=[
+                    {"node_type": "image", "title": "镜1", "image_url": "/1.png",
+                     "group_id": "g1"},
+                    {"node_type": "image", "title": "镜2", "image_url": "/2.png",
+                     "group_id": "g1"},
+                ],
+            ))
+        nodes = backend.add_nodes_batch.call_args.kwargs["nodes"]
+        assert [n["x"] for n in nodes] == [484, 844]
+        assert [n["group_id"] for n in nodes] == ["g1", "g1"]
+        backend.refit_container.assert_awaited_once_with("c1", "g1")
+        assert result.data["group_ids"] == ["g1"]
+
+    @pytest.mark.asyncio
+    async def test_delete_member_refits_container(self, backend):
+        state = {"projectId": "c1", "nodes": [
+            {"id": "n1", "type": "image", "title": "图",
+             "position": {"x": 484, "y": 152}, "width": 340, "height": 240,
+             "metadata": {"groupId": "g1"}},
+        ], "connections": []}
+        backend.get_canvas = AsyncMock(return_value=state)
+        backend.delete_node = AsyncMock(return_value=True)
+        backend.refit_container = AsyncMock(return_value={})
+        tool = CanvasDeleteNodeTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasDeleteNodeInput(
+                canvas_id="c1", node_id="n1"))
+        assert result.success
+        backend.refit_container.assert_awaited_once_with("c1", "g1")
+
+    @pytest.mark.asyncio
+    async def test_read_nodes_exposes_membership(self, backend):
+        state = {"projectId": "c1", "title": "测试画布", "nodes": [
+            {"id": "g1", "type": "group", "title": "关键元素",
+             "position": {"x": 100, "y": 100}, "width": 400, "height": 300,
+             "metadata": {"container": True}},
+            {"id": "n1", "type": "text", "title": "说明",
+             "position": {"x": 124, "y": 152}, "width": 320, "height": 120,
+             "metadata": {"groupId": "g1"}},
+        ], "connections": []}
+        backend.get_canvas = AsyncMock(return_value=state)
+        tool = CanvasReadNodesTool()
+        with _patch_adapter(backend):
+            result = await tool.aexecute(CanvasReadNodesInput(canvas_id="c1"))
+        by_id = {n["id"]: n for n in result.data["nodes"]}
+        assert by_id["g1"]["container"] is True
+        assert by_id["n1"]["group_id"] == "g1"
+
+
 class TestRegistration:
     def test_register_canvas_tools(self):
         register_canvas_tools()
@@ -322,6 +589,9 @@ class TestRegistration:
         assert "canvas_update_node" in names
         assert "canvas_delete_node" in names
         assert "canvas_list_assets" in names
+        assert "canvas_create_container" in names
+        assert "canvas_group_nodes" in names
+        assert "canvas_ungroup_nodes" in names
 
 
 class TestNodeTypeEnumClosedSet:

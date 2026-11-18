@@ -138,6 +138,10 @@ export function GroupCard(props: {
     return (g.summary || '').trim() || (g.duration ? String(g.duration) : '');
   };
 
+  /** 组内是否含图片/视频卡（绑定音频缩为小卡的判定：仅图文组内，图5 形态） */
+  const groupHasVisual = () => (props.group.drafts || [])
+    .some((d) => d.mediaType === 'image' || d.mediaType === 'video');
+
   return (
     <div
       class={`sb-group ${props.dragOver ? 'border-accent-blue' : ''}`}
@@ -205,6 +209,7 @@ export function GroupCard(props: {
                 type={props.type}
                 groupId={props.group.id}
                 cardCode={`${props.index}-${di() + 1}`}
+                groupHasVisual={groupHasVisual()}
                 dragOver={dragOverDraftId() === draft.id}
                 onDragStart={() => setDragDraftId(draft.id)}
                 onDragOver={(e) => {

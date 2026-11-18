@@ -1,7 +1,7 @@
 """宪法 §2.7 工具风险分级落地回归：
 
 - BaseTool.risk 声明位 + 注册期 deny-by-default 强制校验；
-- 24 个平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
+- 平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
   执行器工具已随执行器一步退役物理删除，不再计入；双生图工具合并后
   generate_image 已并入 image_generate 的 mode='single'）；
 - 确认闸数据驱动（P0-1）：生效条件 = approval_tier=confirm（推导含
@@ -45,9 +45,12 @@ EXPECTED_RISK = {
     "storyboard_delete_group": "medium",
     "storyboard_confirm_draft": "medium",
     "canvas_add_node": "medium",
+    "canvas_create_container": "medium",
     "canvas_update_node": "medium",
     "canvas_delete_node": "medium",
     "canvas_batch_add_nodes": "medium",
+    "canvas_group_nodes": "medium",
+    "canvas_ungroup_nodes": "medium",
     "document_write": "medium",
     # high（2）：生成/外部副作用（双生图工具合并：
     # generate_image 已并入 image_generate 的 mode='single'）
@@ -62,10 +65,13 @@ def _all_tool_classes():
     from src.video_agent.tools.canvas_tools import (
         CanvasBatchUpdateTool,
         CanvasDeleteNodeTool,
+        CanvasGroupNodesTool,
         CanvasListAssetsTool,
         CanvasListTool,
         CanvasReadNodesTool,
         CanvasAddNodeTool,
+        CanvasCreateContainerTool,
+        CanvasUngroupNodesTool,
         CanvasUpdateNodeTool,
     )
     from src.video_agent.tools.document_tools import (
@@ -97,15 +103,16 @@ def _all_tool_classes():
         StoryboardCreateGroupTool, StoryboardPatchDraftTool, StoryboardAddDraftTool,
         StoryboardDeleteGroupTool, StoryboardConfirmDraftTool,
         ImageGenerateTool, GenerateVideoTool,
-        CanvasAddNodeTool, CanvasUpdateNodeTool, CanvasDeleteNodeTool,
-        CanvasBatchUpdateTool, DocumentWriteTool,
+        CanvasAddNodeTool, CanvasCreateContainerTool, CanvasUpdateNodeTool,
+        CanvasDeleteNodeTool, CanvasBatchUpdateTool, CanvasGroupNodesTool,
+        CanvasUngroupNodesTool, DocumentWriteTool,
     ]
 
 
 class TestDeclarationCoverage:
     def test_all_platform_tools_declare_expected_risk(self):
         classes = _all_tool_classes()
-        assert len(classes) == 23
+        assert len(classes) == 26
         declared = {}
         for cls in classes:
             assert cls.name in EXPECTED_RISK, f"定级表缺少 {cls.name}"

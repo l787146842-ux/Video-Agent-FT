@@ -14,7 +14,7 @@ import type { InlineMedia } from '@/types';
 export type InsertRequest =
   | { kind: 'media'; media: InlineMedia }
   | { kind: 'text'; text: string }
-  | { kind: 'skill'; name: string };
+  | { kind: 'skill'; name: string; slug: string };
 
 const [queue, setQueue] = createSignal<InsertRequest[]>([]);
 
@@ -29,10 +29,11 @@ export function requestInsertText(text: string): void {
   setQueue((prev) => [...prev, { kind: 'text', text }]);
 }
 
-/** 请求把一个 Skill 引用块（图标+名称 chip）插入到聊天输入框光标处 */
-export function requestInsertSkill(name: string): void {
-  if (!name) return;
-  setQueue((prev) => [...prev, { kind: 'skill', name }]);
+/** 请求把一个 Skill 引用块（图标+名称 chip）插入到聊天输入框光标处；
+ * 序列化为 `/slug`，只随下一条消息发送一次。 */
+export function requestInsertSkill(name: string, slug: string): void {
+  if (!name || !slug) return;
+  setQueue((prev) => [...prev, { kind: 'skill', name, slug }]);
 }
 
 /** 供 createEffect 跟踪的队列长度（变化即触发消费） */

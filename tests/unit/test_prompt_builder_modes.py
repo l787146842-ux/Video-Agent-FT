@@ -30,56 +30,43 @@ def _pb():
     )
 
 
-def test_selected_skill_block_planner_and_toc_for_short_skill(skills_dir):
-    """短 Skill（B1）：无 planner 段时只注入章节目录，预算式全文注入退役"""
+def test_selected_skill_block_is_pointer_only(skills_dir):
+    """dsh 口径：短 Skill 也只给加载指针，不把正文塞进 system prompt。"""
     sd.save_skill_doc(
         "演示4",
         "---\nname: 演示4\ndescription: 测试桩\n---\n"
-        "# 演示4\n> 调用规则：测试\n"
-        "<script_analyze>\n分析\n</script_analyze>\n"
-        "<storyboard_key_elements>\n关键元素\n</storyboard_key_elements>\n"
-        "<write_media_prompt>\n提示词\n</write_media_prompt>\n",
+        "# 演示4\n\n"
+        "## 制作流程\n流程正文\n\n"
+        "## 剧本分析\n分析\n\n"
+        "## 关键元素\n关键元素\n\n"
+        "## 提示词写法\n提示词\n",
     )
     block = _pb().build_selected_skill_block("演示4")
-    assert "当前选中 Skill「演示4」" in block
-    # B1 新口径：章节正文零注入，只注入章节目录（章节名在场）
-    assert "下方已注入流程（planner）段全文与章节目录" in block
-    assert "script_analyze" in block and "write_media_prompt" in block
-    assert "正文头部到此为止" not in block  # 预算续读指引退役
-    # 《Skill 流程纪律》全文随选中 Skill 挂回在场（评审修复批）
+    assert "当前主 Skill「演示4」" in block
+    assert "read_skill" in block
+    assert "流程正文" not in block
     assert "Skill 流程纪律" in block
-    # 历史注入形态措辞全部退役（压制性包壳同批退役）
-    assert "已注册独立执行器" not in block
-    assert "== 当前选中 Skill「演示4」全文" not in block
-    # 章节正文探针零注入（只有目录行）
-    assert "分析\n" not in block
+    assert "<planner>" not in block
 
 
-def test_selected_skill_block_planner_only_for_oversized_skill(skills_dir):
-    """超长 Skill（B1）：只注入 <planner> 段全文 + 章节目录，其余章节零注入"""
+def test_selected_skill_block_oversized_doc_also_pointer_only(skills_dir):
+    """超长 Skill 同样不注入正文；模型按需 read_skill。"""
     filler = "正文填充内容。" * 100
     sd.save_skill_doc(
         "超长流程",
         "---\nname: 超长流程\ndescription: 测试桩\n---\n"
-        "# 超长流程\n> 调用规则：测试\n"
-        f"<planner>\n流程总纲 UNIQUE_PLANNER_MARK\n{filler}</planner>\n"
-        f"<storyboard_key_elements>\n关键元素规范 UNIQUE_KE_MARK\n{filler * 20}</storyboard_key_elements>\n"
-        f"<write_media_prompt>\n提示词规范 UNIQUE_WP_MARK\n{filler * 20}</write_media_prompt>\n",
+        "# 超长流程\n\n"
+        f"## 制作流程\n流程总纲 UNIQUE_PLANNER_MARK\n{filler}\n\n"
+        f"## 关键元素\n关键元素规范 UNIQUE_KE_MARK\n{filler * 20}\n\n"
+        f"## 提示词写法\n提示词规范 UNIQUE_WP_MARK\n{filler * 20}\n",
     )
     block = _pb().build_selected_skill_block("超长流程")
-    assert "下方已注入流程（planner）段全文与章节目录" in block
-    assert "read_skill" in block  # 按需取读指引在场（预算续读指引退役）
-    # planner 段全文注入；其余章节正文零注入（只有目录行）
-    assert "UNIQUE_PLANNER_MARK" in block
-    assert "UNIQUE_KE_MARK" not in block and "UNIQUE_WP_MARK" not in block
-    # 章节目录在场（含各章节名与字数）
-    assert "章节目录" in block
-    assert "storyboard_key_elements" in block and "write_media_prompt" in block
-    assert "正文首段" not in block
-    # 《Skill 流程纪律》全文挂回在场（评审修复批，用户裁决：预算充裕保持原样注入）
+    assert "read_skill" in block
+    assert "UNIQUE_PLANNER_MARK" not in block
+    assert "UNIQUE_WP_MARK" not in block
+    assert "标题目录" not in block
     assert "Skill 流程纪律" in block
-    # 按需注入体量远低于历史全文/预算头部注入形态（planner 段 + 目录 + 纪律）
-    assert len(block) < 20000
+    assert len(block) < 5000
 
 
 def test_selected_skill_block_empty_for_unknown_skill(skills_dir):

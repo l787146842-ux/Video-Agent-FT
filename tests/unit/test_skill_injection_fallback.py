@@ -43,23 +43,20 @@ class TestSelectedSkillLightweightHint:
         planner = Planner()
         ctx = PlannerContext(use_studio_context=False, skill_name="测试流程 Skill")
         prompt = planner._build_system_prompt(ctx)
-        assert "当前选中 Skill" in prompt
+        assert "当前主 Skill" in prompt
         # read_skill 按需加载指引在场（目录段渐进披露口径）
         assert "read_skill" in prompt
-        # B1：<planner> 段全文注入（正文片段在场）
-        assert SKILL_MARKER in prompt, "选中 Skill 的 planner 段应注入"
-        # 历史全文直注形态措辞已退役；「全文」字面仅允许来自《Skill 流程纪律》
-        # 挂回块（用户内容，第 10 条"定稿全文写入"）与目录口径白名单短语，
-        # 不得出现直注形态陈述（如"全文直注"）。
+        # dsh 口径：选中不再把正文塞进 system prompt
+        assert SKILL_MARKER not in prompt, "选中 Skill 正文不应每轮注入"
         assert "全文直注" not in prompt
 
     def test_fuzzy_selected_name_lightweight_hint(self, doc_skill):
         planner = Planner()
         ctx = PlannerContext(use_studio_context=False, skill_name="测试流程Skill.md")
         prompt = planner._build_system_prompt(ctx)
-        # 模糊名解析后仍产出选中段，<planner> 段全文注入（B1）
-        assert "当前选中 Skill" in prompt
-        assert SKILL_MARKER in prompt
+        # 模糊名解析后仍产出选中指针，但正文不常驻
+        assert "当前主 Skill" in prompt
+        assert SKILL_MARKER not in prompt
 
     def test_no_selection_only_catalog(self, doc_skill):
         planner = Planner()

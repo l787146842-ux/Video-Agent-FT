@@ -540,22 +540,31 @@ class TestCreateGroupReceiptCarriesGroupId:
     """
 
     def test_group_id_in_feedback_text(self):
+        # 2026-11-11 模型可见输出契约：渲染归工具自身（model_view），
+        # fc_feedback 不再按工具名特判 group_id。
         from src.video_agent.core.fc_feedback import format_tool_results
+        from src.video_agent.tools.storyboard_tools import StoryboardCreateGroupTool
 
+        tool = StoryboardCreateGroupTool()
+        data = {"group_id": "ke-7"}
+        view = tool.model_view(data)
+        assert "ke-7" in view, "建组回执未携带 group_id（模型无法定位新组）"
+        assert "current" in view, "应提示勿依赖 current（其语义非『最近组』）"
         out = format_tool_results([{
-            "name": "storyboard_create_group", "ok": True,
-            "data": {"group_id": "ke-7"},
+            "name": tool.name, "ok": True, "data": data, "model_view": view,
         }])
-        assert "ke-7" in out, "建组回执未携带 group_id（模型无法定位新组）"
-        assert "current" in out, "应提示勿依赖 current（其语义非『最近组』）"
+        assert "ke-7" in out and "current" in out
 
     def test_group_id_and_detail_both_present(self):
         """group_id 与既有 detail 并存（令牌未匹配提示不得被挤掉）。"""
         from src.video_agent.core.fc_feedback import format_tool_results
+        from src.video_agent.tools.storyboard_tools import StoryboardCreateGroupTool
 
+        tool = StoryboardCreateGroupTool()
+        data = {"group_id": "sh-3", "detail": "已建组，但描述中的 [元素名] 令牌未匹配"}
         out = format_tool_results([{
-            "name": "storyboard_create_group", "ok": True,
-            "data": {"group_id": "sh-3", "detail": "已建组，但描述中的 [元素名] 令牌未匹配"},
+            "name": tool.name, "ok": True, "data": data,
+            "model_view": tool.model_view(data),
         }])
         assert "sh-3" in out and "令牌未匹配" in out
 

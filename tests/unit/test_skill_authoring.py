@@ -157,9 +157,10 @@ def test_validate_style_issues_are_not_create_only():
 
 
 def test_validate_missing_flow_and_placeholder():
+    # 六节/流程标题不再是硬校验：自由标题结构可以保存，只留告警
     no_flow = GOOD.replace("## 四、创作流程规划", "## 四、杂项说明")
     issues = sa.validate_skill_draft(no_flow, create_mode=True)
-    assert any("缺少「制作流程」类章节" in i for i in issues)
+    assert not any("缺少「制作流程」类章节" in i for i in issues)
 
     placeholder = GOOD.replace(
         "4. 按分镜顺序组装时间线。",
@@ -198,7 +199,10 @@ def test_validate_optimize_mode_does_not_require_headings():
 # ---------- 路由：创作模式自修复 ----------
 
 def test_create_mode_repairs_once_when_check_fails(client, monkeypatch):
-    bad = GOOD.replace("## 四、创作流程规划", "## 四、杂项说明")
+    bad = GOOD.replace(
+        "4. 按分镜顺序组装时间线。",
+        "- 时间线怎么组装、导出前要确认哪些内容",
+    )
     adapter = _SeqAdapter([_reply(bad, "初版"), _reply(GOOD, "已修复")])
     monkeypatch.setattr(pr, "_resolve_chat_adapter", lambda provider, model: adapter)
 

@@ -67,7 +67,7 @@ def test_stale_canvas_env_keys_warn_not_raise(monkeypatch, caplog):
     warns = [r.getMessage() for r in caplog.records if "已退役" in r.getMessage()]
     assert any("CANVAS_BASE_URL" in w for w in warns)
     assert any("CANVAS_PROVIDERS_FILE" in w for w in warns)
-    # 警告必须指明新键名（不留「静默失效」死角）
-    assert any("CANVAS_AGENT_URL" in w for w in warns)
+    # 警告必须说明「已内置」（不留「静默失效」死角）
+    assert any("画布集成已内置" in w for w in warns)
     # 未设置的旧键不告警（无残留零噪声）
     assert not any("CANVAS_ENV_FILE" in w for w in warns)

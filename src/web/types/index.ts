@@ -79,6 +79,10 @@ export interface Draft {
   /** 卡片描述（批 1 · A2）：角色（年龄/外貌/服装）、场景（空间/材质/光源/氛围）等 */
   desc?: string;
   tag?: string;
+  /** 绑定态（2026-10-26 用户裁决）：该卡媒体为所属分组「同类媒体」的采用媒体；
+   *  出图成功自动绑定（同组同类型唯一），右键可手动绑定/取消；
+   *  后续生成只认绑定媒体（未绑定的不走参考解析）。 */
+  bound?: boolean;
   mediaType: MediaType;
   /** 当前选中的生成类型；缺省回退 mediaType（切换生成标签不清空已有预览媒体） */
   genType?: MediaType;
@@ -99,6 +103,34 @@ export interface Draft {
   audioModel?: string;
   /** 音频生成模式（独立于视频 mode） */
   audioMode?: string;
+  /** 音频通道（2026-10-28 音频批，后端 core/audio_channels 同词表）：
+   *  `voice_design` 音色设计 / `tts` 语音合成 / `music` 背景音乐 / `sfx` 音效。
+   *  缺省按 audioType 推导：voice→voice_design、bgm→music、sfx/foley→sfx、其余→tts。 */
+  audioChannel?: string;
+  /** 音色设计返回的 voice_id（与 audioModel 强绑定；换模型作废） */
+  voiceId?: string;
+  /** 音色设计试听文本（15-200 字，接口必填） */
+  previewText?: string;
+  /** 音色/合成语言（zh/en 或 Auto） */
+  audioLanguage?: string;
+  /** 音频采样率（Hz，下拉存字符串） */
+  audioSampleRate?: string;
+  /** 音频输出格式（wav/mp3/pcm） */
+  audioFormat?: string;
+  /** 背景音乐歌词（可选；与 prompt 二选一，同时给时歌词优先） */
+  lyrics?: string;
+  /** 纯音乐开关（BGM 恒开；为 true 时歌词与性别均无效） */
+  instrumental?: boolean;
+  /** 演唱性别（male/female，仅 fun-music-v1 且非纯音乐时生效） */
+  audioGender?: string;
+  /** AIGC 水印/标识开关 */
+  audioWatermark?: boolean;
+  /** 音效声道数（1/2） */
+  audioChannels?: string;
+  /** 音效音量 0-100 */
+  audioVolume?: string;
+  /** 音效语速 0.5-2.0 */
+  audioRate?: string;
   /** 音频卡的种类（后端 `storyboard_ops.AUDIO_TYPES` 同枚举）：
    *  `voice` = 角色音色卡（Skill 明文的 key_element_audio，挂在角色组内）、
    *  `bgm` = 背景音乐轨、`narration` = 旁白；另含 sfx/dialogue/foley。
@@ -180,6 +212,49 @@ export interface ChatModelMeta {
   thinking_level?: string;
 }
 
+/** 音频模型能力（后端 core/audio_channels 推导后下发；前端只消费不重算） */
+export type AudioCapability = 'voice_design' | 'tts' | 'music' | 'sfx';
+
+/** 音频参数类型：text/number 输入框、bool/enum 下拉、refs 只读参考栏 */
+export type AudioParamType = 'text' | 'bool' | 'enum' | 'number' | 'refs';
+
+/** 模型自己声明的参数（后端 audio_models_meta[].params 下发，底部栏据此渲染） */
+export interface AudioParamSpec {
+  key: string;
+  type: AudioParamType;
+  label?: string;
+  /** 限定通道；缺省 = 该模型全部能力 */
+  channels?: AudioCapability[];
+  required?: boolean;
+  default?: unknown;
+  values?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  min_len?: number;
+  max_len?: number;
+  /** 简单显隐条件，形如 "instrumental=false" */
+  when?: string;
+  placeholder?: string;
+  note?: string;
+  /** 多行宽输入框（长文本参数：试听文本 / 歌词） */
+  multiline?: boolean;
+  /** 音色输入旁提供「上传音频创建音色」入口（声音复刻） */
+  clone?: boolean;
+  /** 音色输入旁提供「拉取平台音色」入口（仅已接列表接口的适配器） */
+  list_voices?: boolean;
+  /** 参数级供应商限定（适配器类型，如 volcengine-speech）；缺省 = 所有供应商 */
+  providers?: string[];
+  /** prompt=复用主提示词框；refs=只读展示参考栏 */
+  source?: 'prompt' | 'draft' | 'refs';
+}
+
+export interface AudioModelMeta {
+  model: string;
+  capabilities?: AudioCapability[];
+  params?: AudioParamSpec[];
+}
+
 export interface ApiProvider {
   id: string;
   name: string;
@@ -190,6 +265,10 @@ export interface ApiProvider {
   image_models?: string[];
   video_models?: string[];
   audio_models?: string[];
+  /** 音频模型能力清单（后端推导，随 /api/providers 下发） */
+  audio_models_meta?: AudioModelMeta[];
+  /** 已接入的音频适配器：dashscope / openai-speech；空 = 尚未接入 */
+  audio_adapter?: string;
   /** 模型级配置（编辑面板写入；后端查窗口与思考参数用） */
   chat_models_meta?: ChatModelMeta[];
   [key: string]: unknown;
@@ -409,14 +488,15 @@ export interface DocRecord {
 // ===== 生成任务 =====
 export interface ActiveGeneration {
   start: number;
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio';
 }
 
 export interface TaskResult {
   status: string;
   task_id?: string;
-  result?: { images?: string[] };
+  result?: { images?: string[]; audio?: string; voice_id?: string };
   video_url?: string;
+  audio_url?: string;
   error?: string;
   elapsed?: string;
 }

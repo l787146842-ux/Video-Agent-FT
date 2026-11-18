@@ -40,6 +40,85 @@ def test_normalize_openai_base_url():
     assert pa.normalize_openai_base_url("https://api.x.com/v1") == "https://api.x.com/v1"
 
 
+def test_build_auth_headers_defaults_to_bearer():
+    assert pa.build_auth_headers(BASE_URL, "sk-1") == {"Authorization": "Bearer sk-1"}
+    assert pa.build_auth_headers(BASE_URL, "") == {}
+
+
+def test_build_auth_headers_non_standard_hosts_and_config():
+    """ElevenLabs 用 xi-api-key（无前缀）：域名兜底与供应商显式声明两条路都要能走。"""
+    assert pa.build_auth_headers("https://api.elevenlabs.io/v1", "k1") == {"xi-api-key": "k1"}
+    # 供应商配置显式声明（新平台无需改代码）
+    assert pa.build_auth_headers(
+        "https://api.example.com", "k2", auth_header="X-Api-Key", auth_prefix="Token ",
+    ) == {"X-Api-Key": "Token k2"}
+    # 声明 Authorization 但未给前缀 → 仍补 Bearer（避免手填配置掉前缀）
+    assert pa.build_auth_headers(
+        "https://api.example.com", "k3", auth_header="Authorization",
+    ) == {"Authorization": "Bearer k3"}
+
+
+def test_extract_model_ids_three_shapes():
+    """模型列表三种形状：OpenAI 的 data、ElevenLabs 裸数组、models 包了一层。"""
+    assert pa._extract_model_ids({"data": [{"id": "gpt-4o"}]}) == ["gpt-4o"]
+    assert pa._extract_model_ids([{"model_id": "eleven_v4"}]) == ["eleven_v4"]
+    assert pa._extract_model_ids({"models": [{"name": "x"}, "y"]}) == ["x", "y"]
+    assert pa._extract_model_ids({"data": []}) == []
+    assert pa._extract_model_ids(None) == []
+
+
+def test_classify_models_audio_only_host():
+    """纯音频平台：无关键词的 eleven_v4 归 audio，而不是兜底进 chat。"""
+    from src.video_agent.utils.provider_config_loader import classify_models
+
+    models = ["eleven_v4", "eleven_turbo_v2_5"]
+    assert classify_models(models)["chat_models"] == models  # 无 base_url 时存量行为不变
+    got = classify_models(models, "https://api.elevenlabs.io/v1")
+    assert got["audio_models"] == models
+    assert got["chat_models"] == []
+
+
+def test_model_list_candidates():
+    """版本段结尾不补 /v1（火山 /api/v3）；主机名先试 /v1 再回落。"""
+    assert pa.model_list_candidates("https://ark.cn-beijing.volces.com/api/v3") == [
+        "https://ark.cn-beijing.volces.com/api/v3"]
+    assert pa.model_list_candidates("https://api.x.com/v1") == ["https://api.x.com/v1"]
+    assert pa.model_list_candidates("https://api.x.com") == [
+        "https://api.x.com/v1", "https://api.x.com"]
+    assert pa.model_list_candidates("") == []
+
+
+async def test_fetch_model_list_falls_back_to_models_on_404(monkeypatch):
+    """主机名 base：/v1/models 404 时回落 /models（兼容两种填法）。"""
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if str(request.url).endswith("/v1/models"):
+            return httpx.Response(404, text="not found")
+        return httpx.Response(200, json={"data": [{"id": "m1"}]})
+
+    _patch_client(monkeypatch, handler)
+    models = await pa.ProviderProbeAdapter().fetch_model_list(BASE_URL, "")
+    assert models == ["m1"]
+    assert seen == [f"{BASE_URL}/v1/models", f"{BASE_URL}/models"]
+
+
+async def test_fetch_model_list_version_suffix_no_v1_append(monkeypatch):
+    """火山方舟 base=.../api/v3：只请求 /api/v3/models（不再拼成 /api/v3/v1）。"""
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"data": [{"id": "doubao"}]})
+
+    _patch_client(monkeypatch, handler)
+    models = await pa.ProviderProbeAdapter().fetch_model_list(
+        "https://ark.cn-beijing.volces.com/api/v3", "")
+    assert models == ["doubao"]
+    assert seen == ["https://ark.cn-beijing.volces.com/api/v3/models"]
+
+
 async def test_fetch_model_list_success_sorted(monkeypatch):
     """GET {base_url}/v1/models，返回排序后的模型 id（空 id 过滤）"""
     seen_urls = []
@@ -146,6 +225,48 @@ async def test_probe_models_endpoint_timeout(monkeypatch):
     _patch_client(monkeypatch, handler)
     with pytest.raises(pa.ProbeTimeoutError):
         await pa.ProviderProbeAdapter().probe_models_endpoint(BASE_URL, "")
+
+
+async def test_fetch_models_route_404_hint(monkeypatch):
+    """路由层 404 文案：提示手动添加模型（而非裸 HTTP 404）。"""
+    from src.video_agent.web.routes import providers as pr
+
+    class _Probe:
+        async def fetch_model_list(self, *args, **kwargs):
+            raise pa.ProbeHTTPError("HTTP 404", http_status=404, body_text="")
+
+    monkeypatch.setattr(pr, "get_provider_probe_adapter", lambda: _Probe())
+    req = pr.ProviderProbeRequest(base_url="https://example.com", protocol="openai")
+    out = await pr.fetch_models(req)
+    assert "手动添加" in out["error"]
+
+
+async def test_fetch_models_route_404_fills_preset(monkeypatch):
+    """豆包语音没有 /models（实测 404）：回填配置里的预置模型，而不是只报错。
+
+    否则用户点「拉取模型」永远失败，且不知道模型名该填什么。
+    """
+    from src.video_agent.web.routes import providers as pr
+
+    class _Probe:
+        async def fetch_model_list(self, *args, **kwargs):
+            raise pa.ProbeHTTPError("HTTP 404", http_status=404, body_text="")
+
+    monkeypatch.setattr(pr, "get_provider_probe_adapter", lambda: _Probe())
+    monkeypatch.setattr(pr, "load_merged_providers", lambda: [{
+        "id": "volcengine-speech",
+        "audio_models": ["voice-design", "seed-audio-1.0"],
+        "audio_models_meta": [{"model": "extra-voice", "capabilities": ["tts"]}],
+        "chat_models": [], "image_models": [], "video_models": [],
+    }])
+    req = pr.ProviderProbeRequest(
+        base_url="https://openspeech.bytedance.com", provider_id="volcengine-speech")
+    out = await pr.fetch_models(req)
+    # audio_models_meta 里多出的模型也要算进来
+    assert out["audio_models"] == ["voice-design", "seed-audio-1.0", "extra-voice"]
+    assert out["total"] == 3
+    assert not out.get("error")
+    assert "预置" in out["note"]
 
 
 def test_default_timeouts_preserve_legacy_values():

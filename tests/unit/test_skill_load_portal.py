@@ -153,31 +153,24 @@ def test_fallback_skips_disabled_and_all_blind(set_global_setting):
 # ---------- 消费面：read_skill 三形态 / 目录段 / 风格层 ----------
 
 
-async def test_read_skill_three_forms_reject_disabled(set_global_setting):
-    """停用 → 全文/章节/资源三形态统一拒绝，报错区分「已停用」与「不存在」。"""
+async def test_read_skill_rejects_user_only_and_disabled(set_global_setting):
+    """user-only 技能不能被模型 read_skill 加载；停用仍由资源门户拒绝。"""
     victim = registry.loadable_entries()[0]
     tool = ReadSkillTool()
-    # 启用时全文可读（存量行为）
-    ok = await tool.aexecute(ReadSkillInput(name=victim.name))
-    assert ok.success
-    set_global_setting("skills_disabled", [victim.slug])
     full = await tool.aexecute(ReadSkillInput(name=victim.name))
     sec = await tool.aexecute(ReadSkillInput(name=victim.name, section="任意章节"))
     res = await tool.aexecute(ReadSkillInput(name=victim.name, resource="references/x.md"))
     for r in (full, sec, res):
         assert not r.success
-        assert "已停用" in (r.error or "")
-    # 资源通道门户同口径（含「停用」语义，非「未找到」）
+        assert "not available for model invocation" in (r.error or "")
+    # 资源通道门户仍区分「停用」语义（read_file 走这里）
+    set_global_setting("skills_disabled", [victim.slug])
     path, err = registry.resolve_skill_resource(victim.slug, "references/x.md")
     assert path is None and "已停用" in err
-    # 不存在项仍是「未找到」语义，可用清单只含启用项（停用者不在列）
+    set_global_setting("skills_disabled", [])
+    # 模型目录为空（现存技能全部 user-only），未知项错误不列任何 Skill
     miss = await tool.aexecute(ReadSkillInput(name="不存在的技能"))
     assert not miss.success and "未找到" in miss.error
-    assert victim.name not in miss.error
-    # 重新启用后可用清单恢复（活读）
-    set_global_setting("skills_disabled", [])
-    miss2 = await tool.aexecute(ReadSkillInput(name="不存在的技能"))
-    assert victim.name in miss2.error
 
 
 def test_hot_switch_blind_and_recover(set_global_setting):
@@ -192,23 +185,7 @@ def test_hot_switch_blind_and_recover(set_global_setting):
     assert registry.match_skill_name_from_text(victim.name) == victim.name
 
 
-def test_stock_behavior_all_enabled_catalog():
-    """存量保持：默认空开关时目录段含全部文档 Skill（与现状一致）。"""
-    docs = sd.list_skill_docs()
-    block = _pb(_base_state()).build_skill_catalog(_ctx())
-    for d in docs:
-        assert (d.get("name") or d.get("slug")) in block
 
-
-async def test_stock_behavior_all_enabled_list_skills():
-    """存量保持：默认空开关时 list_skills 名单与计数同文档目录一致。"""
-    docs = sd.list_skill_docs()
-    res = await ListSkillsTool().aexecute(ListSkillsInput())
-    assert res.success and res.error is None
-    assert res.data["count"] == len(docs)
-    assert {s["slug"] for s in res.data["skills"]} == {d["slug"] for d in docs}
-    for s in res.data["skills"]:
-        assert s["name"] and "description" in s
 
 
 # ---------- 注入链路按需加载边缘分支（B1：planner 段/目录探测降级定向补测） ----------

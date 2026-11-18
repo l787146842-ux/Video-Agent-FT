@@ -30,8 +30,9 @@ interface GenerateEvent {
   status?: string;
   kind?: string;
   draft_id?: string;
-  result?: { images?: string[] };
+  result?: { images?: string[]; audio?: string; voice_id?: string };
   video_url?: string;
+  audio_url?: string;
   error?: string;
   elapsed?: number;
 }
@@ -124,7 +125,8 @@ export async function restoreActiveGenerations(): Promise<void> {
     for (const t of data.tasks || []) {
       if (!t.draft_id || !findDraftRecord(t.draft_id)) continue;
       const startedAt = t.created_at > 0 ? t.created_at * 1000 : Date.now();
-      studioActions.startGeneration(t.draft_id, t.kind === 'video' ? 'video' : 'image', startedAt);
+      const kind = t.kind === 'video' ? 'video' : t.kind === 'audio' ? 'audio' : 'image';
+      studioActions.startGeneration(t.draft_id, kind, startedAt);
     }
   } catch { /* 后端未就绪静默降级 */ }
 }
@@ -166,19 +168,29 @@ export function initGenerationEvents(): void {
 
     const rec = findDraftRecord(draftId);
     if (!rec) return;
-    const kind: 'image' | 'video' = ev.kind === 'video' ? 'video' : 'image';
+    const kind: 'image' | 'video' | 'audio' =
+      ev.kind === 'video' ? 'video' : ev.kind === 'audio' ? 'audio' : 'image';
 
     if (ev.status === 'started') {
       // 卡片 + 中间预览框立即进入「生成中」转圈读秒状态
       studioActions.startGeneration(draftId, kind);
       studioActions.updateDraftLocal(rec.type, draftId, { tag: '生成中', genType: kind });
     } else if (ev.status === 'succeeded') {
-      const url = ev.result?.images?.[0] || ev.video_url || '';
+      const url = kind === 'audio'
+        ? (ev.result?.audio || ev.audio_url || '')
+        : (ev.result?.images?.[0] || ev.video_url || '');
       if (url) {
         const patch: Partial<Draft> = kind === 'video'
           ? { mediaType: 'video', genType: 'video', videoUrl: url, imgUrl: '', audioUrl: '', tag: '已生成' }
-          : { mediaType: 'image', genType: 'image', imgUrl: url, videoUrl: '', audioUrl: '', tag: '已生成' };
+          : kind === 'audio'
+            ? {
+              mediaType: 'audio', genType: 'audio', audioUrl: url, imgUrl: '', videoUrl: '', tag: '已生成',
+              ...(ev.result?.voice_id ? { voiceId: ev.result.voice_id } : {}),
+            }
+            : { mediaType: 'image', genType: 'image', imgUrl: url, videoUrl: '', audioUrl: '', tag: '已生成' };
         studioActions.updateDraftLocal(rec.type, draftId, patch);
+        // 2026-10-26 用户裁决：出图成功自动绑定为该组同类媒体的采用媒体（同组同类型唯一）
+        studioActions.bindDraftLocal(rec.type, rec.group.id, draftId, true);
       }
       studioActions.finishGeneration(draftId);
     } else if (ev.status === 'failed') {

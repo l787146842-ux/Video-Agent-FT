@@ -4,7 +4,6 @@ import {
   type CanvasSelectionResult,
 } from '@/api/canvas';
 import type { InfiniteCanvasEmbedConfig } from '@/api/providers';
-import { state } from '@/stores/studio';
 
 /**
  * 画布 iframe 共享状态
@@ -24,50 +23,91 @@ export function getCanvasIframe() {
 /** 画布加载失败标志 */
 export const [canvasError, setCanvasError] = createSignal(false);
 
-/** 画布站点地址（离线提示文案用）：取嵌入配置，未就绪时兜底默认站点 */
+/**
+ * 画布子应用同域挂载路径。
+ * L1 起画布由本项目 FastAPI 直出（vendors/infinite-canvas 构建产物），
+ * iframe 与外层同源，跨域墙消失；外部站点不再参与嵌入。
+ */
+const CANVAS_APP_PATH = '/canvas-app';
+
+/** 画布站点地址（提示文案用）：同域挂载的绝对地址 */
 export function canvasSiteUrl(): string {
-  return canvasEmbed()?.canvas_url || state.canvasUrl || 'http://127.0.0.1:3000';
+  return `${window.location.origin}${CANVAS_APP_PATH}`;
 }
 
 /**
- * 画布 iframe 引导地址：{画布站点}/#agentUrl={canvas-agent}&agentToken={token}，
- * 参数来自后端 /api/config 下发（对端 readAgentUrlBootstrap 解析 hash）；
- * 嵌入配置未就绪时兜底默认站点直嵌。
+ * 画布 iframe 引导地址：/canvas-app/#agentUrl={canvas-agent}&agentToken={token}，
+ * 参数来自后端 /api/config 下发（对端 readAgentUrlBootstrap 解析 hash）。
  */
 export const [canvasEmbed, setCanvasEmbed] = createSignal<InfiniteCanvasEmbedConfig | undefined>(undefined);
 export function canvasIframeSrc(): string {
   const emb = canvasEmbed();
-  if (emb?.canvas_url) {
-    const base = emb.canvas_url.replace(/\/$/, '');
-    return `${base}/#agentUrl=${encodeURIComponent(emb.agent_url)}&agentToken=${encodeURIComponent(emb.agent_token)}`;
+  if (emb?.agent_url) {
+    return `${CANVAS_APP_PATH}/#agentUrl=${encodeURIComponent(emb.agent_url)}&agentToken=${encodeURIComponent(emb.agent_token)}`;
   }
-  return state.canvasUrl || 'http://127.0.0.1:3000';
+  return `${CANVAS_APP_PATH}/`;
 }
 
 /**
- * 探测画布服务是否在线。
- * 走本项目后端 GET /api/canvas/list（其返回 canvas_online 标志），
- * 不依赖 postMessage 握手（画布当前不发送任何消息，Rule 7 不可改）。
- * 离线或请求失败时置 canvasError=true，驱动 CanvasView 的错误覆盖层。
- * 传入 graceRetryMs 时，首次探测离线先宽限等待再重探一次：
- * 画布编辑器客户端尚未接入 canvas-agent 时后端健康探针会短暂误报离线。
+ * 单次画布可达探测。
+ * 走本项目后端 GET /api/canvas/list，不依赖 postMessage 握手（画布不发消息，Rule 7）。
+ * 口径：只认 canvas_reachable（画布站点可达即可嵌入加载）；canvas_online 含
+ * “画布页已连 canvas-agent”语义，画布页尚未接入时画布仍能正常渲染，
+ * 不得据此报“画布加载失败”（老后端无该字段时回落到旧口径）。
  */
-export async function probeCanvasOnline(graceRetryMs = 0): Promise<boolean> {
-  const probeOnce = async (): Promise<boolean> => {
-    try {
-      const res = await fetchCanvasList();
-      return res.canvas_online !== false;
-    } catch {
-      return false;
-    }
-  };
-  let online = await probeOnce();
-  if (!online && graceRetryMs > 0) {
-    await new Promise((r) => setTimeout(r, graceRetryMs));
-    online = await probeOnce();
+async function probeCanvasOnce(): Promise<boolean> {
+  try {
+    const res = await fetchCanvasList();
+    if (typeof res.canvas_reachable === 'boolean') return res.canvas_reachable;
+    return res.canvas_online !== false;
+  } catch {
+    return false;
   }
-  setCanvasError(!online);
-  return online;
+}
+
+/** 轮询节奏：1s 一轮、最多 12 轮（覆盖画布站点冷启动/重连窗口） */
+const PROBE_INTERVAL_MS = 1000;
+const PROBE_MAX_ATTEMPTS = 12;
+let probeSeq = 0;
+
+/**
+ * 画布加载探测（进入画布/手动重试时调用）：失败不再一次定终局。
+ * 每轮探一次，期间任一轮可达即自动收起覆盖层；连续两轮（约 1s）不可达才点亮，
+ * 避免画布站点冷启动窗口内闪报错误。
+ */
+export async function probeCanvasOnline(): Promise<boolean> {
+  const seq = ++probeSeq;
+  let errorShown = false;
+  for (let attempt = 0; attempt < PROBE_MAX_ATTEMPTS; attempt += 1) {
+    const online = await probeCanvasOnce();
+    if (seq !== probeSeq) return false; // 已被新一轮探测（或卸载）取代
+    if (online) {
+      setCanvasError(false);
+      return true;
+    }
+    if (attempt >= 1 && !errorShown) {
+      errorShown = true;
+      setCanvasError(true);
+    }
+    if (attempt < PROBE_MAX_ATTEMPTS - 1) {
+      await new Promise((r) => setTimeout(r, PROBE_INTERVAL_MS));
+      if (seq !== probeSeq) return false;
+    }
+  }
+  return false;
+}
+
+/** 停止在途探测（路由卸载时调用，防旧轮次回写覆盖层） */
+export function stopCanvasProbe() {
+  probeSeq += 1;
+}
+
+/** 重新加载画布 iframe：改 src 触发重新导航（不依赖读取 contentWindow） */
+export function reloadCanvasIframe() {
+  const el = iframeEl;
+  if (!el) return;
+  el.removeAttribute('src');
+  requestAnimationFrame(() => { el.src = canvasIframeSrc(); });
 }
 
 /** 覆盖层拖拽中标志（拖拽时禁用 iframe pointer-events 防止吐掉 mousemove） */

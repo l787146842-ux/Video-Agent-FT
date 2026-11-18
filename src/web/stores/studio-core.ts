@@ -33,7 +33,6 @@ export interface StudioState {
   availableChatModels: string[];
   availableImageModels: string[];
   availableVideoModels: string[];
-  canvasUrl: string;
   activeGenerations: Record<string, ActiveGeneration>;
   projectName: string;
   /** 当前项目 ID（来自后端快照 project_id，persistBoard 回传供后端校验防止跨项目写入） */
@@ -82,7 +81,6 @@ const defaultState: StudioState = {
   availableChatModels: [],
   availableImageModels: [],
   availableVideoModels: [],
-  canvasUrl: 'http://localhost:3000',
   activeGenerations: {},
   projectName: '',
   projectId: '',

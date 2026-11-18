@@ -24,8 +24,10 @@
   .add-group-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
 
   /* 文字可复制：分组卡片内容 + 提示词 + 对话框 + 聊天富文本输入框
-     （全局 user-select:none 见 tokens.css；输入区不豁免会阻断光标选词复制） */
-  .sb-title, .sb-desc, .draft-card, .prompt-textarea, .rich-chat-input, .chat-msg { user-select: text; -webkit-user-select: text; cursor: text; }
+     （全局 user-select:none 见 tokens.css；输入区不豁免会阻断光标选词复制）。
+     2026-10-22：草稿卡卡面文字已摘除（名称/描述只走悬停 title），
+     本清单不再包含 .draft-card——留着会让整卡呈现文字光标，与「点卡预览」手势打架 */
+  .sb-title, .sb-desc, .prompt-textarea, .rich-chat-input, .chat-msg { user-select: text; -webkit-user-select: text; cursor: text; }
 
   .sb-group { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 10px; transition: border-color 0.2s; }
   .sb-group:hover { border-color: color-mix(in srgb, var(--color-info-strong) 40%, transparent); }
@@ -57,7 +59,10 @@
     .sb-design-body .mention-chip { cursor: pointer; }
     .desc-ref-remove { margin-left: 4px; cursor: pointer; color: var(--color-danger); font-weight: 700; }
   .sb-index { font-size: var(--font-sm); font-weight: 700; color: var(--text-dim); min-width: 16px; text-align: center; }
-  .sb-desc { font-size: var(--font-sm); color: var(--text-muted); line-height: 1.4; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sb-desc { font-size: var(--font-sm); color: var(--text-muted); line-height: 1.4; margin-top: 4px; }
+  /* 描述折叠（2026-10-26 用户裁决：关键元素/音频 desc 与分镜同口径） */
+  .sb-desc-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .sb-desc--collapsed { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
   .draft-cards-row { display: flex; gap: 8px; align-items: flex-start; overflow-x: auto; padding: 4px 0; }
   /* 卡片列：卡片 + 下方小标编号；整列可拖动排序 */
@@ -66,8 +71,17 @@
   .draft-card-code { font-size: var(--font-2xs); color: var(--text-dim); line-height: 1; font-variant-numeric: tabular-nums; user-select: none; }
   .draft-card.drag-over { border-color: var(--accent-blue); box-shadow: 0 0 8px color-mix(in srgb, var(--color-info-strong) 50%, transparent); }
   /* 卡片定宽：长 label 不得把卡片撑长，省略号截断；
-     描述区 2 行 clamp，组卡高度不再随长文增长 */
-  .draft-card { width: 116px; min-width: 116px; height: 64px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); border: 2px solid transparent; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px; background-size: cover; background-position: center; transition: all 0.2s; }
+     卡面零文字（2026-10-22 用户裁决）：名称/描述只走悬停 title 与中间预览框。
+     边框窄档只由两个修饰类提供（基类保持透明，未归类素材卡外观不受影响）：
+     --filled = 已有媒体（实线窄边）；--empty = 尚未生成（虚线窄边） */
+  .draft-card { width: 116px; min-width: 116px; height: 64px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); border: 1px solid transparent; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 0; background-size: cover; background-position: center; transition: all 0.2s; }
+  .draft-card.draft-card--filled { border-color: var(--border-color); }
+  .draft-card.draft-card--empty { border-style: dashed; border-color: var(--border-color); }
+  /* 生成失败：危险色窄边 + 危险色占位符号（卡面文字已摘除，状态只能走颜色信号；
+     与空卡虚线/实线形成第三态，防「失败」被读成「还没生成」） */
+  .draft-card.draft-card--failed { border-style: solid; border-color: color-mix(in srgb, var(--color-danger) 65%, transparent); }
+  .draft-card.draft-card--failed .draft-card-placeholder-icon,
+  .draft-card.draft-card--failed .draft-card-audio-indicator.is-empty { color: var(--color-danger); }
   .draft-card.active { border-color: var(--accent-blue); box-shadow: 0 0 8px color-mix(in srgb, var(--color-info-strong) 50%, transparent); }
   /* 预览框导航按钮定位时的闪烁高亮 */
   .draft-card.locate-flash { animation: draft-card-locate-flash 1.4s ease; }
@@ -77,14 +91,24 @@
     0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--color-info-strong) 50%, transparent); }
     25%, 65% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-info-strong) 75%, transparent), 0 0 18px color-mix(in srgb, var(--color-info-strong) 90%, transparent); }
   }
-  .draft-card-label { font-size: var(--font-2xs); background: color-mix(in srgb, var(--color-black) 70%, transparent); backdrop-filter: blur(4px); color: var(--color-white); padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* 卡片描述（批 1 · A2）：空卡片时在名称下方两行截断展示，悬停整卡 title 兜底 */
-  .draft-card-desc { font-size: var(--font-3xs); line-height: 1.35; background: color-mix(in srgb, var(--color-black) 55%, transparent); color: color-mix(in srgb, var(--color-white) 88%, transparent); padding: 2px 4px; border-radius: 3px; width: calc(100% - 8px); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; pointer-events: none; }
-  .draft-card-tag { position: absolute; top: 4px; right: 4px; font-size: var(--font-3xs); padding: 1px 4px; border-radius: 3px; background: color-mix(in srgb, var(--color-info-strong) 80%, transparent); color: var(--color-white); }
-    /* 草稿卡片媒体类型可视化：视频首帧缩略图 / 音频标识 */
+  /* 卡面文字族：2026-10-22 用户裁决「卡面文字信息删掉」——
+     故事板草稿卡（DraftCard）不再渲染名称/描述/状态文字，信息载体改为
+     悬停 title（名称+描述）与中间预览框；.draft-card-desc / .draft-card-tag
+     整族退场。.draft-card-label 仅保留给未归类素材卡（AssetCard：无分组
+     上下文，去掉名称将无法辨认卡片）。 */
+  .draft-card-label { margin: 4px; font-size: var(--font-2xs); background: color-mix(in srgb, var(--color-black) 70%, transparent); backdrop-filter: blur(4px); color: var(--color-white); padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 草稿卡片媒体类型可视化：视频首帧缩略图 / 音频标识 / 未生成占位符号 */
+    /* 生成中读秒环覆盖层（与中间预览框同源 GenProgress 紧凑档） */
+    .draft-card-gen-overlay { position: absolute; inset: 0; z-index: var(--z-raised); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-black) 38%, transparent); pointer-events: none; }
+    /* 绑定绿勾（细黑边框保证在浅色图上也可见）：右上角，不拦截点击 */
+    .draft-card-bound-badge { position: absolute; top: 2px; right: 2px; z-index: var(--z-card-badge); display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--color-success); color: var(--color-white); border: 1px solid var(--color-black); box-sizing: border-box; pointer-events: none; }
     .draft-card-thumb-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-    .draft-card-media-badge { position: absolute; top: 4px; left: 4px; z-index: var(--z-raised); display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb, var(--color-black) 60%, transparent); color: var(--color-white); backdrop-filter: blur(2px); pointer-events: none; }
+    .draft-card-media-badge { position: absolute; top: 3px; left: 3px; z-index: var(--z-raised); display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: color-mix(in srgb, var(--color-black) 60%, transparent); color: var(--color-white); backdrop-filter: blur(2px); pointer-events: none; }
     .draft-card-audio-indicator { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--color-success); pointer-events: none; }
+    /* 未生成音频：只留广播符号（图4 口径），无波形 */
+    .draft-card-audio-indicator.is-empty { color: var(--text-dim); }
+    /* 未生成图片/视频：居中类型符号占位 */
+    .draft-card-placeholder-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-dim); pointer-events: none; }
     .draft-card-wave { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
     .draft-card-wave span { width: 2px; border-radius: 1px; background: var(--color-success); }
     .draft-card-wave span:nth-child(1) { height: 5px; }

@@ -41,6 +41,10 @@
   .gen-progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .gen-progress-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--font-sm); color: var(--text-muted); }
   .gen-progress-label { font-size: var(--font-sm); color: var(--text-muted); }
+  /* 紧凑档（2026-10-26 用户裁决：左栏草稿卡内嵌同源读秒环）：只留小环 + 秒数，无标签 */
+  .gen-progress--compact { gap: 0; }
+  .gen-progress--compact .gen-progress-ring { width: 34px; height: 34px; }
+  .gen-progress--compact .gen-progress-time { font-size: var(--font-2xs); color: var(--text-main); font-variant-numeric: tabular-nums; }
 
   /* Prompt 区*/
   .preview-bottom-shell { display: flex; flex-direction: column; flex-shrink: 0; background: var(--bg-secondary); }
@@ -118,6 +122,17 @@
   .custom-ratio-input:focus { border-color: var(--accent-blue); }
   .param-sep { color: var(--text-dim); }
     .param-unit { font-size: var(--font-xs); color: var(--text-muted); margin-left: -4px; flex-shrink: 0; }
+  /* 长文本参数（试听文本/歌词）：独占整行，多行可拉高，避免一行小格子写台词 */
+  .param-group-block { flex: 1 1 100%; flex-wrap: wrap; align-items: center; }
+  .param-textarea { flex: 1; min-width: 200px; min-height: 48px; max-height: 160px; resize: vertical; background-color: var(--bg-primary); color: var(--text-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 8px; font-size: var(--font-sm); font-family: inherit; line-height: 1.5; outline: none; }
+  .param-textarea:focus { border-color: var(--accent-blue); }
+  /* 短文本参数（音色 ID 等）：宽度随内容，但不占半行 */
+  .param-text-input { text-align: left; min-width: 96px; max-width: 180px; }
+  /* 平台音色下拉：名字 + ID 比普通参数长，允许比 .param-select 宽一档 */
+  .param-voice-select { max-width: 280px; }
+  /* 音色试听：窄条播放器，不挤压同一行的输入框与按钮 */
+  .param-audio-preview { height: 28px; max-width: 240px; flex-shrink: 0; }
+  .param-note { flex-basis: 100%; font-size: var(--font-xs); color: var(--text-muted); line-height: 1.4; }
   .param-actions { display: flex; gap: 8px; align-items: center; }
   .param-actions .btn-primary, .param-actions .btn-secondary { padding: 5px 15px; font-size: var(--font-md); gap: 5px; }
 }

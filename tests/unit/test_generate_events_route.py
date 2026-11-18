@@ -10,9 +10,12 @@ import asyncio
 import json
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.web.error_payload import classify_exception
 from src.video_agent.web.routes import generate as gen_routes
 
 
@@ -51,6 +54,14 @@ def fake_tm(monkeypatch):
 @pytest.fixture()
 def client(fake_tm):  # noqa: ARG001（fake_tm 经 monkeypatch 生效于路由模块）
     app = FastAPI()
+
+    # 与生产 app.py 同形的业务异常转译（否则 VideoAgentError 会直穿成 500/抛错）
+    @app.exception_handler(VideoAgentError)
+    async def _video_agent_error_handler(request: Request, exc: VideoAgentError):
+        payload = classify_exception(exc, raw=getattr(exc, "raw", "") or "")
+        return JSONResponse(
+            status_code=exc.status_code, content=payload.http_body(exc.error_code))
+
     app.include_router(gen_routes.router, prefix="/api")
     return TestClient(app)
 
@@ -131,3 +142,58 @@ def test_per_task_endpoint_streams_event_content_type(client, fake_tm):
         "task_id": "img-2", "status": "failed", "kind": "image",
         "draft_id": "", "elapsed": 7.7, "error": "boom",
     }
+
+
+# ---------- 音频端点（2026-10-28 M1-M3） ----------
+
+@pytest.mark.asyncio
+async def test_audio_terminal_snapshot_carries_kind_and_url(fake_tm):
+    """音频终态快照：kind=audio + audio_url 随帧下发（前端按 kind 写回 audioUrl）"""
+    fake_tm.tasks["aud-1"] = {
+        "status": "succeeded", "created_at": 1000.0, "elapsed": 3.0,
+        "media_kind": "audio", "draft_id": "a1",
+        "audio_url": "/workspace/assets/audio-1.mp3",
+        "result": {"audio": "/workspace/assets/audio-1.mp3", "voice_id": "v-1"},
+    }
+    resp = await gen_routes.generate_events_for_task("aud-1")
+    frames = [f async for f in resp.body_iterator]
+    data = _data_frames(frames)[0]
+    assert data["kind"] == "audio"
+    assert data["audio_url"] == "/workspace/assets/audio-1.mp3"
+    assert data["result"]["voice_id"] == "v-1"
+
+
+@pytest.mark.asyncio
+async def test_active_tasks_reports_audio_kind(fake_tm):
+    fake_tm.tasks["aud-2"] = {
+        "status": "processing", "draft_id": "a2",
+        "media_kind": "audio", "created_at": 1.0,
+    }
+    out = await gen_routes.get_active_tasks()
+    assert out["tasks"][0]["kind"] == "audio"
+    assert out["tasks"][0]["draft_id"] == "a2"
+
+
+def test_audio_route_registered_and_validates(client):
+    """音频路由注册；缺供应商/未知通道 → 400（不落任务、不猜模型）。
+
+    FastAPI 对 include_router 使用惰性占位（_IncludedRouter），故不在
+    router.routes 上取 path 断言，改用 HTTP 语义：400=已注册且校验生效，404=未注册。
+    """
+    bad_channel = client.post("/api/generate/audio", json={
+        "channel": "podcast", "provider_id": "custom-api-8", "model": "fun-music-v1",
+    })
+    assert bad_channel.status_code == 400
+    assert "未知音频通道" in bad_channel.text
+
+    no_provider = client.post("/api/generate/audio", json={
+        "channel": "music", "provider_id": "", "model": "fun-music-v1",
+    })
+    assert no_provider.status_code == 400
+    assert no_provider.json().get("error_code") == "PROVIDER_NOT_CONFIGURED", no_provider.text
+
+    no_model = client.post("/api/generate/audio", json={
+        "channel": "music", "provider_id": "custom-api-8", "model": "",
+    })
+    assert no_model.status_code == 400
+

@@ -141,26 +141,13 @@ def test_resource_manifest_excludes_symlinks(tmp_path, monkeypatch):
 # ---------- ③ read_skill 工具端到端 ----------
 
 
-async def test_read_skill_resource_end_to_end():
+async def test_read_skill_rejects_user_only_package():
+    """2026-11-12：现存技能全 user-only，模型 read_skill 一律拒绝；
+    分册改走 read_file（路径 jail 见 test_skill_file_tools）。"""
     res = await ReadSkillTool().aexecute(
         ReadSkillInput(name=PKG, resource=REF1))
-    assert res.success, res.error
-    assert res.data["resource"] == REF1
-    assert "五行" in res.data["content"]
-
-
-async def test_read_skill_resource_denied_outside_manifest():
-    res = await ReadSkillTool().aexecute(
-        ReadSkillInput(name=PKG, resource="references/不存在.md"))
     assert not res.success
-    assert "fail-closed" in res.error
-
-
-async def test_read_skill_resource_denied_absent_package():
-    res = await ReadSkillTool().aexecute(
-        ReadSkillInput(name=PKG, resource="references/不存在的分册.md"))
-    assert not res.success
-    assert "资源清单" in res.error
+    assert "not available for model invocation" in (res.error or "")
 
 
 # ---------- ③-b 批4：二进制资源禁入文本通道（媒体例外通道） ----------
@@ -191,40 +178,8 @@ def test_resolve_resource_media_descriptor_channel(tmp_path, monkeypatch):
     assert path3 is None and err3
 
 
-async def test_read_skill_media_resource_returns_descriptor(
-        tmp_path, monkeypatch):
-    """批4：媒体资源只返回元数据描述符（名/大小/类型），不按文本读入上下文。"""
-    import src.video_agent.tools.document_tools as dt
-
-    pkg = tmp_path / "mediapkg"
-    refs = pkg / "references"
-    refs.mkdir(parents=True)
-    (pkg / "mediapkg.md").write_text("正文", encoding="utf-8")
-    (refs / "ref.png").write_bytes(b"\x89PNG fake-binary")
-    entry = registry.SkillEntry(
-        slug="mediapkg", name="mediapkg", content="", sections={})
-    monkeypatch.setattr(
-        registry.SkillEntry, "package_root", property(lambda self: pkg))
-    monkeypatch.setattr(registry, "resolve_entry", lambda wanted: entry)
-
-    class _StubDocs:
-        def resolve_skill_content(self, name):
-            return "mediapkg", "正文"
-
-        def list_skill_sections(self, content):
-            return []
-
-        def list_skill_docs(self):
-            return []
-
-    monkeypatch.setattr(dt.ports, "skill_docs_port", lambda: _StubDocs())
-    res = await ReadSkillTool().aexecute(
-        ReadSkillInput(name="mediapkg", resource="references/ref.png"))
-    assert res.success, res.error
-    assert res.data["media_kind"] == "image"
-    assert res.data["size"] > 0
-    assert "元数据描述符" in res.data["content"]
-    assert "\x89PNG" not in res.data["content"]  # 二进制不按文本读
+# 2026-11-12：read_skill 媒体描述符通道随 user-only 加载策略退役；
+# read_file 的媒体描述符覆盖见 tests/unit/test_skill_file_tools.py。
 
 
 # ---------- ④ scan 资源探针（WARN，诊断性质） ----------
