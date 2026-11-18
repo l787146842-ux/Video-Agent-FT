@@ -26,6 +26,17 @@ class ProviderBase(BaseModel):
     # 扩展字段（前端用）
     image_request_mode: str = "openai"
     video_request_mode: str = "classic"  # classic: ModelScope/Seedance；openai: OpenAI /video/generations
+    # 音频协议：空 = 百炼原生音频（DashScope/MaaS）；openai-speech = OpenAI 兼容 /audio/speech
+    audio_request_mode: str = ""
+    # 部分平台把音色编码为 model:voice（如硅基流动），开启后由适配器自动拼接
+    audio_voice_join_model: bool = False
+    # 火山豆包语音（protocol=volcengine-speech）：AppID + Cluster（Token 走 API Key）
+    volc_appid: str = ""
+    volc_cluster: str = ""
+    # 非标准鉴权头：header 名 + 前缀（ElevenLabs=xi-api-key/无前缀）。
+    # 空值走适配器的默认映射（Authorization: Bearer），新平台不用改代码。
+    auth_header: str = ""
+    auth_prefix: str = ""
     image_edit_route: str = "general"
     image_generation_endpoint: str = ""
     image_edit_endpoint: str = ""
@@ -71,7 +82,7 @@ class CliProvider(ProviderBase):
 
 # 允许的协议类型（runninghub：ComfyUI 云工作流平台，走 OpenAI 风格请求，
 # 与 utils/provider_config_loader.detect_protocol() 的检测结果保持一致）
-VALID_PROTOCOLS = {"openai", "gemini-cli", "codex", "jimeng", "volcengine", "apimart", "gemini", "runninghub"}
+VALID_PROTOCOLS = {"openai", "gemini-cli", "codex", "jimeng", "volcengine", "apimart", "gemini", "runninghub", "volcengine-speech"}
 
 # CLI 协议集合
 _CLI_PROTOCOLS = {"gemini-cli", "codex", "jimeng"}
@@ -81,6 +92,10 @@ def _select_model_class(protocol: str) -> type:
     """根据协议类型返回对应的校验模型类"""
     if protocol in _CLI_PROTOCOLS:
         return CliProvider
+    if protocol == "volcengine-speech":
+        # 豆包语音用 X-Api-Key / X-Api-App-Key 单双头鉴权，不是 OpenAI 兼容，
+        # 用 OpenAIProvider（protocol 是 Literal 白名单）校验会误报
+        return ProviderBase
     return OpenAIProvider
 
 

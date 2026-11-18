@@ -1,10 +1,12 @@
 """system prompt 组装。
 
-承载：协议/Skill 目录/选中草稿/选中 Skill 预算注入块的组装。
+承载：协议/Skill 目录/选中草稿/选中 Skill 轻量指针块的组装。
 段落顺序：稳定内容在前，选中 Skill 块放在最末尾（近生成端，遵循度最高）。
-Skill 是指令性制作手册（决策史见 git tag adr-archive-20260901）：选中 Skill 正文经渐进披露预算化注入（头部按章节边界切齐，
-其余经 read_skill 续读）；官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳已退役（业界不给
-skill 内容贴符咒，安全靠机械装置：动作单轨/确认闸/platform 安全底线不可关，宪法 §2.1）。
+Skill 是指令性制作手册（决策史见 git tag adr-archive-20260901）：正文不常驻
+system prompt——用户 `/slug` 触发时一次性注入 user 角色上下文，模型可调用技能
+经 read_skill 按需加载；官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳
+已退役（业界不给 skill 内容贴符咒，安全靠机械装置：动作单轨/确认闸/platform
+安全底线不可关，宪法 §2.1）。
 逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
 system 段，经 build_state_tail_message 以 history 尾部消息（user 通道）
 每步注入——system 段（含 Skill 块）成为跨步稳定前缀（供应商 KV-cache 友好）。
@@ -369,9 +371,8 @@ class PromptBuilder:
         return header + "\n" + content
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
-        """构建 Skill 目录（渐进式披露的「目录」）：启用文档 Skill 的名称+摘要常驻，
-        选中 Skill 的 <planner> 段全文与章节目录由 build_selected_skill_block 注入，
-        其余章节经 read_skill 按需加载。
+        """构建 Skill 目录（渐进式披露的「目录」）：只列 modelInvocable=true 的
+        Skill 名称+摘要；user-only 技能不进模型目录。正文一律按需加载。
         批5（对齐外部标杆 卡片开关）：开关过滤（settings.skills_disabled 里的 slug 不进目录）
         + 条目预算（settings.skill_catalog_max_entries，超预算按项目 usedSkills 最近使用序
         截断，尾部附「另有 N 个已启用 Skill 未列出」指针行）。
@@ -381,7 +382,9 @@ class PromptBuilder:
         文案外置 prompts/shared/skill_inject.md；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
         entries: List[Any] = []
         try:
-            entries = list(skill_registry.loadable_entries())
+            # dsh 调用策略：目录只列 modelInvocable=true 的技能；
+            # 用户专用技能不进模型目录，只能经用户 /slug 一次性注入。
+            entries = list(skill_registry.model_catalog_entries())
         except Exception:  # 注册表读取失败不阻断对话（降级遥测可见）
             live_metrics.record_degradation("prompt_builder.catalog")
         # 条目预算（批5）：超预算按最近使用序截断——项目 usedSkills 登记过的 slug
@@ -428,17 +431,12 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 注入块（通用 skill 口径：主文档整篇给足）。
+        """选中 Skill 轻量块（dsh 口径）：只放元数据 + 流程纪律 + 加载指针。
 
-        默认注入主文档全文（frontmatter 已剥离）；超过
-        `skill_selected_inject_max_chars` 时注入开头 `skill_selected_inject_head_chars`
-        字 + 标题目录，并提示用 read_skill 续读。其余分册（references/…）
-        一律不进上下文，等模型按正文路径自取。
-        截断注入**额外补一份分册清单**：分册指针常写在正文后段（如「参考资料」节），
-        一旦落在头部预算之外，模型就无从知道分册存在；清单从全文提取，
-        保证指针可见性不受截断位置影响。
-        块内组成：选中提示行 + 元数据头 + 《Skill 流程纪律》全文 +
-        主文档正文（或预算内开头 + 标题目录 + 分册清单）。
+        正文不再随 system prompt 每轮注入：
+        - 用户手动 `/slug` 触发的技能，由 planner 一次性注入为 user 角色上下文；
+        - 模型可调用技能，由模型按需 read_skill 读取。
+        块内组成：加载指针 + 元数据头 + 《Skill 流程纪律》全文。
         段序不变（段注册表 order 100 最末，保前缀缓存约束）。
         解析失败/内容为空返回空串（降级为仅目录）。
         """
@@ -448,12 +446,18 @@ class PromptBuilder:
         except Exception:  # 解析失败不阻断对话（降级遥测可见）
             logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
             return ""
-        content = str(content or "").strip()
-        if not content:
+        if not str(content or "").strip():
             return ""
         name = display or skill_name
-        parts: List[str] = [render_prompt_section(
-            "shared/skill_inject.md", "SELECTED_NOTE", name=name)]
+        entry = skill_registry.resolve_loadable_entry(skill_name)
+        if entry is not None and not entry.model_invocable:
+            # dsh user-only：正文只在 /slug 一次性注入，模型不能自行加载
+            parts: List[str] = [render_prompt_section(
+                "shared/skill_inject.md", "SELECTED_NOTE_USER_ONLY",
+                name=name, slug=entry.slug)]
+        else:
+            parts = [render_prompt_section(
+                "shared/skill_inject.md", "SELECTED_NOTE", name=name)]
         header = self.build_skill_metadata_header(skill_name)
         if header:
             parts.append(header)
@@ -464,29 +468,6 @@ class PromptBuilder:
             discipline = ""
         if discipline and discipline.strip():
             parts.append(discipline.strip())
-        max_chars = int(getattr(settings, "skill_selected_inject_max_chars", 0) or 0)
-        if max_chars > 0 and len(content) > max_chars:
-            head_chars = int(
-                getattr(settings, "skill_selected_inject_head_chars", 0) or 0)
-            if head_chars <= 0 or head_chars > max_chars:
-                head_chars = max(1, max_chars // 2)
-            # 分册清单必须在截断前从**全文**提取（见 docstring：指针常在正文后段）
-            refs = self._reference_paths(content)
-            parts.append(render_prompt_section(
-                "shared/skill_inject.md", "TRUNC_NOTE",
-                name=name, total=len(content), head=head_chars))
-            parts.append(content[:head_chars].rstrip())
-            toc = self._toc_lines(content, sd)
-            if toc:
-                parts.append(render_prompt_section(
-                    "shared/skill_inject.md", "TOC_NOTE", name=name)
-                    + "\n" + "\n".join(toc))
-            if refs:
-                parts.append(render_prompt_section(
-                    "shared/skill_inject.md", "REFS_NOTE", name=name)
-                    + "\n" + "\n".join(f"- {r}" for r in refs))
-        else:
-            parts.append(content)
         return "\n\n".join(parts)
 
     def _reference_paths(self, content: str) -> List[str]:

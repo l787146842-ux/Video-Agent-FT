@@ -521,21 +521,13 @@ def run_gate_chain(
     *, paused_this_batch: bool,
 ) -> GateChainResult:
     """闸机链组合（顺序敏感，勿调换）：轮内暂停纪律 → 工具风险 →
-    生成确认 → 建组结构完整性 → **阶段建卡媒体类型** → 提示词结构。
-    任一闸拒收即短路，后续闸不再判。"""
+    生成确认。业务型结构/建卡/提示词闸已退役（2026-11-12 宽权限批）；
+    只保留 dsh 式安全与花钱确认。任一闸拒收即短路，后续闸不再判。"""
     res = GateChainResult()
     err = pause_window_error(name, paused_this_batch)
     if err is None:
         err = tool_risk_gate(ctx, name, args)
     if err is None:
         err = gen_confirm_gate(ctx, name, args)
-        if err is None:
-            err = structure_integrity_gate(ctx, name, args)
-        if err is None:
-            err = card_media_gate(ctx, name, args)
-        if err is None:
-            pg_err = prompt_gate(ctx, name, args)
-            if pg_err:
-                err = pg_err
     res.error = err
     return res

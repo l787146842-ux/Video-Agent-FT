@@ -13,7 +13,7 @@
 执行成功（全文未附：超单次回喂总量上限）
 
 ## READ_SKILL_INDEX_POINTER
-执行成功（Skill 流程段与章节目录已随选中 Skill 注入系统提示，无需重复回显；具体章节按名取读）
+执行成功（正文已随本次工具结果进入历史，不重复回显；分册用 read_file 读取，具体章节按名取读）
 
 ## READ_SKILL_SECTION_HEADER
 read_skill 执行成功，全文如下（skill={name}，section={section}）：

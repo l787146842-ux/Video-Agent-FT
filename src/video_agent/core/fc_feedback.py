@@ -58,8 +58,40 @@ FEEDBACK_FULL_TOOLS = {
 }
 # 按需调图工具：读回的图片以多模态 parts 回喂（模型真正「看到」画面）
 FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
+# 技能包图片读取（2026-11-12 dsh 对齐）：read_image 与 view_storyboard_media
+# 共用 data.images[].data_uri 形状，回喂层同一分支处理。
+FEEDBACK_IMAGE_TOOLS = frozenset({FEEDBACK_IMAGE_TOOL, "read_image"})
 # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
 FEEDBACK_MAX_TOTAL_CHARS = 100000
+
+# 工具未提供 model_view 时的兜底上限（字符）：只保底让模型看到结构化结果，
+# 不让大 JSON 灌进上下文——裁剪责任在工具自己的 model_view。
+MODEL_VIEW_FALLBACK_MAX_CHARS = 1200
+MODEL_VIEW_TRUNCATED = "…（已截断）"
+_missing_view_warned = set()
+
+
+def _fallback_model_view(name: str, data: Dict[str, Any]) -> str:
+    """工具没给模型可见渲染时的兜底（2026-11-11 dsh output/render 对齐）。
+
+    「成功但有 data、渲染却为空」不得静默压成一行「执行成功」——画布工具
+    就是这么瞎的（6666，2026-11-10）。兜底把原始返回限长塞回并告警；
+    工具应覆写 BaseTool.model_view 自行控制回喂内容与长度。
+    """
+    if not data:
+        return ""
+    try:
+        text = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+    except (TypeError, ValueError):
+        text = str(data)
+    if len(text) > MODEL_VIEW_FALLBACK_MAX_CHARS:
+        text = text[:MODEL_VIEW_FALLBACK_MAX_CHARS] + MODEL_VIEW_TRUNCATED
+    if name not in _missing_view_warned:
+        _missing_view_warned.add(name)
+        logger.warning(
+            "[fc_feedback] 工具 {} 未提供模型可见渲染（model_view 为空），已回退原始返回；"
+            "请在该工具内实现 model_view 以控制回喂内容", name)
+    return text
 
 # 结果已完整投影进工作台状态 JSON 的写类工具：只有它们的回喂行才可被消化。
 # 读回类（read_*）与调图（view_storyboard_media）的结果不在状态 JSON 里，
@@ -371,7 +403,7 @@ def format_tool_results(
         if not tr.get("ok"):
             lines.append(f"- {name}：执行失败 —— {tr.get('error') or '未知错误'}")
             continue
-        if name == FEEDBACK_IMAGE_TOOL:
+        if name in FEEDBACK_IMAGE_TOOLS and (tr.get("data") or {}).get("images"):
             data = tr.get("data") or {}
             imgs = data.get("images") or []
             for im in imgs:
@@ -410,27 +442,24 @@ def format_tool_results(
             lines.append(full_line)
             continue
         if name not in FEEDBACK_FULL_TOOLS:
-            # 执行器类工具（script_analyze 等）的 detail 必须随回喂传给模型
-            # （一句话总结只报「执行成功」被模型吞掉）
+            # 模型可见内容由工具自述（BaseTool.model_view，2026-11-11 对齐 dsh
+            # output/render）：detail / group_id / 画布 id 等一律归工具，不在本层
+            # 按工具名特判。渲染为空时兜底原始返回并告警——成功不得对模型静默为空。
             data = tr.get("data") or {}
-            detail = str(data.get("detail") or "").strip()
-            # 2026-09-23 批2（Q3，用户裁决）：**建组回执必须带 group_id**。
-            # storyboard_create_group 的 data["group_id"] 此前从不回喂
-            # （本分支只取 detail），模型建完组拿不到 id，只能靠 `current`
-            # 兜底——而 `current` 恒指 keyElements[0]（类目顺序决定，非"最近组"），
-            # 于是后续 add_draft 的卡落错组（3333 三张音色卡落进音频层的机制根因）。
-            # 此处把 group_id 拼进回喂正文（与 detail 合并，不新起通道）。
-            _gid = str(data.get("group_id") or "").strip()
-            if _gid:
-                _gid_line = f"分组 ID = {_gid}（后续 add_draft/patch 请显式传 group_id，勿依赖 current）"
-                detail = f"{_gid_line}。{detail}" if detail else _gid_line
+            view = str(tr.get("model_view") or "").strip()
+            if not view:
+                view = _fallback_model_view(name, data)
             # 上下文剪枝：只剪回喂进 history 的副本，白名单起步
             # （生成类大返回）；写类工具不在白名单，其回喂行归 digest 杠杆管
-            detail = prune_tool_feedback(name, detail)
-            if detail and total + len(detail) <= FEEDBACK_MAX_TOTAL_CHARS:
-                total += len(detail)
-                lines.append(f"- {name}：执行成功，{detail}")
-                continue
+            view = prune_tool_feedback(name, view)
+            if view:
+                room = FEEDBACK_MAX_TOTAL_CHARS - total
+                if room > 0:
+                    if len(view) > room:
+                        view = view[:max(0, room - len(MODEL_VIEW_TRUNCATED))] + MODEL_VIEW_TRUNCATED
+                    total += len(view)
+                    lines.append(f"- {name}：执行成功，{view}")
+                    continue
             lines.append(f"- {name}：执行成功")
             continue
         data = tr.get("data") or {}

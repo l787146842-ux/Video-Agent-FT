@@ -58,6 +58,7 @@ EV_ASSISTANT_PARTIAL = "assistant/partial"
 # source 字段：带 replaces_seqs 视为 checkpoint，其余视为 user，向后兼容）
 SOURCE_USER = "user"
 SOURCE_STATE = "state"
+SOURCE_SKILL = "skill"  # 用户 /slug 触发的一次性 Skill 注入（非真人原话）
 SOURCE_CHECKPOINT = "checkpoint"
 SOURCE_MEDIA = "media"
 

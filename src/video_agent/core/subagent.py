@@ -94,6 +94,9 @@ SUBAGENT_KIND_GENERAL = "general"
 SUBAGENT_TOOL_DENY: FrozenSet[str] = frozenset({
     "run_subagent", "image_generate", "generate_video", "workflow_pause",
     "video_assembler",
+    # 面向用户的交互动作：确认草稿 / 把媒体插回用户输入框。子代理只回摘要，
+    # 这两类由主代理在用户面前执行（宽权限不放开用户确认面）。
+    "storyboard_confirm_draft", "storyboard_media_to_chat",
 })
 
 # stage 模式额外 deny（2026-09-21 批0 扩充，事故 2222/Q5）：
@@ -277,13 +280,9 @@ def stage_scope_contract(stage: str = "") -> str:
       · 子代理 `skill_name=""` ⇒ 生成确认闸对它不生效；用户确认的账本
         （`generation_consented_turn`）记在主对话轮次上。
     """
-    resolved = resolve_stage(stage)
-    if resolved != "media_generate":
-        return ""
-    return (
-        "本阶段＝为媒体撰写提示词（子代理执行面只有写提示词相关的写入工具）；"
-        "真正花钱的出图与出视频由主代理在主线程直调"
-    )
+    # 2026-11-12 宽权限批：阶段分工声明退役。是否委派、谁来做由 Skill 散文
+    # 与主代理判断；平台不再按阶段渲染「只能做写、不能做出图」的边界。
+    return ""
 
 
 def stage_card_contract(stage: str = "") -> str:
@@ -306,19 +305,8 @@ def stage_card_contract(stage: str = "") -> str:
     入参描述上（同 `_stage_hint()` 动态拼接枚举的先例：白名单唯一源仍是
     本模块两张表，消费端只引用不复制，P1 不破）。
     """
-    resolved = resolve_stage(stage)
-    if not resolved:
-        return ""
-    media = STAGE_CARD_MEDIA.get(resolved, frozenset())
-    audio = STAGE_CARD_AUDIO_TYPES.get(resolved, frozenset())
-    if not media and not audio:
-        return ""
-    parts: List[str] = []
-    if media:
-        parts.append("新建草稿卡可用媒体类型=" + "/".join(sorted(media)))
-    if audio:
-        parts.append("其中音频卡的音频种类=" + "/".join(sorted(audio)))
-    return "；".join(parts)
+    # 2026-11-12 宽权限批：建卡限定退役，模型按 Skill 散文与工具 schema 自行判断。
+    return ""
 
 # 装载期一致性校验（fail-loud，dsh tool-subagent L316-350）：阶段枚举必须同时
 # 具备章节映射（CAPABILITY_TOOL_STAGES）与展示标签（STAGE_LABELS）与工具集
@@ -481,11 +469,9 @@ def child_deny_set(stage: str = "") -> FrozenSet[str]:
     与注入章节的散文约束冲突，模型被迫自行裁决「算不算越权」并最终越界。
     修的是「散文宣称了阶段授权、代码没实施」这处不一致，不是新增散文禁令（P2）。
     """
-    resolved = resolve_stage(stage)
-    if not resolved:
-        return SUBAGENT_TOOL_DENY
-    return (SUBAGENT_TOOL_DENY | STAGE_TOOL_DENY_EXTRA
-            | (MAIN_AGENT_DENY - stage_tools(resolved)))
+    # 2026-11-12 宽权限批：阶段不再裁剪工具面；子代理只保留安全 deny
+    # （递归/花钱/确认/导出/用户交互）。stage 仅作展示与遥测。
+    return SUBAGENT_TOOL_DENY
 
 
 def subagent_kind_block(kind: str = "") -> str:

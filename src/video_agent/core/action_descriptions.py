@@ -38,7 +38,7 @@ def describe_action(
     if name in ("audio_generate",):
         return "生成音频规划或绑定用户已上传音频"
     if name in ("video_assembler",):
-        return "输出最终成片组装方案（素材清单+时间轴）"
+        return "合成成片并推送到画布（含组装方案落盘）"
     title = str(action.get("title") or "").strip()
     label = str(action.get("label") or "").strip()
     doc = str(action.get("name") or action.get("doc_name") or action.get("key") or "").strip()

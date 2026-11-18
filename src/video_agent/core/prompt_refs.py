@@ -46,6 +46,9 @@ _MENTION_RE = re.compile(
 
 _KIND_LABEL = {"image": "参考图", "video": "参考视频", "audio": "参考音频"}
 
+# 草稿 URL 字段 → 媒体种类（引用登记用；与 media_of_draft 同口径）
+_URL_FIELD_KIND = {"imgUrl": "image", "videoUrl": "video", "audioUrl": "audio"}
+
 # 音频扩展名（与 `web/generation_submit.is_audio_url` 同口径）：
 # 仅用于给**不在 media_map 里的裸 URL** 判类型，使「按类型编号」与发送侧分桶一致。
 _AUDIO_URL_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg")
@@ -164,18 +167,25 @@ def build_storyboard_media_map(state: Dict[str, Any]) -> Dict[str, Dict[str, str
         for g in state.get(cat, []) or []:
             if not isinstance(g, dict):
                 continue
+            drafts = [d for d in (g.get("drafts", []) or []) if isinstance(d, dict)]
+            # 2026-10-26 绑定批（用户裁决「只有绑定的媒体才能进行后续操作」）：
+            # 组内某媒体种类已有绑定卡 ⇒ 该种类只有绑定卡参与引用解析（label/文件名
+            # 同样不登记未绑定卡）；无绑定卡的种类维持存量口径（存量项目零回归）。
+            bound_kinds = {
+                _URL_FIELD_KIND[f] for d in drafts if d.get("bound")
+                for f in _URL_FIELD_KIND if d.get(f)
+            }
             # 组标题登记的两遍法（仅关键元素有组标题语义）：
             # 第一遍（视觉卡优先）在下方循环内完成；第二遍（音频兜底）就此打标。
             title_reserved = cat == CAT_KEY_ELEMENTS and _group_has_visual_card(g)
             audio_fallback_done = False
-            for d in g.get("drafts", []) or []:
-                if not isinstance(d, dict):
-                    continue
-                for field in ("imgUrl", "videoUrl", "audioUrl"):
+            for d in drafts:
+                for field, kind in _URL_FIELD_KIND.items():
                     url = d.get(field) or ""
                     if not url:
                         continue
-                    kind = {"imgUrl": "image", "videoUrl": "video", "audioUrl": "audio"}[field]
+                    if kind in bound_kinds and not d.get("bound"):
+                        continue  # 该种类已有绑定卡：未绑定卡不参与后续引用
                     if cat == CAT_KEY_ELEMENTS:
                         if kind == "audio":
                             # 音频：组标题只在「纯音色卡组」才兜底登记一次

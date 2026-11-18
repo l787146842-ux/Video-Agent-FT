@@ -289,6 +289,29 @@ class FCToolRunner:
             return False
         return getattr(tool, "parallel_safe", False) is True
 
+    def _model_view_of(self, name: str, data: Any) -> str:
+        """工具自述的模型可见结果（对齐 dsh output/render 契约，2026-11-11）。
+
+        回喂层不再按工具名猜该给模型看什么：每个工具经 BaseTool.model_view
+        自行渲染；渲染为空时由 fc_feedback 兜底（原始返回 + 告警），
+        成功结果不得对模型静默为空。
+        """
+        getter = getattr(self.tool_manager, "get_tool", None)
+        if not callable(getter):
+            return ""
+        try:
+            tool = getter(name)
+        except Exception:
+            return ""
+        render = getattr(tool, "model_view", None)
+        if not callable(render):
+            return ""
+        try:
+            return str(render(data if isinstance(data, dict) else {}) or "").strip()
+        except Exception as exc:  # 渲染失败不阻断工具结果提交，走兜底
+            logger.warning("[fc_tool_runner] 工具 {} 的 model_view 渲染失败: {}", name, exc)
+            return ""
+
     def _has_tool(self, name: str) -> bool:
         """runner 实际装配的工具管理器判存（v4-2 解析层未注册拒收用）：
         管理器未提供 get_tool 成员查询（如最小执行桩）= 无法应答，
@@ -787,15 +810,15 @@ class FCToolRunner:
                 st.last_stage_label = _stage_lbl
                 self._turn_stage_label = _stage_lbl
             st.tool_results.append({"name": name, "ok": True, "data": result.data,
-                             "call_id": c.tool_event_id})
+                             "call_id": c.tool_event_id,
+                             "model_view": self._model_view_of(name, result.data)})
             # 子对话暂停放行（批 3）：回喂替换「已暂停」为「已自动确认」，
             # 防模型停在等待用户回应的语义上（子对话不发起确认）
             if name == "workflow_pause" and st.scope_auto_pause:
-                st.tool_results[-1]["data"] = {
-                    "auto_passed": True,
-                    "note": "当前在微调子对话内：系统已自动确认并放行你的暂停请求"
-                    "（子对话内不发起用户确认），请直接继续执行完成本次调整。",
-                }
+                _auto_note = ("当前在微调子对话内：系统已自动确认并放行你的暂停请求"
+                              "（子对话内不发起用户确认），请直接继续执行完成本次调整。")
+                st.tool_results[-1]["data"] = {"auto_passed": True, "note": _auto_note}
+                st.tool_results[-1]["model_view"] = _auto_note
             # --- 收集生图工具产出的图片 URL ---
             data = result.data
             if data and "image_urls" in data:
